@@ -1,0 +1,1038 @@
+from __future__ import annotations
+
+import argparse
+import sqlite3
+from pathlib import Path
+from datetime import datetime, timezone
+
+
+DB_PATH = Path(r"C:\KI-Stack\data\trading\trading.db")
+
+
+SCHEMA = r"""
+PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA busy_timeout = 1000;
+
+
+-- ============================================================
+-- 1. METADATA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS metadata (
+    key         TEXT PRIMARY KEY,
+    value       TEXT,
+    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- 2. DATA SOURCES
+-- Herkunft externer Daten
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS data_sources (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    source_type TEXT,
+    url         TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- 3. SECURITY
+-- Zentrale Identität eines beobachteten Wertpapiers
+-- Kein komplexer Instrument-/Listing-Master.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS security (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    symbol      TEXT,
+    isin        TEXT,
+    wkn         TEXT,
+
+    name        TEXT NOT NULL,
+
+    exchange    TEXT,
+    currency    TEXT,
+    country     TEXT,
+
+    asset_type  TEXT NOT NULL DEFAULT 'stock',
+
+    sector      TEXT,
+    industry    TEXT,
+
+    active      INTEGER NOT NULL DEFAULT 1,
+
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_security_isin
+ON security(isin)
+WHERE isin IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_security_symbol
+ON security(symbol);
+
+CREATE INDEX IF NOT EXISTS idx_security_name
+ON security(name);
+
+CREATE INDEX IF NOT EXISTS idx_security_active
+ON security(active);
+
+
+-- ============================================================
+-- 3b. SOURCE SYMBOLS
+-- Mapping Security -> externe Kennung je Datenquelle
+-- (z.B. Yahoo-Ticker, SEC CIK).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS source_symbols (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id INTEGER NOT NULL,
+
+    source_id INTEGER NOT NULL,
+
+    symbol TEXT NOT NULL,
+
+    exchange TEXT,
+    currency TEXT,
+
+    verified_at TEXT NOT NULL
+        DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id)
+        ON DELETE CASCADE,
+
+    UNIQUE (
+        security_id,
+        source_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_symbols_symbol
+ON source_symbols(
+    source_id,
+    symbol
+);
+
+
+-- ============================================================
+-- 4. IMPORTS
+-- Importhistorie, z.B. Parqet
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS imports (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    import_type         TEXT NOT NULL,
+    source              TEXT,
+
+    file_name           TEXT,
+
+    started_at          TEXT,
+    completed_at        TEXT,
+
+    records_total       INTEGER,
+    records_imported    INTEGER,
+    records_failed      INTEGER,
+
+    status              TEXT,
+    notes               TEXT,
+
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- 5. TRANSACTIONS
+-- Vollständige Portfoliohistorie
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    transaction_type    TEXT NOT NULL,
+    transaction_date    TEXT NOT NULL,
+
+    shares              REAL,
+    price               REAL,
+    amount              REAL,
+
+    fees                REAL DEFAULT 0,
+    taxes               REAL DEFAULT 0,
+
+    currency            TEXT,
+
+    broker              TEXT,
+    external_id         TEXT,
+
+    notes               TEXT,
+
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_security_date
+ON transactions(security_id, transaction_date);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_date
+ON transactions(transaction_date);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_external_id
+ON transactions(external_id)
+WHERE external_id IS NOT NULL;
+
+
+-- ============================================================
+-- 6. POSITIONS
+-- Aktueller Portfoliozustand
+-- Genau eine Position pro Security.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS positions (
+    security_id             INTEGER PRIMARY KEY,
+
+    shares                  REAL NOT NULL DEFAULT 0,
+
+    avg_cost                REAL,
+    remaining_cost_basis    REAL,
+
+    currency                TEXT,
+
+    invested_amount         REAL,
+    realized_gain           REAL DEFAULT 0,
+
+    first_transaction_at    TEXT,
+    last_transaction_at     TEXT,
+
+    transaction_count       INTEGER NOT NULL DEFAULT 0,
+
+    updated_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_positions_shares
+ON positions(shares);
+
+
+-- ============================================================
+-- 7. WATCHLIST
+-- Swing-Kandidaten
+-- Genau ein Datensatz je Security.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    security_id         INTEGER PRIMARY KEY,
+
+    status              TEXT NOT NULL DEFAULT 'WATCH',
+
+    priority            INTEGER,
+
+    entry_reason        TEXT,
+    thesis              TEXT,
+
+    target_entry        REAL,
+
+    notes               TEXT,
+
+    added_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_watchlist_status
+ON watchlist(status);
+
+CREATE INDEX IF NOT EXISTS idx_watchlist_priority
+ON watchlist(priority);
+
+
+-- ============================================================
+-- 8. MARKET SNAPSHOT
+-- Aktueller / letzter bekannter Marktstatus.
+-- Genau eine Zeile pro Security.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS market_snapshot (
+    security_id             INTEGER PRIMARY KEY,
+
+    as_of_at                TEXT,
+
+    price                   REAL,
+    previous_close          REAL,
+
+    open                    REAL,
+    high                    REAL,
+    low                     REAL,
+
+    volume                  REAL,
+
+    market_cap              REAL,
+    shares_outstanding      REAL,
+
+    currency                TEXT,
+
+    source_id               INTEGER,
+
+    fetched_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id)
+);
+
+
+-- ============================================================
+-- 9. MARKET DATA
+-- Tageshistorie OHLCV.
+-- Hauptbasis für technische Swing-Kennzahlen.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS market_data (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    trade_date          TEXT NOT NULL,
+
+    open                REAL,
+    high                REAL,
+    low                 REAL,
+    close               REAL,
+    adjusted_close      REAL,
+
+    volume              REAL,
+
+    currency            TEXT,
+
+    source_id           INTEGER,
+
+    fetched_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id),
+
+    UNIQUE (
+        security_id,
+        trade_date,
+        source_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_data_security_date
+ON market_data(security_id, trade_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_market_data_date
+ON market_data(trade_date);
+
+
+-- ============================================================
+-- 10. FUNDAMENTALS
+-- Jahres-, Quartals- und optional TTM-Daten.
+-- Rohdaten, keine unnötig berechneten Kennzahlen.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS fundamentals (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id             INTEGER NOT NULL,
+
+    period_end              TEXT NOT NULL,
+    period_type             TEXT NOT NULL,
+
+    fiscal_year             INTEGER,
+    fiscal_quarter          INTEGER,
+
+    filing_date             TEXT,
+
+    currency                TEXT,
+
+    revenue                 REAL,
+    gross_profit            REAL,
+
+    operating_income        REAL,
+    ebit                    REAL,
+    ebitda                  REAL,
+
+    net_income              REAL,
+
+    eps_basic               REAL,
+    eps_diluted              REAL,
+
+    operating_cash_flow     REAL,
+    capex                   REAL,
+    free_cash_flow          REAL,
+
+    cash                    REAL,
+    total_debt              REAL,
+
+    total_assets            REAL,
+    total_liabilities       REAL,
+    total_equity            REAL,
+
+    shares_outstanding      REAL,
+
+    source_id               INTEGER,
+
+    fetched_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id),
+
+    UNIQUE (
+        security_id,
+        period_end,
+        period_type,
+        source_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_fundamentals_security_period
+ON fundamentals(
+    security_id,
+    period_end DESC
+);
+
+CREATE INDEX IF NOT EXISTS idx_fundamentals_period_type
+ON fundamentals(period_type);
+
+
+-- ============================================================
+-- 11. ESTIMATES
+-- Analystenschätzungen als Snapshots.
+-- Damit lassen sich Revisionen selbst berechnen.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS estimates (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    metric              TEXT NOT NULL,
+
+    period_end          TEXT NOT NULL,
+    period_type         TEXT,
+
+    as_of_date          TEXT NOT NULL,
+
+    estimate_mean       REAL,
+    estimate_median     REAL,
+    estimate_high       REAL,
+    estimate_low        REAL,
+
+    analyst_count       INTEGER,
+
+    currency            TEXT,
+
+    source_id           INTEGER,
+
+    fetched_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id),
+
+    UNIQUE (
+        security_id,
+        metric,
+        period_end,
+        as_of_date,
+        source_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_estimates_security_metric
+ON estimates(
+    security_id,
+    metric,
+    period_end,
+    as_of_date DESC
+);
+
+
+-- ============================================================
+-- 12. RATINGS
+-- Analystenkonsens als historische Snapshots.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ratings (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    as_of_date          TEXT NOT NULL,
+
+    strong_buy          INTEGER,
+    buy                 INTEGER,
+    hold                INTEGER,
+    sell                INTEGER,
+    strong_sell         INTEGER,
+
+    analyst_count       INTEGER,
+
+    source_id           INTEGER,
+
+    fetched_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id),
+
+    UNIQUE (
+        security_id,
+        as_of_date,
+        source_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_ratings_security_date
+ON ratings(security_id, as_of_date DESC);
+
+
+-- ============================================================
+-- 13. PRICE TARGETS
+-- Analystenkursziele als Snapshots.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS price_targets (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    as_of_date          TEXT NOT NULL,
+
+    target_mean         REAL,
+    target_median       REAL,
+    target_high         REAL,
+    target_low          REAL,
+
+    analyst_count       INTEGER,
+
+    currency            TEXT,
+
+    source_id           INTEGER,
+
+    fetched_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id),
+
+    UNIQUE (
+        security_id,
+        as_of_date,
+        source_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_targets_security_date
+ON price_targets(security_id, as_of_date DESC);
+
+
+-- ============================================================
+-- 14. EVENTS
+-- Dauerhafte kursrelevante Ereignisse.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS events (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    event_type          TEXT NOT NULL,
+    event_date          TEXT NOT NULL,
+
+    period_end          TEXT,
+
+    title               TEXT,
+
+    actual_value        REAL,
+    estimated_value     REAL,
+    surprise_percent    REAL,
+
+    currency            TEXT,
+
+    notes               TEXT,
+
+    source_id           INTEGER,
+
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_security_date
+ON events(security_id, event_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_events_type_date
+ON events(event_type, event_date);
+
+
+-- ============================================================
+-- 15. NEWS
+-- Kurzlebiger Cache.
+-- Normale News werden später regelmäßig gelöscht.
+-- Material News können dauerhaft erhalten bleiben.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS news (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    published_at        TEXT NOT NULL,
+
+    title               TEXT NOT NULL,
+    summary             TEXT,
+
+    url                 TEXT,
+
+    publisher           TEXT,
+    category            TEXT,
+
+    sentiment           REAL,
+
+    is_material         INTEGER NOT NULL DEFAULT 0,
+
+    expires_at          TEXT,
+
+    source_id           INTEGER,
+
+    fetched_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_news_url
+ON news(url)
+WHERE url IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_news_security_date
+ON news(security_id, published_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_news_expiry
+ON news(expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_news_material
+ON news(is_material);
+
+
+-- ============================================================
+-- 16. DECISIONS
+-- Historie konkreter Tradingentscheidungen.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS decisions (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id             INTEGER NOT NULL,
+
+    decision_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    status                  TEXT NOT NULL,
+    confidence              REAL,
+
+    price_at_decision       REAL,
+
+    fundamental_score       REAL,
+    valuation_score         REAL,
+    momentum_score          REAL,
+    balance_sheet_score     REAL,
+    risk_score              REAL,
+    portfolio_fit_score     REAL,
+
+    reason                  TEXT,
+    next_action             TEXT,
+
+    created_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_security_date
+ON decisions(security_id, decision_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_status
+ON decisions(status);
+
+
+-- ============================================================
+-- 17. ANALYSIS HISTORY
+-- Längere Agentenanalysen / Reviews.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS analysis_history (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id         INTEGER NOT NULL,
+
+    analysis_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    analysis_type       TEXT,
+
+    summary             TEXT,
+    full_analysis       TEXT,
+
+    model               TEXT,
+
+    decision_id         INTEGER,
+
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (decision_id)
+        REFERENCES decisions(id)
+        ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_security_date
+ON analysis_history(security_id, analysis_at DESC);
+
+
+-- ============================================================
+-- 18. USEFUL VIEWS
+-- ============================================================
+
+CREATE VIEW IF NOT EXISTS v_active_positions AS
+SELECT
+    s.id AS security_id,
+    s.symbol,
+    s.isin,
+    s.wkn,
+    s.name,
+    s.exchange,
+    s.currency AS security_currency,
+
+    p.shares,
+    p.avg_cost,
+    p.remaining_cost_basis,
+    p.realized_gain,
+    p.last_transaction_at
+
+FROM positions p
+
+JOIN security s
+    ON s.id = p.security_id
+
+WHERE p.shares > 0;
+
+
+CREATE VIEW IF NOT EXISTS v_watchlist AS
+SELECT
+    s.id AS security_id,
+    s.symbol,
+    s.isin,
+    s.wkn,
+    s.name,
+    s.exchange,
+    s.currency,
+    s.country,
+    s.sector,
+    s.industry,
+
+    w.status,
+    w.priority,
+    w.target_entry,
+    w.entry_reason,
+    w.thesis,
+    w.added_at,
+
+    ms.price,
+    ms.previous_close,
+    ms.volume,
+    ms.market_cap,
+    ms.as_of_at AS market_as_of
+
+FROM watchlist w
+
+JOIN security s
+    ON s.id = w.security_id
+
+LEFT JOIN market_snapshot ms
+    ON ms.security_id = s.id;
+
+
+CREATE VIEW IF NOT EXISTS v_portfolio_market AS
+SELECT
+    s.id AS security_id,
+    s.symbol,
+    s.name,
+    s.isin,
+
+    p.shares,
+    p.avg_cost,
+    p.remaining_cost_basis,
+    p.realized_gain,
+
+    ms.price,
+    ms.previous_close,
+    ms.market_cap,
+    ms.as_of_at,
+
+    CASE
+        WHEN p.shares > 0
+         AND ms.price IS NOT NULL
+        THEN p.shares * ms.price
+        ELSE NULL
+    END AS market_value
+
+FROM positions p
+
+JOIN security s
+    ON s.id = p.security_id
+
+LEFT JOIN market_snapshot ms
+    ON ms.security_id = s.id
+
+WHERE p.shares > 0;
+
+
+-- ============================================================
+-- INITIAL METADATA
+-- ============================================================
+
+INSERT OR IGNORE INTO metadata(key, value)
+VALUES ('schema_version', '2.0');
+
+INSERT OR IGNORE INTO metadata(key, value)
+VALUES ('database_type', 'swing_trading');
+
+INSERT OR IGNORE INTO metadata(key, value)
+VALUES ('market_data_interval', '1day');
+"""
+
+
+DEFAULT_SOURCES = [
+    ("FMP", "market_data", "https://financialmodelingprep.com"),
+    ("Yahoo Finance", "web", "https://finance.yahoo.com"),
+    ("SEC EDGAR", "regulatory", "https://www.sec.gov"),
+    ("Company IR", "primary", None),
+    ("Exchange", "primary", None),
+    ("Web", "web", None),
+]
+
+
+def create_database(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Creating/updating: {db_path}")
+
+    conn = sqlite3.connect(str(db_path))
+
+    try:
+        conn.executescript(SCHEMA)
+
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO data_sources(
+                name,
+                source_type,
+                url
+            )
+            VALUES (?, ?, ?)
+            """,
+            DEFAULT_SOURCES,
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO metadata(key, value)
+            VALUES ('created_at', ?)
+            """,
+            (now,),
+        )
+
+        conn.commit()
+
+    finally:
+        conn.close()
+
+
+def validate_database(db_path: Path) -> None:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+
+    try:
+        integrity = conn.execute(
+            "PRAGMA integrity_check"
+        ).fetchone()[0]
+
+        journal_mode = conn.execute(
+            "PRAGMA journal_mode"
+        ).fetchone()[0]
+
+        foreign_keys = conn.execute(
+            "PRAGMA foreign_keys"
+        ).fetchone()[0]
+
+        tables = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+            """
+        ).fetchall()
+
+        views = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'view'
+            ORDER BY name
+            """
+        ).fetchall()
+
+        print()
+        print("===============================================")
+        print(" Trading DB Validation")
+        print("===============================================")
+        print(f"Database       : {db_path}")
+        print(f"Integrity      : {integrity}")
+        print(f"Journal mode   : {journal_mode}")
+        print(f"Foreign keys   : {bool(foreign_keys)}")
+        print(f"Tables         : {len(tables)}")
+        print(f"Views          : {len(views)}")
+        print()
+
+        print("Tables:")
+        for row in tables:
+            print(f"  - {row['name']}")
+
+        print()
+        print("Views:")
+        for row in views:
+            print(f"  - {row['name']}")
+
+        print()
+        print("Data Sources:")
+
+        sources = conn.execute(
+            """
+            SELECT id, name, source_type
+            FROM data_sources
+            ORDER BY id
+            """
+        ).fetchall()
+
+        for row in sources:
+            print(
+                f"  {row['id']:>2} | "
+                f"{row['name']:<20} | "
+                f"{row['source_type']}"
+            )
+
+        print()
+        print("===============================================")
+
+        if integrity != "ok":
+            raise RuntimeError(
+                f"SQLite integrity check failed: {integrity}"
+            )
+
+    finally:
+        conn.close()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Initialize the KI-Stack trading database schema "
+            "(tables, indexes, views, base data_sources). "
+            "Idempotent: safe to run against an existing database, "
+            "creates nothing that already exists, inserts no demo "
+            "or portfolio data."
+        )
+    )
+
+    parser.add_argument(
+        "--db-path",
+        default=str(DB_PATH),
+        help=(
+            "Target SQLite database file "
+            f"(default: production DB at {DB_PATH})"
+        ),
+    )
+
+    args = parser.parse_args()
+
+    db_path = Path(args.db_path)
+
+    print()
+    print("===============================================")
+    print(" Trading DB Initialize")
+    print("===============================================")
+    print()
+    print(f"Target: {db_path}")
+    print()
+
+    create_database(db_path)
+    validate_database(db_path)
+
+    print()
+    print("Trading DB initialized successfully.")
+
+
+if __name__ == "__main__":
+    main()

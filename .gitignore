@@ -1,0 +1,8 @@
+*.db
+*.db-*
+*.bak-*
+*.log
+*.pyc
+__pycache__/
+data/
+fundamentals-audit/
