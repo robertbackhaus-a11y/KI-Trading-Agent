@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sqlite3
@@ -7,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,12 @@ DB_PATH = Path(
     r"C:\KI-Stack\data\trading\trading.db"
 )
 
+SEC_CACHE_DIR = Path(
+    r"C:\KI-Stack\data\trading\sec-cache"
+)
+
+CACHE_MAX_AGE_SECONDS = 6 * 3600
+
 SEC_USER_AGENT = os.environ.get(
     "SEC_USER_AGENT",
     "okami.de robert@okami.de",
@@ -29,7 +37,11 @@ SEC_HEADERS = {
     "Accept": "application/json",
 }
 
+REQUEST_TIMEOUT_SECONDS = 10
+
 REQUEST_DELAY_SECONDS = 0.20
+
+MAX_RETRIES = 1
 
 MAX_ANNUAL_PERIODS = 6
 MAX_QUARTERLY_PERIODS = 12
@@ -443,42 +455,151 @@ def get_json(
     url: str,
 ) -> Optional[dict]:
 
-    request = urllib.request.Request(
-        url,
-        headers=SEC_HEADERS,
-    )
+    attempts = MAX_RETRIES + 1
+
+    for attempt in range(attempts):
+
+        request = urllib.request.Request(
+            url,
+            headers=SEC_HEADERS,
+        )
+
+        try:
+
+            with urllib.request.urlopen(
+                request,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            ) as response:
+
+                raw = response.read()
+
+                return json.loads(
+                    raw.decode("utf-8")
+                )
+
+        except urllib.error.HTTPError as exc:
+
+            if exc.code == 404:
+                return None
+
+            if attempt < attempts - 1:
+                continue
+
+            print(
+                f"      HTTP {exc.code}"
+            )
+
+            return None
+
+        except Exception as exc:
+
+            if attempt < attempts - 1:
+                continue
+
+            print(
+                f"      HTTP error: {exc}"
+            )
+
+            return None
+
+    return None
+
+
+# ============================================================
+# LOCAL SEC COMPANYFACTS CACHE
+# ============================================================
+
+def cache_path_for_cik(
+    cik: str,
+) -> Path:
+
+    return SEC_CACHE_DIR / f"CIK{cik}.json"
+
+
+def load_cache(
+    path: Path,
+) -> Optional[dict]:
 
     try:
 
-        with urllib.request.urlopen(
-            request,
-            timeout=30,
-        ) as response:
-
-            raw = response.read()
-
-            return json.loads(
-                raw.decode("utf-8")
-            )
-
-    except urllib.error.HTTPError as exc:
-
-        if exc.code == 404:
+        if not path.exists():
             return None
 
-        print(
-            f"      HTTP {exc.code}"
+        age_seconds = (
+            time.time() - path.stat().st_mtime
         )
+
+        if age_seconds > CACHE_MAX_AGE_SECONDS:
+            return None
+
+        with path.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+
+            return json.load(handle)
+
+    except (OSError, ValueError):
 
         return None
 
-    except Exception as exc:
 
-        print(
-            f"      HTTP error: {exc}"
+def save_cache(
+    path: Path,
+    data: dict,
+) -> None:
+
+    try:
+
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
         )
 
-        return None
+        with path.open(
+            "w",
+            encoding="utf-8",
+        ) as handle:
+
+            json.dump(data, handle)
+
+    except OSError:
+
+        pass
+
+
+def fetch_companyfacts(
+    cik: str,
+    use_cache: bool,
+) -> tuple[Optional[dict], bool]:
+    """Returns (data, from_cache). Only performs the SEC network
+    request (and the rate-limit pause) when the cache is disabled,
+    missing, or older than CACHE_MAX_AGE_SECONDS."""
+
+    cache_file = cache_path_for_cik(cik)
+
+    if use_cache:
+
+        cached = load_cache(cache_file)
+
+        if cached is not None:
+            return cached, True
+
+    url = (
+        "https://data.sec.gov/api/xbrl/"
+        f"companyfacts/CIK{cik}.json"
+    )
+
+    data = get_json(url)
+
+    time.sleep(
+        REQUEST_DELAY_SECONDS
+    )
+
+    if data is not None:
+        save_cache(cache_file, data)
+
+    return data, False
 
 
 # ============================================================
@@ -492,6 +613,7 @@ def utc_now() -> str:
     ).isoformat()
 
 
+@lru_cache(maxsize=4096)
 def parse_date(
     value: Optional[str],
 ):
@@ -727,63 +849,128 @@ def unit_rank(
     return 10
 
 
+def prepare_concept_facts(
+    taxonomy_data: dict,
+    concept: str,
+) -> list[dict]:
+    """Parse a concept's raw units/facts exactly once: date parsing,
+    duration/instant period classification and quarter inference are
+    computed here a single time per concept, then reused for every
+    metric that maps to this concept (e.g. IFRS
+    ProfitLossFromOperatingActivities is used by both
+    operating_income and ebit). Both the duration- and instant-field
+    classification are precomputed so this stays correct regardless
+    of which metric later consumes it, with no change to the
+    classification logic itself."""
+
+    prepared = []
+
+    units = units_for_concept(
+        taxonomy_data,
+        concept,
+    )
+
+    for unit, facts in units.items():
+
+        if not isinstance(
+            facts,
+            list,
+        ):
+            continue
+
+        for item in facts:
+
+            if not isinstance(
+                item,
+                dict,
+            ):
+                continue
+
+            value = item.get(
+                "val"
+            )
+
+            if value is None:
+                continue
+
+            end = item.get(
+                "end"
+            )
+
+            if not end:
+                continue
+
+            prepared.append(
+                {
+                    "unit": unit,
+                    "value": value,
+                    "item": item,
+                    "end": end,
+                    "period_type_duration":
+                        period_type_for_fact(
+                            item,
+                            True,
+                        ),
+                    "period_type_instant":
+                        period_type_for_fact(
+                            item,
+                            False,
+                        ),
+                    "quarter":
+                        infer_quarter(item),
+                }
+            )
+
+    return prepared
+
+
 def iter_concept_facts(
     taxonomy_data: dict,
     concepts: list[str],
     metric: str,
+    concept_cache: dict,
 ):
 
     for concept_priority, concept in enumerate(
         concepts
     ):
 
-        units = units_for_concept(
-            taxonomy_data,
-            concept,
+        prepared = concept_cache.get(
+            concept
         )
 
-        for unit, facts in units.items():
+        if prepared is None:
 
-            if not isinstance(
-                facts,
-                list,
-            ):
-                continue
+            prepared = prepare_concept_facts(
+                taxonomy_data,
+                concept,
+            )
+
+            concept_cache[concept] = prepared
+
+        for entry in prepared:
 
             rank = unit_rank(
-                unit,
+                entry["unit"],
                 metric,
             )
 
             if rank <= 0:
                 continue
 
-            for item in facts:
+            yield {
+                "concept": concept,
+                "concept_priority":
+                    concept_priority,
 
-                if not isinstance(
-                    item,
-                    dict,
-                ):
-                    continue
+                "unit": entry["unit"],
+                "unit_rank": rank,
 
-                value = item.get(
-                    "val"
-                )
+                "item": entry["item"],
+                "value": entry["value"],
 
-                if value is None:
-                    continue
-
-                yield {
-                    "concept": concept,
-                    "concept_priority":
-                        concept_priority,
-
-                    "unit": unit,
-                    "unit_rank": rank,
-
-                    "item": item,
-                    "value": value,
-                }
+                "_prepared": entry,
+            }
 
 
 def choose_period_fact(
@@ -847,6 +1034,7 @@ def extract_metric_periods(
     taxonomy_data: dict,
     concepts: list[str],
     metric: str,
+    concept_cache: dict,
 ) -> dict[tuple, dict]:
 
     duration_field = (
@@ -859,30 +1047,21 @@ def extract_metric_periods(
         taxonomy_data,
         concepts,
         metric,
+        concept_cache,
     ):
 
-        item = fact["item"]
+        prepared = fact["_prepared"]
 
-        end = item.get(
-            "end"
-        )
+        end = prepared["end"]
 
-        if not end:
-            continue
-
-        ptype = period_type_for_fact(
-            item,
-            duration_field,
+        ptype = (
+            prepared["period_type_duration"]
+            if duration_field
+            else prepared["period_type_instant"]
         )
 
         if ptype is None:
             continue
-
-        quarter = (
-            infer_quarter(item)
-            if ptype == "quarterly"
-            else None
-        )
 
         key = (
             end,
@@ -1053,9 +1232,7 @@ def merge_metric(
             and is_duration_metric
         ):
 
-            quarter = infer_quarter(
-                item
-            )
+            quarter = fact["_prepared"]["quarter"]
 
             if quarter is not None:
                 record[
@@ -1141,6 +1318,7 @@ def extract_shares(
         dei,
         DEI_SHARES,
         "shares_outstanding",
+        {},
     )
 
 
@@ -1198,12 +1376,15 @@ def build_records(
 
     records = {}
 
+    concept_cache: dict = {}
+
     for metric, concepts in mapping.items():
 
         periods = extract_metric_periods(
             taxonomy_data,
             concepts,
             metric,
+            concept_cache,
         )
 
         merge_metric(
@@ -1495,12 +1676,8 @@ def store_records(
         ),
     )
 
-    written = 0
-
-    for row in records:
-
-        conn.execute(
-            """
+    conn.executemany(
+        """
             INSERT INTO fundamentals (
 
                 security_id,
@@ -1627,6 +1804,7 @@ def store_records(
                 fetched_at =
                     excluded.fetched_at
             """,
+        [
             (
                 security_id,
 
@@ -1664,12 +1842,12 @@ def store_records(
 
                 source_id,
                 fetched_at,
-            ),
-        )
+            )
+            for row in records
+        ],
+    )
 
-        written += 1
-
-    return written
+    return len(records)
 
 
 # ============================================================
@@ -1680,6 +1858,8 @@ def import_security(
     conn: sqlite3.Connection,
     security: sqlite3.Row,
     source_id: int,
+    use_cache: bool,
+    timing: dict,
 ) -> tuple[
     bool,
     int,
@@ -1698,17 +1878,21 @@ def import_security(
         f"    -> CIK: {cik}"
     )
 
-    url = (
-        "https://data.sec.gov/api/xbrl/"
-        f"companyfacts/CIK{cik}.json"
+    t_http0 = time.perf_counter()
+
+    data, from_cache = fetch_companyfacts(
+        cik,
+        use_cache,
     )
 
-    data = get_json(
-        url
-    )
+    t_http = time.perf_counter() - t_http0
 
-    time.sleep(
-        REQUEST_DELAY_SECONDS
+    timing["http"] += t_http
+
+    print(
+        f"    -> source: "
+        f"{'cache' if from_cache else 'SEC'} "
+        f"({t_http:.2f}s)"
     )
 
     if not data:
@@ -1719,8 +1903,14 @@ def import_security(
 
         return False, 0, None
 
+    t_parse0 = time.perf_counter()
+
     records, taxonomy = build_records(
         data
+    )
+
+    timing["parse"] += (
+        time.perf_counter() - t_parse0
     )
 
     if taxonomy is None:
@@ -1779,6 +1969,8 @@ def import_security(
         if r["period_type"] == "quarterly"
     )
 
+    t_db0 = time.perf_counter()
+
     conn.execute(
         "BEGIN IMMEDIATE"
     )
@@ -1803,6 +1995,10 @@ def import_security(
         )
 
         raise
+
+    timing["db"] += (
+        time.perf_counter() - t_db0
+    )
 
     print(
         f"    -> annual: {annual_count}"
@@ -1926,7 +2122,39 @@ def report(
 # MAIN
 # ============================================================
 
+def parse_args() -> argparse.Namespace:
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "SEC XBRL fundamentals bulk backfill."
+        )
+    )
+
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help=(
+            "Force a live SEC download for every security, "
+            "ignoring the local CompanyFacts cache."
+        ),
+    )
+
+    return parser.parse_args()
+
+
 def main() -> None:
+
+    args = parse_args()
+
+    use_cache = not args.no_cache
+
+    t_total0 = time.perf_counter()
+
+    timing = {
+        "http": 0.0,
+        "parse": 0.0,
+        "db": 0.0,
+    }
 
     conn = connect()
 
@@ -1968,6 +2196,11 @@ def main() -> None:
             f"Quarter history   : {MAX_QUARTERLY_PERIODS}"
         )
 
+        print(
+            f"Local cache       : "
+            f"{'enabled' if use_cache else 'disabled (--no-cache)'}"
+        )
+
         print()
 
         resolved = 0
@@ -1995,6 +2228,8 @@ def main() -> None:
                         conn,
                         security,
                         source_id,
+                        use_cache,
+                        timing,
                     )
                 )
 
@@ -2098,6 +2333,18 @@ def main() -> None:
         report(
             conn,
             source_id,
+        )
+
+        total_elapsed = (
+            time.perf_counter() - t_total0
+        )
+
+        print()
+        print(
+            f"Total: {total_elapsed:.2f}s | "
+            f"HTTP: {timing['http']:.2f}s | "
+            f"Parse: {timing['parse']:.2f}s | "
+            f"DB: {timing['db']:.2f}s"
         )
 
     finally:
