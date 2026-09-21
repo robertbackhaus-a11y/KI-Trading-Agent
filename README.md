@@ -27,6 +27,13 @@ PDFs und Logs liegen außerhalb des Repos (siehe `.gitignore`).
 | `Backfill-TradingFundamentalsIR.py` | Fundamentals aus Company-IR-Referenzparsern |
 | `Research-TradingFundamentals.py` | LLM-Research-Fundamentals-Pipeline (kanonisches Tool) |
 
+## OpenWebUI-Integration
+
+OpenWebUI nutzt das Tool `trading_sqlite` für DB-Zugriff auf die Trading-DB. Dessen Methode
+`rank_watchlist()` lädt die Analytics-Funktion `rank_watchlist()` aus
+`C:\KI-Stack\tools\trading\trading_analytics.py` dynamisch nach. Details siehe
+[docs/openwebui-trading-tool.md](docs/openwebui-trading-tool.md).
+
 ## Prinzip
 
 ```
