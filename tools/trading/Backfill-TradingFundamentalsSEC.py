@@ -131,6 +131,7 @@ US_GAAP = {
     "capex": [
         "PaymentsToAcquirePropertyPlantAndEquipment",
         "PaymentsForAdditionsToPropertyPlantAndEquipment",
+        "PaymentsToAcquireProductiveAssets",
     ],
 
     "cash": [
@@ -2139,6 +2140,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--security-id",
+        type=int,
+        action="append",
+        dest="security_ids",
+        help=(
+            "Only process the specified security_id. "
+            "May be supplied multiple times."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -2172,6 +2184,31 @@ def main() -> None:
             conn,
             source_id,
         )
+
+        if args.security_ids:
+            requested_ids = set(args.security_ids)
+
+            securities = [
+                security
+                for security in securities
+                if security["id"] in requested_ids
+            ]
+
+            found_ids = {
+                security["id"]
+                for security in securities
+            }
+
+            missing_ids = requested_ids - found_ids
+
+            if missing_ids:
+                raise RuntimeError(
+                    "Requested security_id(s) not mapped to SEC EDGAR: "
+                    + ", ".join(
+                        str(value)
+                        for value in sorted(missing_ids)
+                    )
+                )
 
         print()
         print(
