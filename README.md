@@ -13,7 +13,7 @@ C:\KI-Stack\data\trading\trading.db
 Dieses Repository enthält nur den Code. Die Datenbank, Backups, Audit-/Candidate-JSONs,
 PDFs und Logs liegen außerhalb des Repos (siehe `.gitignore`).
 
-## Hauptscripte (`tools/`)
+## Hauptscripte (`tools/trading/`)
 
 | Script | Zweck |
 |---|---|
