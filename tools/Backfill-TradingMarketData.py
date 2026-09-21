@@ -6,7 +6,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -26,8 +26,15 @@ YAHOO_BASE = (
 HISTORY_RANGE = "2y"
 HISTORY_INTERVAL = "1d"
 
-TIMEOUT_SECONDS = 12
-MAX_RETRIES = 3
+# Incremental reload window: when a security already has market_data,
+# only the last HISTORY_OVERLAP_DAYS calendar days are re-requested
+# (plus whatever is newer), instead of the full HISTORY_RANGE. The
+# overlap absorbs Yahoo's occasional after-the-fact corrections to
+# the most recent sessions and weekends/holidays.
+HISTORY_OVERLAP_DAYS = 5
+
+TIMEOUT_SECONDS = 10
+MAX_RETRIES = 2
 
 REQUEST_DELAY_SECONDS = 0.75
 
@@ -230,24 +237,18 @@ def get_json(
 
         except urllib.error.HTTPError as exc:
 
-            if exc.code == 429:
-
-                wait_seconds = (
-                    attempt * 5
-                )
+            if (
+                exc.code == 429
+                and attempt < MAX_RETRIES
+            ):
 
                 print(
-                    f"      HTTP 429 - "
-                    f"wait {wait_seconds}s"
+                    "      HTTP 429 - retry"
                 )
 
-                if attempt < MAX_RETRIES:
+                time.sleep(3)
 
-                    time.sleep(
-                        wait_seconds
-                    )
-
-                    continue
+                continue
 
             print(
                 f"      HTTP {exc.code}"
@@ -260,17 +261,15 @@ def get_json(
             TimeoutError,
         ) as exc:
 
+            if attempt < MAX_RETRIES:
+
+                time.sleep(1)
+
+                continue
+
             print(
                 f"      Network error: {exc}"
             )
-
-            if attempt < MAX_RETRIES:
-
-                time.sleep(
-                    attempt * 2
-                )
-
-                continue
 
             return None
 
@@ -553,20 +552,32 @@ def direct_candidates(
 def yahoo_chart(
     symbol: str,
     range_value: str = "5d",
+    period1: Optional[int] = None,
 ) -> Optional[dict]:
+    """If period1 (unix timestamp) is given, an explicit period1..now
+    window is requested instead of a relative range -- this is what
+    makes the incremental (few-days) reload possible without asking
+    Yahoo for the full HISTORY_RANGE every time."""
 
     encoded_symbol = urllib.parse.quote(
         symbol,
         safe=".-^=",
     )
 
+    params = {
+        "interval": HISTORY_INTERVAL,
+        "events": "div,splits",
+        "includeAdjustedClose": "true",
+    }
+
+    if period1 is not None:
+        params["period1"] = int(period1)
+        params["period2"] = int(time.time())
+    else:
+        params["range"] = range_value
+
     query = urllib.parse.urlencode(
-        {
-            "range": range_value,
-            "interval": HISTORY_INTERVAL,
-            "events": "div,splits",
-            "includeAdjustedClose": "true",
-        }
+        params
     )
 
     url = (
@@ -917,7 +928,12 @@ def resolve_yahoo_symbol(
     conn: sqlite3.Connection,
     row: sqlite3.Row,
     source_id: int,
-) -> Optional[str]:
+    timing: dict,
+) -> tuple[Optional[str], bool]:
+    """Returns (symbol, reused). reused is True when an already
+    verified Yahoo symbol from source_symbols was used as-is, with
+    no HTTP request at all -- candidate/search discovery only runs
+    when no symbol is on file yet."""
 
     existing = get_existing_source_symbol(
         conn,
@@ -931,36 +947,7 @@ def resolve_yahoo_symbol(
             f"      existing {existing}"
         )
 
-        chart = yahoo_chart(
-            existing,
-            "5d",
-        )
-
-        time.sleep(
-            REQUEST_DELAY_SECONDS
-        )
-
-        if chart is not None:
-
-            meta = (
-                chart.get("meta")
-                or {}
-            )
-
-            save_source_symbol(
-                conn,
-                row["id"],
-                source_id,
-                existing,
-                meta.get(
-                    "exchangeName"
-                ),
-                meta.get(
-                    "currency"
-                ),
-            )
-
-            return existing
+        return existing, True
 
     # --------------------------------------------------------
     # Direct candidates
@@ -974,6 +961,8 @@ def resolve_yahoo_symbol(
             f"      test {candidate_symbol}"
         )
 
+        t0 = time.perf_counter()
+
         chart = yahoo_chart(
             candidate_symbol,
             "5d",
@@ -981,6 +970,10 @@ def resolve_yahoo_symbol(
 
         time.sleep(
             REQUEST_DELAY_SECONDS
+        )
+
+        timing["http"] += (
+            time.perf_counter() - t0
         )
 
         if chart is None:
@@ -1009,7 +1002,7 @@ def resolve_yahoo_symbol(
             ),
         )
 
-        return resolved_symbol
+        return resolved_symbol, False
 
     # --------------------------------------------------------
     # Search fallback
@@ -1033,12 +1026,18 @@ def resolve_yahoo_symbol(
             f"      search {query}"
         )
 
+        t0 = time.perf_counter()
+
         results = yahoo_search(
             query
         )
 
         time.sleep(
             REQUEST_DELAY_SECONDS
+        )
+
+        timing["http"] += (
+            time.perf_counter() - t0
         )
 
         candidate = choose_search_result(
@@ -1056,6 +1055,8 @@ def resolve_yahoo_symbol(
         if not candidate_symbol:
             continue
 
+        t0 = time.perf_counter()
+
         chart = yahoo_chart(
             candidate_symbol,
             "5d",
@@ -1063,6 +1064,10 @@ def resolve_yahoo_symbol(
 
         time.sleep(
             REQUEST_DELAY_SECONDS
+        )
+
+        timing["http"] += (
+            time.perf_counter() - t0
         )
 
         if chart is None:
@@ -1086,9 +1091,9 @@ def resolve_yahoo_symbol(
             ),
         )
 
-        return candidate_symbol
+        return candidate_symbol, False
 
-    return None
+    return None, False
 
 
 # ============================================================
@@ -1238,14 +1243,10 @@ def store_market_history(
     rows: list[dict],
 ) -> int:
 
-    written = 0
-
     fetched_at = utc_now()
 
-    for row in rows:
-
-        conn.execute(
-            """
+    conn.executemany(
+        """
             INSERT INTO market_data (
 
                 security_id,
@@ -1288,6 +1289,7 @@ def store_market_history(
                 currency = excluded.currency,
                 fetched_at = excluded.fetched_at
             """,
+        [
             (
                 security_id,
                 row["trade_date"],
@@ -1303,12 +1305,12 @@ def store_market_history(
                 currency,
                 source_id,
                 fetched_at,
-            ),
-        )
+            )
+            for row in rows
+        ],
+    )
 
-        written += 1
-
-    return written
+    return len(rows)
 
 
 # ============================================================
@@ -1472,6 +1474,42 @@ def store_snapshot(
 
 
 # ============================================================
+# INCREMENTAL STATE
+# ============================================================
+
+def get_last_trade_date(
+    conn: sqlite3.Connection,
+    security_id: int,
+    source_id: int,
+) -> Optional[str]:
+
+    row = conn.execute(
+        """
+        SELECT MAX(trade_date) AS latest
+        FROM market_data
+        WHERE security_id = ?
+          AND source_id = ?
+        """,
+        (
+            security_id,
+            source_id,
+        ),
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    return row["latest"]
+
+
+def today_utc_iso() -> str:
+
+    return datetime.now(
+        timezone.utc
+    ).date().isoformat()
+
+
+# ============================================================
 # SINGLE SECURITY IMPORT
 # ============================================================
 
@@ -1479,15 +1517,19 @@ def import_security(
     conn: sqlite3.Connection,
     security: sqlite3.Row,
     source_id: int,
+    timing: dict,
 ) -> tuple[
-    bool,
+    str,
     int,
 ]:
+    """Returns (status, rows_written). status is one of
+    "OK", "SKIP", "FAILED"."""
 
-    symbol = resolve_yahoo_symbol(
+    symbol, symbol_reused = resolve_yahoo_symbol(
         conn,
         security,
         source_id,
+        timing,
     )
 
     if symbol is None:
@@ -1496,19 +1538,74 @@ def import_security(
             "    -> SYMBOL UNRESOLVED"
         )
 
-        return False, 0
+        return "FAILED", 0
 
     print(
         f"    -> Yahoo symbol: {symbol}"
     )
 
-    chart = yahoo_chart(
-        symbol,
-        HISTORY_RANGE,
+    last_date = get_last_trade_date(
+        conn,
+        security["id"],
+        source_id,
     )
+
+    # Already have today's (UTC) row -- nothing new can exist yet.
+    if (
+        last_date is not None
+        and last_date >= today_utc_iso()
+    ):
+
+        print(
+            "    -> SKIP - already current"
+        )
+
+        return "SKIP", 0
+
+    # Incremental reload only when the resolved symbol is unchanged
+    # and we already have history: fetch a small overlap window
+    # instead of the full HISTORY_RANGE. A brand-new security, or
+    # one whose provider symbol just changed, still gets a full
+    # fetch (and the old rows for that security+source are purged
+    # below, so a listing/symbol change can't leave stale rows).
+    incremental = (
+        symbol_reused
+        and last_date is not None
+    )
+
+    t_http0 = time.perf_counter()
+
+    if incremental:
+
+        since = (
+            datetime.fromisoformat(last_date)
+            - timedelta(days=HISTORY_OVERLAP_DAYS)
+        )
+
+        period1 = int(
+            since.replace(
+                tzinfo=timezone.utc
+            ).timestamp()
+        )
+
+        chart = yahoo_chart(
+            symbol,
+            period1=period1,
+        )
+
+    else:
+
+        chart = yahoo_chart(
+            symbol,
+            HISTORY_RANGE,
+        )
 
     time.sleep(
         REQUEST_DELAY_SECONDS
+    )
+
+    timing["http"] += (
+        time.perf_counter() - t_http0
     )
 
     if chart is None:
@@ -1517,10 +1614,16 @@ def import_security(
             "    -> HISTORY FAILED"
         )
 
-        return False, 0
+        return "FAILED", 0
+
+    t_parse0 = time.perf_counter()
 
     history = parse_history(
         chart
+    )
+
+    timing["parse"] += (
+        time.perf_counter() - t_parse0
     )
 
     if not history:
@@ -1529,7 +1632,7 @@ def import_security(
             "    -> HISTORY EMPTY"
         )
 
-        return False, 0
+        return "FAILED", 0
 
     meta = (
         chart.get("meta")
@@ -1539,6 +1642,8 @@ def import_security(
     currency = meta.get(
         "currency"
     )
+
+    t_db0 = time.perf_counter()
 
     # --------------------------------------------------------
     # One explicit transaction per security.
@@ -1551,22 +1656,25 @@ def import_security(
 
     try:
 
-        # Keep Yahoo market history for this security in sync
-        # with the currently resolved provider instrument.
-        #
-        # This prevents stale rows from surviving after a
-        # listing/provider-symbol change, e.g. INGA.SW -> INGA.AS.
-        conn.execute(
-            """
-            DELETE FROM market_data
-            WHERE security_id = ?
-              AND source_id = ?
-            """,
-            (
-                security["id"],
-                source_id,
-            ),
-        )
+        if not incremental:
+
+            # Full (re)fetch: keep Yahoo market history for this
+            # security in sync with the currently resolved provider
+            # instrument. This prevents stale rows from surviving
+            # after a listing/provider-symbol change, e.g.
+            # INGA.SW -> INGA.AS. Not needed on the incremental path,
+            # where existing rows are simply upserted in place.
+            conn.execute(
+                """
+                DELETE FROM market_data
+                WHERE security_id = ?
+                  AND source_id = ?
+                """,
+                (
+                    security["id"],
+                    source_id,
+                ),
+            )
 
         written = store_market_history(
             conn,
@@ -1596,8 +1704,13 @@ def import_security(
 
         raise
 
+    timing["db"] += (
+        time.perf_counter() - t_db0
+    )
+
     print(
-        f"    -> rows: {written}"
+        f"    -> rows: {written} "
+        f"({'incremental' if incremental else 'full'})"
     )
 
     print(
@@ -1612,7 +1725,7 @@ def import_security(
         f"{currency or '-'}"
     )
 
-    return True, written
+    return "OK", written
 
 
 # ============================================================
@@ -1761,6 +1874,14 @@ def report(
 
 def main() -> None:
 
+    t_total0 = time.perf_counter()
+
+    timing = {
+        "http": 0.0,
+        "parse": 0.0,
+        "db": 0.0,
+    }
+
     conn = connect()
 
     try:
@@ -1807,6 +1928,7 @@ def main() -> None:
         print()
 
         resolved = 0
+        skipped = 0
         unresolved = 0
         total_rows = 0
 
@@ -1824,16 +1946,21 @@ def main() -> None:
 
             try:
 
-                ok, written = import_security(
+                status, written = import_security(
                     conn,
                     security,
                     source_id,
+                    timing,
                 )
 
-                if ok:
+                if status == "OK":
 
                     resolved += 1
                     total_rows += written
+
+                elif status == "SKIP":
+
+                    skipped += 1
 
                 else:
 
@@ -1879,6 +2006,10 @@ def main() -> None:
         )
 
         print(
+            f"Skipped securities    : {skipped}"
+        )
+
+        print(
             f"Unresolved securities : {unresolved}"
         )
 
@@ -1919,6 +2050,19 @@ def main() -> None:
         report(
             conn,
             source_id,
+        )
+
+        total_elapsed = (
+            time.perf_counter() - t_total0
+        )
+
+        print()
+        print(
+            f"Total: {total_elapsed:.2f}s | "
+            f"HTTP: {timing['http']:.2f}s | "
+            f"Parse: {timing['parse']:.2f}s | "
+            f"DB: {timing['db']:.2f}s | "
+            f"Skipped: {skipped}"
         )
 
     finally:
