@@ -131,6 +131,7 @@ US_GAAP = {
     "capex": [
         "PaymentsToAcquirePropertyPlantAndEquipment",
         "PaymentsForAdditionsToPropertyPlantAndEquipment",
+        "PaymentsToAcquireOtherPropertyPlantAndEquipment",
         "PaymentsToAcquireProductiveAssets",
     ],
 

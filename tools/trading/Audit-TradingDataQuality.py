@@ -13,7 +13,6 @@ CORE_FIELDS = [
     "revenue",
     "net_income",
     "operating_cash_flow",
-    "free_cash_flow",
     "cash",
 ]
 
@@ -160,6 +159,9 @@ def get_fundamentals_stats(
             SUM(CASE WHEN operating_cash_flow IS NOT NULL THEN 1 ELSE 0 END)
                 AS operating_cash_flow_count,
 
+            SUM(CASE WHEN capex IS NOT NULL THEN 1 ELSE 0 END)
+                AS capex_count,
+
             SUM(CASE WHEN free_cash_flow IS NOT NULL THEN 1 ELSE 0 END)
                 AS free_cash_flow_count,
 
@@ -222,6 +224,19 @@ def classify(
     if missing_fields:
         reasons.append(
             "never populated: " + ", ".join(missing_fields)
+        )
+
+    ocf_count = stats["operating_cash_flow_count"] or 0
+    capex_count = stats["capex_count"] or 0
+    fcf_count = stats["free_cash_flow_count"] or 0
+
+    if (
+        ocf_count > 0
+        and capex_count > 0
+        and fcf_count == 0
+    ):
+        reasons.append(
+            "free_cash_flow missing although OCF and capex are populated"
         )
 
     if reasons:
