@@ -2,6 +2,8 @@
 
 Eigenständiger Trading Agent / Trading-Datenbestand.
 
+Version: v0.1.0 — siehe [CHANGELOG.md](CHANGELOG.md)
+
 ## Runtime
 
 Produktive Datenbank:
