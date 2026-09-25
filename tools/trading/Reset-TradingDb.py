@@ -86,6 +86,48 @@ ON security(active);
 
 
 -- ============================================================
+-- 3b. SOURCE SYMBOLS
+-- Mapping Security -> externe Kennung je Datenquelle
+-- (z.B. Yahoo-Ticker, SEC CIK).
+-- ============================================================
+
+CREATE TABLE source_symbols (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    security_id INTEGER NOT NULL,
+
+    source_id INTEGER NOT NULL,
+
+    symbol TEXT NOT NULL,
+
+    exchange TEXT,
+    currency TEXT,
+
+    verified_at TEXT NOT NULL
+        DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (source_id)
+        REFERENCES data_sources(id)
+        ON DELETE CASCADE,
+
+    UNIQUE (
+        security_id,
+        source_id
+    )
+);
+
+CREATE INDEX idx_source_symbols_symbol
+ON source_symbols(
+    source_id,
+    symbol
+);
+
+
+-- ============================================================
 -- 4. IMPORTS
 -- Importhistorie, z.B. Parqet
 -- ============================================================
