@@ -61,6 +61,7 @@ def _get_yahoo_source_id(
 def _load_price_series(
     connection: sqlite3.Connection,
     security_id: int,
+    as_of: Optional[str] = None,
 ) -> list[float]:
     """Returns closing prices (adjusted_close preferred, else close),
     oldest first. Restricted to the Yahoo Finance source when that
@@ -77,9 +78,10 @@ def _load_price_series(
             FROM market_data
             WHERE security_id = ?
               AND source_id = ?
+              AND (? IS NULL OR trade_date <= ?)
             ORDER BY trade_date ASC
             """,
-            (security_id, source_id),
+            (security_id, source_id, as_of, as_of),
         ).fetchall()
 
     else:
@@ -89,9 +91,10 @@ def _load_price_series(
             SELECT close, adjusted_close
             FROM market_data
             WHERE security_id = ?
+              AND (? IS NULL OR trade_date <= ?)
             ORDER BY trade_date ASC
             """,
-            (security_id,),
+            (security_id, as_of, as_of),
         ).fetchall()
 
     closes = []
@@ -111,6 +114,7 @@ def _load_price_series(
 def _load_last_trade_date(
     connection: sqlite3.Connection,
     security_id: int,
+    as_of: Optional[str] = None,
 ) -> Optional[str]:
 
     source_id = _get_yahoo_source_id(connection)
@@ -123,8 +127,9 @@ def _load_last_trade_date(
             FROM market_data
             WHERE security_id = ?
               AND source_id = ?
+              AND (? IS NULL OR trade_date <= ?)
             """,
-            (security_id, source_id),
+            (security_id, source_id, as_of, as_of),
         ).fetchone()
 
     else:
@@ -134,8 +139,9 @@ def _load_last_trade_date(
             SELECT MAX(trade_date)
             FROM market_data
             WHERE security_id = ?
+              AND (? IS NULL OR trade_date <= ?)
             """,
-            (security_id,),
+            (security_id, as_of, as_of),
         ).fetchone()
 
     return row[0] if row else None
@@ -367,9 +373,10 @@ def momentum_score(
 # PUBLIC API
 # ============================================================
 
-def analyze_security(
+def _analyze_security(
     connection: sqlite3.Connection,
     security_id: int,
+    as_of: Optional[str] = None,
 ) -> dict:
     """Read-only technical analysis snapshot for one security.
 
@@ -389,14 +396,14 @@ def analyze_security(
 
     _, name, symbol = security
 
-    closes = _load_price_series(connection, security_id)
+    closes = _load_price_series(connection, security_id, as_of)
     data_points = len(closes)
 
     result = {
         "security_id": security_id,
         "name": name,
         "symbol": symbol,
-        "as_of": _load_last_trade_date(connection, security_id),
+        "as_of": _load_last_trade_date(connection, security_id, as_of),
         "current_price": closes[-1] if closes else None,
         "data_points": data_points,
         "quality": quality_status(data_points),
@@ -457,6 +464,29 @@ def analyze_security(
     result["score_components"] = components
 
     return result
+
+
+def analyze_security(
+    connection: sqlite3.Connection,
+    security_id: int,
+) -> dict:
+    """Read-only technical analysis snapshot for one security.
+
+    This established public API intentionally continues to use all available
+    price data.  Use :func:`analyze_security_as_of` for a historical cut-off.
+    """
+
+    return _analyze_security(connection, security_id)
+
+
+def analyze_security_as_of(
+    connection: sqlite3.Connection,
+    security_id: int,
+    as_of: str,
+) -> dict:
+    """Read-only technical snapshot using price rows up to ``as_of`` only."""
+
+    return _analyze_security(connection, security_id, as_of)
 
 
 def rank_watchlist(

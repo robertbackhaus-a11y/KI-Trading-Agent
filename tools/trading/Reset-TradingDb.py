@@ -717,6 +717,7 @@ SELECT
     s.name,
     s.exchange,
     s.currency AS security_currency,
+    p.currency AS cost_basis_currency,
 
     p.shares,
     p.avg_cost,
@@ -777,19 +778,25 @@ SELECT
     p.shares,
     p.avg_cost,
     p.remaining_cost_basis,
+    p.currency AS cost_basis_currency,
     p.realized_gain,
 
-    ms.price,
+    ms.price AS market_price_native,
+    ms.currency AS market_price_currency,
     ms.previous_close,
     ms.market_cap,
     ms.as_of_at,
 
-    CASE
-        WHEN p.shares > 0
-         AND ms.price IS NOT NULL
-        THEN p.shares * ms.price
-        ELSE NULL
-    END AS market_value
+    CASE WHEN p.shares > 0 AND ms.price IS NOT NULL
+              AND upper(p.currency) = upper(ms.currency)
+         THEN p.shares * ms.price ELSE NULL END AS market_value,
+    CASE WHEN p.shares > 0 AND ms.price IS NOT NULL
+              AND upper(p.currency) = upper(ms.currency)
+         THEN p.currency ELSE NULL END AS market_value_currency,
+    CASE WHEN ms.price IS NULL THEN 'MARKET_PRICE_UNAVAILABLE'
+         WHEN p.currency IS NULL OR ms.currency IS NULL THEN 'CURRENCY_UNAVAILABLE'
+         WHEN upper(p.currency) <> upper(ms.currency) THEN 'CURRENCY_MISMATCH'
+         ELSE 'AVAILABLE' END AS valuation_status
 
 FROM positions p
 
@@ -803,11 +810,240 @@ WHERE p.shares > 0;
 
 
 -- ============================================================
+-- 18. STRATEGY ASSIGNMENTS
+-- Initial model: one time-aware strategy assignment per security interval.
+-- Future versions may attach assignments to position lots when simultaneous
+-- strategies for one security must be represented.
+-- ============================================================
+
+CREATE TABLE strategy_assignment (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    security_id     INTEGER NOT NULL,
+    strategy_type   TEXT NOT NULL
+        CHECK (strategy_type IN ('long_term', 'swing', 'tactical', 'unknown')),
+    effective_from  TEXT NOT NULL,
+    effective_to    TEXT,
+    source          TEXT,
+    rationale       TEXT,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CHECK (effective_to IS NULL OR effective_to >= effective_from),
+
+    FOREIGN KEY (security_id)
+        REFERENCES security(id)
+        ON DELETE CASCADE,
+
+    UNIQUE (security_id, effective_from)
+);
+
+CREATE INDEX idx_strategy_assignment_security_dates
+ON strategy_assignment(security_id, effective_from, effective_to);
+
+CREATE TRIGGER trg_strategy_assignment_no_overlap_insert
+BEFORE INSERT ON strategy_assignment
+WHEN EXISTS (
+    SELECT 1
+    FROM strategy_assignment existing
+    WHERE existing.security_id = NEW.security_id
+      AND COALESCE(existing.effective_to, '9999-12-31') >= NEW.effective_from
+      AND COALESCE(NEW.effective_to, '9999-12-31') >= existing.effective_from
+)
+BEGIN
+    SELECT RAISE(ABORT, 'strategy assignment overlaps an existing interval');
+END;
+
+CREATE TRIGGER trg_strategy_assignment_no_overlap_update
+BEFORE UPDATE OF security_id, effective_from, effective_to ON strategy_assignment
+WHEN EXISTS (
+    SELECT 1
+    FROM strategy_assignment existing
+    WHERE existing.security_id = NEW.security_id
+      AND existing.id <> OLD.id
+      AND COALESCE(existing.effective_to, '9999-12-31') >= NEW.effective_from
+      AND COALESCE(NEW.effective_to, '9999-12-31') >= existing.effective_from
+)
+BEGIN
+    SELECT RAISE(ABORT, 'strategy assignment overlaps an existing interval');
+END;
+
+-- ============================================================
+-- 18a. CANDIDATE PROMOTION AUDIT
+-- Promotion evaluation is read-only.  This relation records only explicit
+-- approvals; it is not a replacement for generic watchlist membership.
+-- ============================================================
+
+CREATE TABLE candidate_promotion (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    security_id     INTEGER NOT NULL,
+    evaluated_at    TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('watching', 'ready', 'promoted', 'rejected', 'deferred')),
+    source          TEXT NOT NULL CHECK (length(trim(source)) > 0),
+    rationale       TEXT,
+    details_json    TEXT,
+    approved_at     TEXT,
+    approved_by     TEXT,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (security_id) REFERENCES security(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_candidate_promotion_security_evaluated
+ON candidate_promotion(security_id, evaluated_at DESC, id DESC);
+
+
+-- ============================================================
+-- 18b. FX RATES
+-- ECB convention: 1 EUR = N quote currency units.
+-- ============================================================
+
+CREATE TABLE fx_rates (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    rate_date       TEXT NOT NULL,
+    base_currency   TEXT NOT NULL CHECK (base_currency GLOB '[A-Z][A-Z][A-Z]'),
+    quote_currency  TEXT NOT NULL CHECK (quote_currency GLOB '[A-Z][A-Z][A-Z]'),
+    rate            REAL NOT NULL CHECK (rate > 0),
+    source          TEXT NOT NULL CHECK (length(trim(source)) > 0),
+    fetched_at      TEXT NOT NULL,
+    CHECK (base_currency = 'EUR'),
+    CHECK (base_currency <> quote_currency),
+    UNIQUE (rate_date, base_currency, quote_currency, source)
+);
+
+CREATE INDEX idx_fx_rates_lookup
+ON fx_rates(base_currency, quote_currency, source, rate_date DESC);
+
+
+-- ============================================================
+-- 18c. SWING CAMPAIGN LIFECYCLE
+-- Explicit campaign identity and manually recorded lifecycle events.
+-- Events never imply automated trading execution.
+-- ============================================================
+
+CREATE TABLE swing_campaign (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    security_id             INTEGER NOT NULL,
+    strategy_assignment_id  INTEGER NOT NULL,
+    opened_at               TEXT NOT NULL,
+    original_quantity       REAL NOT NULL CHECK (original_quantity > 0),
+    reference_avg_cost      REAL CHECK (reference_avg_cost IS NULL OR reference_avg_cost > 0),
+    reference_currency      TEXT CHECK (reference_currency IS NULL OR reference_currency GLOB '[A-Z][A-Z][A-Z]'),
+    status                  TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+    closed_at               TEXT,
+    source                  TEXT NOT NULL CHECK (length(trim(source)) > 0),
+    rationale               TEXT,
+    created_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK ((reference_avg_cost IS NULL) = (reference_currency IS NULL)),
+    CHECK ((status = 'open' AND closed_at IS NULL) OR (status = 'closed' AND closed_at IS NOT NULL)),
+    CHECK (closed_at IS NULL OR closed_at >= opened_at),
+    FOREIGN KEY (security_id) REFERENCES security(id) ON DELETE CASCADE,
+    FOREIGN KEY (strategy_assignment_id) REFERENCES strategy_assignment(id) ON DELETE RESTRICT
+);
+
+CREATE UNIQUE INDEX idx_swing_campaign_one_open_per_security
+ON swing_campaign(security_id) WHERE status = 'open';
+
+CREATE INDEX idx_swing_campaign_security_status
+ON swing_campaign(security_id, status, opened_at DESC);
+
+CREATE TRIGGER trg_swing_campaign_assignment_insert
+BEFORE INSERT ON swing_campaign
+WHEN NOT EXISTS (
+    SELECT 1 FROM strategy_assignment sa
+    WHERE sa.id = NEW.strategy_assignment_id
+      AND sa.security_id = NEW.security_id
+      AND sa.strategy_type = 'swing'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'campaign requires a matching swing strategy assignment');
+END;
+
+CREATE TRIGGER trg_swing_campaign_assignment_update
+BEFORE UPDATE OF security_id, strategy_assignment_id ON swing_campaign
+WHEN NOT EXISTS (
+    SELECT 1 FROM strategy_assignment sa
+    WHERE sa.id = NEW.strategy_assignment_id
+      AND sa.security_id = NEW.security_id
+      AND sa.strategy_type = 'swing'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'campaign requires a matching swing strategy assignment');
+END;
+
+CREATE TABLE swing_campaign_event (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id         INTEGER NOT NULL,
+    event_type          TEXT NOT NULL CHECK (event_type IN (
+        'baseline', 'add', 'tp1_signal', 'tp1_execution', 'tp2_signal',
+        'tp2_execution', 'manual_reduction', 'stop_execution', 'close'
+    )),
+    event_at            TEXT NOT NULL,
+    quantity            REAL CHECK (quantity IS NULL OR quantity > 0),
+    price               REAL CHECK (price IS NULL OR price > 0),
+    currency            TEXT CHECK (currency IS NULL OR currency GLOB '[A-Z][A-Z][A-Z]'),
+    transaction_id      INTEGER,
+    source              TEXT NOT NULL CHECK (length(trim(source)) > 0),
+    external_event_id   TEXT,
+    notes               TEXT,
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (price IS NULL OR currency IS NOT NULL),
+    FOREIGN KEY (campaign_id) REFERENCES swing_campaign(id) ON DELETE RESTRICT,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE RESTRICT
+);
+
+CREATE UNIQUE INDEX idx_swing_campaign_event_external_id
+ON swing_campaign_event(external_event_id) WHERE external_event_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_swing_campaign_event_transaction
+ON swing_campaign_event(transaction_id) WHERE transaction_id IS NOT NULL;
+
+CREATE INDEX idx_swing_campaign_event_campaign_date
+ON swing_campaign_event(campaign_id, event_at, id);
+
+CREATE TRIGGER trg_swing_campaign_event_transaction_insert
+BEFORE INSERT ON swing_campaign_event
+WHEN NEW.transaction_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM swing_campaign campaign
+    JOIN transactions transaction_row ON transaction_row.id = NEW.transaction_id
+    WHERE campaign.id = NEW.campaign_id
+      AND campaign.security_id = transaction_row.security_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'linked transaction must belong to the campaign security');
+END;
+
+CREATE TRIGGER trg_swing_campaign_event_transaction_update
+BEFORE UPDATE OF campaign_id, transaction_id ON swing_campaign_event
+WHEN NEW.transaction_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM swing_campaign campaign
+    JOIN transactions transaction_row ON transaction_row.id = NEW.transaction_id
+    WHERE campaign.id = NEW.campaign_id
+      AND campaign.security_id = transaction_row.security_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'linked transaction must belong to the campaign security');
+END;
+
+
+-- ============================================================
 -- INITIAL METADATA
 -- ============================================================
 
 INSERT INTO metadata(key, value)
 VALUES ('schema_version', '2.0');
+
+INSERT INTO metadata(key, value)
+VALUES ('strategy_assignment_schema_version', '1');
+
+INSERT INTO metadata(key, value)
+VALUES ('candidate_promotion_schema_version', '1');
+
+INSERT INTO metadata(key, value)
+VALUES ('fx_rates_schema_version', '1');
+
+INSERT INTO metadata(key, value)
+VALUES ('swing_campaign_schema_version', '1');
 
 INSERT INTO metadata(key, value)
 VALUES ('database_type', 'swing_trading');
