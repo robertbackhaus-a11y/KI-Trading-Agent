@@ -13,6 +13,7 @@ from math import floor
 from typing import Optional
 
 from analysis_contracts import AvailabilityStatus, DataQuality
+from strategy_config import SwingStrategyConfig
 
 
 FEATURE_VERSION_KEY = "swing_campaign_schema_version"
@@ -122,6 +123,7 @@ def derive_open_lifecycle(
     *,
     current_quantity: Optional[float],
     evaluation_as_of: Optional[str] = None,
+    config: Optional[SwingStrategyConfig] = None,
 ) -> LifecycleContext:
     """Derive the currently open campaign without interpreting transactions.
 
@@ -176,8 +178,12 @@ def derive_open_lifecycle(
     quantities = {event_type: 0.0 for event_type in EVENT_TYPES}
     event_types = set()
     linked_reductions = 0.0
+    resolved_config = config or SwingStrategyConfig()
     original_quantity = float(campaign["original_quantity"])
-    tp2_cumulative_target = floor(original_quantity * 0.75)
+    tp2_cumulative_target = floor(
+        original_quantity
+        * (resolved_config.tp1_sell_fraction + resolved_config.tp2_sell_fraction)
+    )
     tp2_target_completed = tp2_cumulative_target == 0
     post_tp2_add_detected = False
     for event in event_rows:

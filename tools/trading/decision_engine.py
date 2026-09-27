@@ -232,7 +232,9 @@ def _with_hard_stop_blockers(
     )
 
 
-def _runner_eligibility_gaps(snapshot: AnalysisSnapshot) -> list[str]:
+def _runner_eligibility_gaps(
+    snapshot: AnalysisSnapshot, config: StrategyConfig
+) -> list[str]:
     """Return non-technical blockers for an explicitly executed runner."""
 
     position = snapshot.position
@@ -253,7 +255,10 @@ def _runner_eligibility_gaps(snapshot: AnalysisSnapshot) -> list[str]:
     ):
         gaps.append("campaign original quantity is unavailable")
     else:
-        cumulative_target = floor(float(position.swing_campaign_original_quantity) * 0.75)
+        cumulative_target = floor(
+            float(position.swing_campaign_original_quantity)
+            * (config.swing.tp1_sell_fraction + config.swing.tp2_sell_fraction)
+        )
         executed_quantity = (
             float(position.tp1_executed_quantity)
             + float(position.tp2_executed_quantity)
@@ -284,11 +289,13 @@ def _runner_hold(
     )
 
 
-def _runner_decision(snapshot: AnalysisSnapshot) -> DecisionResult:
+def _runner_decision(
+    snapshot: AnalysisSnapshot, config: StrategyConfig
+) -> DecisionResult:
     """Evaluate a fully explicit Swing runner without persistence effects."""
 
     position = snapshot.position
-    gaps = _runner_eligibility_gaps(snapshot)
+    gaps = _runner_eligibility_gaps(snapshot, config)
     if gaps:
         # Keep the explicit codes stable for incomplete TP2 execution and the
         # deliberately undefined post-TP2 add case.
@@ -477,7 +484,7 @@ def decide(
         position.strategy is StrategyType.SWING
         and position.tp2_lifecycle_status == "executed"
     ):
-        return _runner_decision(snapshot)
+        return _runner_decision(snapshot, config)
 
     technical_status = snapshot.technical.quality.status
     if technical_status in {
@@ -583,7 +590,10 @@ def decide(
     current_valuation = float(position.current_price_cost_currency)
     # TP2 takes precedence: a single cumulative catch-up recommendation.
     if current_valuation >= tp2 and position.tp2_lifecycle_status != "executed":
-        desired_remaining = original_quantity - floor(original_quantity * 0.75)
+        desired_remaining = original_quantity - floor(
+            original_quantity
+            * (config.swing.tp1_sell_fraction + config.swing.tp2_sell_fraction)
+        )
         return _with_hard_stop_blockers(_trim_result(
             snapshot=snapshot,
             tp1=tp1,
@@ -602,7 +612,9 @@ def decide(
         and position.tp1_lifecycle_status != "executed"
         and position.tp2_lifecycle_status != "executed"
     ):
-        desired_remaining = original_quantity - floor(original_quantity * 0.25)
+        desired_remaining = original_quantity - floor(
+            original_quantity * config.swing.tp1_sell_fraction
+        )
         return _with_hard_stop_blockers(_trim_result(
             snapshot=snapshot,
             tp1=tp1,
