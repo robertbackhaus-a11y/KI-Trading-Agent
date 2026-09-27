@@ -38,6 +38,8 @@ def runner_snapshot(
     campaign_status: str = "open",
     post_tp2_add: bool = False,
     strategy: StrategyType = StrategyType.SWING,
+    opened_at: str | None = None,
+    evaluation_as_of: str | None = None,
 ):
     snapshot = campaign_snapshot(
         price=price,
@@ -47,6 +49,8 @@ def runner_snapshot(
         technical=technical,
         reconciliation=reconciliation,
         strategy=strategy,
+        opened_at=opened_at,
+        evaluation_as_of=evaluation_as_of,
     )
     technical_context = replace(
         snapshot.technical,

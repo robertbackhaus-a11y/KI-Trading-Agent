@@ -475,6 +475,7 @@ def _build_position(
             strategy_quality=strategy_quality,
             swing_campaign_id=lifecycle.campaign_id if lifecycle else None,
             swing_campaign_status=lifecycle.status if lifecycle else None,
+            swing_campaign_opened_at=lifecycle.opened_at if lifecycle else None,
             swing_campaign_original_quantity=(lifecycle.original_quantity if lifecycle else None),
             swing_campaign_reference_avg_cost=(lifecycle.reference_avg_cost if lifecycle else None),
             swing_campaign_reference_currency=(lifecycle.reference_currency if lifecycle else None),
@@ -555,6 +556,7 @@ def _build_position(
         strategy_quality=strategy_quality,
         swing_campaign_id=lifecycle.campaign_id if lifecycle else None,
         swing_campaign_status=lifecycle.status if lifecycle else None,
+        swing_campaign_opened_at=lifecycle.opened_at if lifecycle else None,
         swing_campaign_original_quantity=(
             lifecycle.original_quantity if lifecycle else None
         ),

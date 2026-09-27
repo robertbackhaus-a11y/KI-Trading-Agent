@@ -37,6 +37,8 @@ def campaign_snapshot(
     valuation_currency: str = "USD",
     fx_status: AvailabilityStatus = AvailabilityStatus.NOT_APPLICABLE,
     strategy: StrategyType = StrategyType.SWING,
+    opened_at: str | None = None,
+    evaluation_as_of: str | None = None,
 ):
     current = original if current is None else current
     snapshot = make_snapshot(
@@ -51,6 +53,7 @@ def campaign_snapshot(
         shares=current,
         swing_campaign_id=1,
         swing_campaign_status="open",
+        swing_campaign_opened_at=opened_at,
         swing_campaign_original_quantity=original,
         swing_campaign_reference_avg_cost=100.0,
         swing_campaign_reference_currency=reference_currency,
@@ -62,7 +65,7 @@ def campaign_snapshot(
         valuation_currency=valuation_currency,
         fx_quality=DataQuality(fx_status),
     )
-    return replace(snapshot, position=position)
+    return replace(snapshot, position=position, evaluation_as_of=evaluation_as_of)
 
 
 class SwingTpActionTests(unittest.TestCase):

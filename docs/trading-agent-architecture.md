@@ -201,11 +201,11 @@ See section 11 below and [openwebui-trading-tool.md](openwebui-trading-tool.md).
 | | `minimum_cash_reserve` | 10,000.0 EUR | `entry_sizing.py`, `add_sizing.py`, `trading_orchestrator.py` (`CASH_RESERVE_LIMIT` warning) |
 | | `max_add_count` | 1 | `add_sizing.py` |
 | | `whole_share_policy` | `"floor"` | `entry_sizing.py`, `add_sizing.py` |
-| `SwingStrategyConfig` | `horizon_months_min` / `horizon_months_max` | 3 / 6 | **defined but not consumed by any module** (informational only) |
+| `SwingStrategyConfig` | `horizon_months_min` / `horizon_months_max` | 3 / 6 | `decision_engine._runner_decision` (post-TP2 runner horizon gate, see §3.6) |
 | | `tp1_gain_pct` / `tp2_gain_pct` | 0.20 / 0.25 | `decision_engine.py` (TP price levels) |
-| | `tp1_sell_fraction` / `tp2_sell_fraction` | 0.25 / 0.50 | **defined but not read** — see §16 contradiction below |
+| | `tp1_sell_fraction` / `tp2_sell_fraction` | 0.25 / 0.50 | `decision_engine.py`, `swing_lifecycle.py` (see §3.6) |
 | | `hard_stop_loss_pct` | 0.15 | `decision_engine.py` |
-| | `remainder_management` | `"momentum_guided"` | defined but not consumed as a rule (informational) |
+| | `remainder_management` | `"momentum_guided"` | `decision_engine._runner_decision` — the only implemented policy; runs the existing SMA50/SMA200 trend logic below `horizon_months_max` |
 | | `entry_rule`/`add_rule`/`stop_rule`/`position_sizing_rule` | all `None` | not yet defined |
 | `RiskTargetConfig` | `risk_target_min` / `risk_target_max` | 0.60 / 0.70 | **not consumed anywhere** — docstring: "Phase 2 intentionally assigns no mathematical meaning" |
 | `DataQualityConfig` | `market_data_max_age_days` | 5 | `analysis_engine.py` (technical staleness gate) |
@@ -214,14 +214,19 @@ See section 11 below and [openwebui-trading-tool.md](openwebui-trading-tool.md).
 | | `preferred_fx_source` | `"ECB"` | `fx_resolver.py` |
 | `CapitalStateConfig` | `freshness_max_age_days` | `None` (opt-in) | `capital_state.py`, exposed via `Manage-TradingCapitalState.py show --freshness-max-age-days` |
 
-### 3.6 TP1/TP2/stop/runner quantity logic (`decision_engine.py`, independent of §3.5's sell-fraction fields — see §16)
+### 3.6 TP1/TP2/stop/runner quantity logic (`decision_engine.py`, see §9)
 
-- TP1 trim: sells `floor(original_quantity * 0.25)` → `ActionQuantityBasis.TP1_25_PERCENT_ORIGINAL`
-- TP2 trim: sells down to `floor(original_quantity * 0.75)` cumulative from the original → `ActionQuantityBasis.TP2_75_PERCENT_CUMULATIVE_ORIGINAL`
+- TP1 trim: sells `floor(original_quantity * config.swing.tp1_sell_fraction)` (0.25) → `ActionQuantityBasis.TP1_25_PERCENT_ORIGINAL`
+- TP2 trim: sells down to `floor(original_quantity * (tp1_sell_fraction + tp2_sell_fraction))` (0.75) cumulative from the original → `ActionQuantityBasis.TP2_75_PERCENT_CUMULATIVE_ORIGINAL`
 - Hard stop: `stop_price = reference_cost * (1 - hard_stop_loss_pct)` (0.15) → full exit, `ActionQuantityBasis.STOP_FULL_EXIT`
-- Runner (post-TP2 remainder): `ActionQuantityBasis.RUNNER_FULL_REMAINDER`, held/exited by momentum (SMA50/SMA200), not a fixed date
+- Runner (post-TP2 remainder), `decision_engine._runner_decision`, `ActionQuantityBasis.RUNNER_FULL_REMAINDER`:
+  - Campaign age in whole calendar months = `swing_campaign.opened_at` (via `PositionContext.swing_campaign_opened_at`) vs. the snapshot's `evaluation_as_of`. Unknown/unparseable age (e.g. `opened_at` missing) always falls back to the trend-only behavior below.
+  - Below `horizon_months_max` (`horizon_months_min` is **not** a minimum holding requirement): `remainder_management == "momentum_guided"` — held/exited purely by momentum (SMA50/SMA200), unconditionally, regardless of whether the campaign is below or already past `horizon_months_min`.
+  - At/after `horizon_months_max` (6): closed unconditionally — same SELL/full-remainder result as the SMA200 exit, with reason `SWING_MAX_HORIZON_REACHED` — regardless of trend or technical-data availability.
+  - The hard stop (evaluated only before TP2 execution) and the TP1/TP2/ADD rules are unaffected by campaign age; the horizon only ever gates an already-open runner.
+  - Worked example (`opened_at = 2026-01-01`, default `horizon_months_min/max = 3/6`): at `evaluation_as_of = 2026-03-15` (age 2 months, `< min`) and at `2026-06-15` (age 5 months, `min <= age < max`) the runner behaves identically — SMA50/SMA200 trend only. At `2026-07-01` (age 6 months, `>= max`) it closes regardless of trend.
 - ADD: `base = floor(original_quantity * max_add_pct_of_original)` (0.25) → `ActionQuantityBasis.ADD_25_PERCENT_ORIGINAL`, capped by `max_add_count = 1`
-- `swing_lifecycle.py` independently computes `tp2_cumulative_target = floor(original_quantity * 0.75)` (same 75% literal) to detect `post_tp2_add_detected`
+- `swing_lifecycle.py` independently derives `tp2_cumulative_target = floor(original_quantity * (tp1_sell_fraction + tp2_sell_fraction))` (0.75, via an optional `config: Optional[SwingStrategyConfig] = None` parameter) to detect `post_tp2_add_detected`
 
 ### 3.7 Portfolio Context / guardrails (`analysis_engine.py`, `portfolio_context.py`)
 
@@ -353,7 +358,7 @@ Runtime helper modules dynamically loaded from `C:\KI-Stack\Tools\trading\`: `tr
 
 1. ~~**TP1/TP2 sell-fraction duplication**: `strategy_config.SwingStrategyConfig.tp1_sell_fraction` (0.25) and `tp2_sell_fraction` (0.50) are defined but **never read** by `decision_engine.py`. Instead, `decision_engine.py` and `swing_lifecycle.py` each independently hardcode the equivalent literals (`floor(original_quantity * 0.25)` for TP1, `floor(original_quantity * 0.75)` cumulative for TP2). The values currently agree (0.25 and 0.25+0.50=0.75), but changing the config fields today would silently do nothing — a future maintainer could reasonably expect them to be load-bearing.~~ — **resolved 2026-09-27**: `decision_engine.py` (`_runner_eligibility_gaps`, `decide`'s TP1/TP2 trim branches) and `swing_lifecycle.py` (`derive_open_lifecycle`) now derive every TP1/TP2 quantity threshold from `config.swing.tp1_sell_fraction`/`tp2_sell_fraction` (with `swing_lifecycle.py` taking an optional `config: Optional[SwingStrategyConfig] = None` parameter, defaulting to `SwingStrategyConfig()` for existing callers — no behavior change). No hardcoded `0.25`/`0.75` literals remain for TP quantity logic.
 2. **`RiskTargetConfig` (risk_target_min/max = 0.60/0.70) is defined but consumed nowhere** — its own docstring already says "Phase 2 intentionally assigns no mathematical meaning," so this is documented-as-intentional, not a bug, but worth knowing before building anything against it.
-3. **`SwingStrategyConfig.horizon_months_min/max` (3/6) and `remainder_management` ("momentum_guided") are informational only** — no module enforces a time-based exit or a concrete "momentum-guided" rule; the runner is currently held/exited purely by the SMA50/SMA200 checks in `decision_engine._runner_decision`.
+3. ~~**`SwingStrategyConfig.horizon_months_min/max` (3/6) and `remainder_management` ("momentum_guided") are informational only** — no module enforces a time-based exit or a concrete "momentum-guided" rule; the runner is currently held/exited purely by the SMA50/SMA200 checks in `decision_engine._runner_decision`.~~ — **resolved 2026-09-27**: `decision_engine._runner_decision` now reads campaign age from the new `PositionContext.swing_campaign_opened_at` field (sourced from `swing_lifecycle.LifecycleContext.opened_at`, threaded through `analysis_engine.py`) against `config.swing.horizon_months_min/max`. Below `horizon_months_max`, `remainder_management == "momentum_guided"` runs the existing SMA50/SMA200 trend logic unchanged (`horizon_months_min` is deliberately not a minimum holding requirement — a trend break still exits at any age). At/after `horizon_months_max`, the runner closes unconditionally via the existing SELL/full-remainder path with reason `SWING_MAX_HORIZON_REACHED`, regardless of trend or technical-data availability. The hard stop, TP1/TP2, and ADD rules are untouched and keep their existing priority — the horizon only ever gates the already-open runner (post-TP2 remainder). See §3.6 above for the worked before/after examples.
 4. **`estimates`, `ratings`, `price_targets`, `events`, `news` tables are read (as row counts) but never populated** by any script in this repository — `ValuationAnalysis`/`EventRiskAnalysis` quality will always reflect zero rows in the current setup.
 5. **`decisions` and `analysis_history` tables are pure dead schema** — created by both `Initialize-TradingDatabase.py` and `Reset-TradingDb.py`, never read or written anywhere else.
 6. **CLI flag-name inconsistency**: `Manage-*` scripts use `--db`; `Migrate-*` scripts use `--db-path`. Both default to the same production path.

@@ -130,6 +130,7 @@ class PositionContext:
     # These fields are read-only lifecycle context, never trading instructions.
     swing_campaign_id: Optional[int] = None
     swing_campaign_status: Optional[str] = None
+    swing_campaign_opened_at: Optional[str] = None
     swing_campaign_original_quantity: Optional[float] = None
     swing_campaign_reference_avg_cost: Optional[float] = None
     swing_campaign_reference_currency: Optional[str] = None

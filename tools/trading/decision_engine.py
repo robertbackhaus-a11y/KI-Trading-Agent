@@ -7,6 +7,7 @@ network dependency and cannot create lifecycle events or execute a trade.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 from math import floor
 from typing import Optional
 
@@ -270,6 +271,30 @@ def _runner_eligibility_gaps(
     return gaps
 
 
+def _campaign_age_months(
+    opened_at: Optional[str], evaluation_as_of: Optional[str]
+) -> Optional[int]:
+    """Whole calendar months elapsed since ``opened_at``.
+
+    Returns ``None`` when either date is missing, unparseable, or in the
+    future -- callers must then fall back to the existing, time-independent
+    runner logic rather than guess a horizon."""
+
+    if not opened_at or not evaluation_as_of:
+        return None
+    try:
+        opened = date.fromisoformat(opened_at[:10])
+        current = date.fromisoformat(evaluation_as_of[:10])
+    except ValueError:
+        return None
+    if current < opened:
+        return None
+    months = (current.year - opened.year) * 12 + (current.month - opened.month)
+    if current.day < opened.day:
+        months -= 1
+    return max(0, months)
+
+
 def _runner_hold(
     snapshot: AnalysisSnapshot,
     *,
@@ -300,6 +325,29 @@ def _runner_decision(
         # Keep the explicit codes stable for incomplete TP2 execution and the
         # deliberately undefined post-TP2 add case.
         return _runner_hold(snapshot, blocker=gaps[0], detail="; ".join(gaps))
+
+    # Swing-horizon max: closes a still-open runner once the campaign has
+    # run for horizon_months_max, regardless of trend or technical-data
+    # availability -- a closing decision needs the campaign age, not a
+    # fresh price. horizon_months_min is intentionally not a minimum
+    # holding requirement; below max, the existing trend/SMA logic below
+    # is unconditionally used (remainder_management="momentum_guided" is
+    # the only implemented policy).
+    campaign_age_months = _campaign_age_months(
+        position.swing_campaign_opened_at, snapshot.evaluation_as_of
+    )
+    if (
+        campaign_age_months is not None
+        and campaign_age_months >= config.swing.horizon_months_max
+    ):
+        return DecisionResult(
+            action=Action.SELL,
+            confidence=_confidence(snapshot),
+            action_quantity=float(position.shares),
+            action_quantity_basis=ActionQuantityBasis.RUNNER_FULL_REMAINDER,
+            target_remaining_quantity=0.0,
+            reasons=("EXISTING_POSITION_DEFAULT_HOLD", "SWING_MAX_HORIZON_REACHED"),
+        )
 
     technical = snapshot.technical
     if technical.quality.status is not AvailabilityStatus.AVAILABLE:
