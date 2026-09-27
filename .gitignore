@@ -6,3 +6,5 @@
 __pycache__/
 data/
 fundamentals-audit/
+
+tests/trading/
