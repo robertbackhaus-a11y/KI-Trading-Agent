@@ -302,7 +302,7 @@ Runtime helper modules dynamically loaded from `C:\KI-Stack\Tools\trading\`: `tr
 | Production OpenWebUI DB | `C:\KI-Stack\OpenWebUI\data\webui.db` |
 | SEC fundamentals cache | `C:\KI-Stack\data\trading\sec-cache` |
 | Fundamentals research prompts/audit | `C:\KI-Stack\data\trading\fundamentals-audit\` (prompts in its `prompts\` subfolder) |
-| Dev repository (this repo) | `C:\Tading-Agent-Dev` |
+| Dev repository (this repo) | `C:\Trading-Agent-Dev` |
 
 ---
 
