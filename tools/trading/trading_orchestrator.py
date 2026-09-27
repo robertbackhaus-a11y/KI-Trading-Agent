@@ -151,9 +151,13 @@ def _global_readiness_issues(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     if missing:
         issues.append(_issue("GLOBAL", "REQUIRED_SCHEMA_UNAVAILABLE", "GLOBAL_BLOCKING", details=missing))
         return issues
-    integrity = conn.execute("PRAGMA integrity_check").fetchone()
-    if integrity is None or integrity[0] != "ok":
-        issues.append(_issue("GLOBAL", "DB_INTEGRITY_CHECK_FAILED", "GLOBAL_BLOCKING", details=(str(integrity[0]) if integrity else "no result",)))
+    # PRAGMA integrity_check is deliberately not run here: it is the most
+    # expensive single statement in a normal analysis run (a full page-level
+    # scan) and this function only checks cheap, read-only prerequisites.
+    # Integrity verification belongs to the explicit DB validation paths
+    # (Initialize-TradingDatabase.py / Reset-TradingDb.py's own
+    # validate_database(), and parqet_import.py's post-write check), not to
+    # every read-only orchestrator run.
     if not _table_exists(conn, "candidate_promotion"):
         issues.append(_issue("GLOBAL", "PROMOTION_APPROVAL_SCHEMA_UNAVAILABLE", "NON_BLOCKING_WARNING"))
     elif _table_exists(conn, "metadata"):
@@ -200,8 +204,26 @@ def run_trading_orchestrator(
     if any(issue["severity"] == "GLOBAL_BLOCKING" for issue in global_issues):
         presentation_summary, rendered_summary_de = _degenerate_presentation(evaluation_as_of, tuple(global_issues))
         return OrchestratorResult(evaluation_as_of, None, {}, {}, "GLOBAL_BLOCKING", tuple(global_issues), (), (), (), {key: 0 for key in ("SELL", "TRIM", "ADD", "BUY", "PROMOTE", "HOLD", "KEEP_WATCHING", "DATA_INSUFFICIENT")}, {"global_blocking": sum(issue["severity"] == "GLOBAL_BLOCKING" for issue in global_issues), "security_blocking": 0}, {}, (), (), presentation_summary, rendered_summary_de)
+
+    position_rows = conn.execute("SELECT security_id FROM positions WHERE shares>0 ORDER BY security_id").fetchall()
+    # Shared for the whole run: strategy_assignment/fx_rates/swing_campaign
+    # existence cannot change mid-run for one read-only connection, so this
+    # lets every AnalysisSnapshot/promotion-evaluation built below resolve it
+    # once instead of once per security.
+    table_exists_cache: dict[str, bool] = {}
     try:
-        portfolio = build_portfolio_context(as_of=as_of, connection=conn)
+        # Built once here and handed into build_portfolio_context() below so
+        # its own exposure computation reuses these instead of rebuilding an
+        # identical AnalysisSnapshot per open position.
+        position_snapshots = {
+            int(row["security_id"]): build_analysis_snapshot(
+                int(row["security_id"]), as_of=as_of, connection=conn, table_exists_cache=table_exists_cache
+            )
+            for row in position_rows
+        }
+        portfolio = build_portfolio_context(
+            as_of=as_of, connection=conn, position_snapshots=position_snapshots, table_exists_cache=table_exists_cache
+        )
     except Exception as exc:
         issues = (_issue("GLOBAL", "PORTFOLIO_CONTEXT_UNAVAILABLE", "GLOBAL_BLOCKING", details=(str(exc),)),)
         presentation_summary, rendered_summary_de = _degenerate_presentation(evaluation_as_of, issues)
@@ -220,11 +242,10 @@ def run_trading_orchestrator(
 
     existing: list[dict[str, Any]] = []
     security_issues: list[dict[str, Any]] = []
-    position_rows = conn.execute("SELECT security_id FROM positions WHERE shares>0 ORDER BY security_id").fetchall()
     market_dates: list[str] = []
     for row in position_rows:
         security_id = int(row["security_id"])
-        snapshot = build_analysis_snapshot(security_id, as_of=as_of, connection=conn)
+        snapshot = position_snapshots[security_id]
         per_security_portfolio = _portfolio_context_for_security(portfolio, security_id)
         decision = decide(snapshot, strategy_config, per_security_portfolio)
         priority = PRIORITY[decision.action]
@@ -244,13 +265,13 @@ def run_trading_orchestrator(
     entry_results: list[dict[str, Any]] = []
     entry_ids = _active_swing_zero_positions(conn, evaluation_as_of)
     for security_id in entry_ids:
-        snapshot = build_analysis_snapshot(security_id, as_of=as_of, connection=conn)
+        snapshot = build_analysis_snapshot(security_id, as_of=as_of, connection=conn, table_exists_cache=table_exists_cache)
         entry_portfolio = _portfolio_context_for_security(portfolio, security_id)
         decision = decide(snapshot, strategy_config, entry_portfolio)
         entry_results.append(_security_record(snapshot, decision, PRIORITY[decision.action]))
 
     promotion_results: list[dict[str, Any]] = []
-    for promotion in evaluate_swing_candidates(conn, as_of=as_of):
+    for promotion in evaluate_swing_candidates(conn, as_of=as_of, table_exists_cache=table_exists_cache):
         if promotion.security_id in entry_ids:
             continue
         primitive = promotion.primitive()

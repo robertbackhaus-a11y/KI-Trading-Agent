@@ -55,10 +55,21 @@ def _currency(value: Optional[str]) -> Optional[str]:
     return normalized if len(normalized) == 3 and normalized.isalpha() and normalized == normalized.upper() else None
 
 
-def _table_exists(conn: sqlite3.Connection) -> bool:
-    return conn.execute(
+def _table_exists(conn: sqlite3.Connection, *, cache: Optional[dict[str, bool]] = None) -> bool:
+    """fx_rates' existence never changes within one connection's lifetime (a
+    run). ``cache`` lets a caller that evaluates many securities in the same
+    run (see ``table_exists_cache`` on ``resolve_fx_rate``) resolve this once
+    and reuse it instead of re-querying ``sqlite_master`` per security. A
+    caller that passes nothing (the default) gets exactly the previous,
+    always-query behavior."""
+    if cache is not None and "fx_rates" in cache:
+        return cache["fx_rates"]
+    exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fx_rates'"
     ).fetchone() is not None
+    if cache is not None:
+        cache["fx_rates"] = exists
+    return exists
 
 
 def resolve_fx_rate(
@@ -67,8 +78,15 @@ def resolve_fx_rate(
     to_currency: Optional[str],
     as_of: str | date | datetime,
     config: Optional[FXConfig] = None,
+    *,
+    table_exists_cache: Optional[dict[str, bool]] = None,
 ) -> FXRateResolution:
-    """Resolve a direct ECB rate at or before ``as_of`` without look-ahead."""
+    """Resolve a direct ECB rate at or before ``as_of`` without look-ahead.
+
+    ``table_exists_cache``, when provided by a caller resolving many
+    securities within one run, is shared with :func:`_table_exists` so the
+    ``fx_rates`` schema-existence check happens once per run instead of once
+    per security. ``None`` (the default) is fully backward compatible."""
 
     fx_config = config or FXConfig()
     as_of_date = _as_date(as_of)
@@ -90,7 +108,7 @@ def resolve_fx_rate(
             rate_date=as_of_date,
             quality=DataQuality(AvailabilityStatus.NOT_APPLICABLE, ("same currency",), as_of_date),
         )
-    if not _table_exists(conn):
+    if not _table_exists(conn, cache=table_exists_cache):
         return FXRateResolution(
             from_currency=from_code,
             to_currency=to_code,

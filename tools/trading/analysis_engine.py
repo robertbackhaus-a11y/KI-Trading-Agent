@@ -297,20 +297,33 @@ def _count_for_security(
     return int(conn.execute(query, params).fetchone()[0])
 
 
-def _strategy_assignment_table_exists(conn: sqlite3.Connection) -> bool:
-    return conn.execute(
+def _strategy_assignment_table_exists(conn: sqlite3.Connection, *, cache: Optional[dict[str, bool]] = None) -> bool:
+    """strategy_assignment's existence never changes within one connection's
+    lifetime (a run). ``cache`` lets a caller that evaluates many securities
+    in the same run (see ``table_exists_cache`` on ``build_analysis_snapshot``)
+    resolve this once and reuse it instead of re-querying ``sqlite_master``
+    per security. A caller that passes nothing (the default) gets exactly the
+    previous, always-query behavior."""
+    if cache is not None and "strategy_assignment" in cache:
+        return cache["strategy_assignment"]
+    exists = conn.execute(
         """
         SELECT 1
         FROM sqlite_master
         WHERE type = 'table' AND name = 'strategy_assignment'
         """
     ).fetchone() is not None
+    if cache is not None:
+        cache["strategy_assignment"] = exists
+    return exists
 
 
 def _resolve_strategy_assignment(
     conn: sqlite3.Connection,
     security_id: int,
     effective_date: str,
+    *,
+    table_exists_cache: Optional[dict[str, bool]] = None,
 ) -> tuple[StrategyType, DataQuality]:
     """Resolve exactly one assignment active on ``effective_date``.
 
@@ -318,7 +331,7 @@ def _resolve_strategy_assignment(
     data. A missing table is distinct from a migrated table with no assignment.
     """
 
-    if not _strategy_assignment_table_exists(conn):
+    if not _strategy_assignment_table_exists(conn, cache=table_exists_cache):
         return (
             StrategyType.UNKNOWN,
             DataQuality(
@@ -380,6 +393,8 @@ def _build_position(
     strategy: StrategyType,
     strategy_quality: DataQuality,
     fx_config: FXConfig,
+    *,
+    table_exists_cache: Optional[dict[str, bool]] = None,
 ) -> PositionContext:
     if historical_state_unsupported:
         return PositionContext(
@@ -428,6 +443,7 @@ def _build_position(
                 fx_config.portfolio_base_currency,
                 market["as_of_at"],
                 fx_config,
+                table_exists_cache=table_exists_cache,
             )
             valuation_price = fx_resolution.convert(float(price))
             fx_quality = fx_resolution.quality
@@ -510,6 +526,7 @@ def _build_position(
             position_currency,
             snapshot["as_of_at"],
             fx_config,
+            table_exists_cache=table_exists_cache,
         )
         valuation_price = fx_resolution.convert(float(price))
         fx_quality = fx_resolution.quality
@@ -621,11 +638,19 @@ def build_analysis_snapshot(
     connection: Optional[sqlite3.Connection] = None,
     data_quality_config: Optional[DataQualityConfig] = None,
     fx_config: Optional[FXConfig] = None,
+    table_exists_cache: Optional[dict[str, bool]] = None,
 ) -> AnalysisSnapshot:
     """Build one read-only analysis snapshot.
 
     ``connection`` is optional dependency injection for tests.  When omitted,
     the production database is opened in SQLite read-only mode.
+
+    ``table_exists_cache`` lets a caller building many snapshots within one
+    run (e.g. the orchestrator's position loop, or a Swing-promotion batch)
+    resolve the ``strategy_assignment``/``fx_rates`` schema-existence checks
+    once and reuse them here instead of re-querying ``sqlite_master`` once per
+    security. ``None`` (the default) is fully backward compatible -- every
+    existing single-security caller is unaffected.
     """
 
     requested_as_of = _normalise_as_of(as_of)
@@ -652,7 +677,7 @@ def build_analysis_snapshot(
             ).fetchone() is not None
 
         strategy, strategy_quality = _resolve_strategy_assignment(
-            conn, security_id, evaluation_as_of
+            conn, security_id, evaluation_as_of, table_exists_cache=table_exists_cache
         )
 
         technical = _build_technical(
@@ -690,6 +715,7 @@ def build_analysis_snapshot(
             strategy,
             strategy_quality,
             resolved_fx_config,
+            table_exists_cache=table_exists_cache,
         )
         risk = RiskAnalysis(
             quality=technical.quality,
@@ -806,6 +832,8 @@ def build_portfolio_context(
     fx_config: Optional[FXConfig] = None,
     portfolio_target_config: Optional[PortfolioTargetConfig] = None,
     capital_state_config: Optional[CapitalStateConfig] = None,
+    position_snapshots: Optional[dict[int, AnalysisSnapshot]] = None,
+    table_exists_cache: Optional[dict[str, bool]] = None,
 ) -> PortfolioContext:
     """Assemble a read-only EUR portfolio context for future sizing rules.
 
@@ -813,6 +841,13 @@ def build_portfolio_context(
     :func:`build_analysis_snapshot` and its existing FX-safe valuation.  If a
     single open holding cannot be valued in EUR, totals and allocation weights
     are withheld rather than calculated from a partial denominator.
+
+    ``position_snapshots`` lets a caller that already built the same
+    ``as_of``/config snapshots for its own open positions (e.g. the
+    orchestrator's own position loop) hand them in by ``security_id`` so they
+    are reused as-is instead of being rebuilt here. Any position missing from
+    the mapping (or when ``position_snapshots`` is ``None``) is still built
+    the existing way -- this is a pure reuse path, not a behavior change.
     """
 
     requested_as_of = _normalise_as_of(as_of)
@@ -837,16 +872,20 @@ def build_portfolio_context(
         position_rows = conn.execute(
             "SELECT security_id FROM positions WHERE shares > 0 ORDER BY security_id"
         ).fetchall()
-        snapshots = tuple(
-            build_analysis_snapshot(
-                int(row["security_id"]),
+
+        def _snapshot_for(security_id: int) -> AnalysisSnapshot:
+            if position_snapshots is not None and security_id in position_snapshots:
+                return position_snapshots[security_id]
+            return build_analysis_snapshot(
+                security_id,
                 as_of=requested_as_of,
                 connection=conn,
                 data_quality_config=data_quality_config,
                 fx_config=resolved_fx_config,
+                table_exists_cache=table_exists_cache,
             )
-            for row in position_rows
-        )
+
+        snapshots = tuple(_snapshot_for(int(row["security_id"])) for row in position_rows)
         exposures = tuple(_portfolio_exposure(snapshot, base_currency) for snapshot in snapshots)
 
         valuation_complete = all(

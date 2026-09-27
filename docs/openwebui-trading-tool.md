@@ -165,3 +165,43 @@ kein DB-Schema-, kein Output-Format-Wechsel):
 Ergebnisvergleich (alte vs. neue Implementierung, identische Produktions-DB, read-only):
 `run_trading_orchestrator()` und `rank_watchlist()` liefern **byte-identisches JSON** —
 keine fachliche Änderung. Volle Regressionssuite (218/218) weiterhin grün.
+
+## Performance-Optimierung, Runde 2 (27.09.2026)
+
+Vier weitere, in Runde 1 gemessene Redundanzen behoben:
+
+1. **`PRAGMA integrity_check` entfernt aus `_global_readiness_issues()`** — lief bisher bei
+   *jedem* `run_trading_orchestrator()`-Lauf und war mit ~32 ms die teuerste Einzeloperation
+   im gesamten Lauf. Integritätsprüfung bleibt weiterhin über die dafür vorgesehenen
+   expliziten Pfade verfügbar (`Initialize-TradingDatabase.py`/`Reset-TradingDb.py`s eigene
+   `validate_database()`, `parqet_import.py`s Post-Write-Check) — keine Ersatzprüfung
+   im normalen Analyse-Lauf eingeführt, keine fachlich relevante Prüfung verloren.
+2. **`swing_promotion.evaluate_swing_promotion()`**: `_open_campaign()` wird nur noch
+   einmal je Security aufgerufen (Ergebnis lokal wiederverwendet, statt denselben
+   Query zweimal für Entscheidung und Token-Payload abzusetzen) — **92 → 46 Aufrufe**.
+3. **`analysis_engine.build_analysis_snapshot()`**: `build_portfolio_context()` erhält jetzt
+   die vom Orchestrator bereits gebauten Snapshots der offenen Positionen
+   (`position_snapshots`-Parameter) und baut sie nicht mehr selbst zusätzlich auf.
+4. **Lauf-invariante `sqlite_master`-Checks** (`strategy_assignment`, `fx_rates`,
+   `swing_campaign` vorhanden?): alle drei Module (`analysis_engine.py`, `fx_resolver.py`,
+   `swing_promotion.py`) nehmen jetzt einen optionalen `table_exists_cache`-Parameter
+   entgegen, den der Orchestrator einmal pro Lauf anlegt und durchreicht — **kein globaler,
+   dauerhaft stale Cache**, nur Wiederverwendung innerhalb desselben Aufrufs; jeder
+   Aufrufer ohne diesen Parameter verhält sich exakt wie zuvor (Default `None`).
+
+Gemessen (identische Methode, Alt- und Neu-Code im selben Prozess gegen denselben
+DB-Zustand, 5 Läufe, `run_trading_orchestrator()` direkt):
+
+| Metrik | vorher | nachher |
+|---|---|---|
+| Ø Laufzeit | 83,54 ms | 45,44 ms (−45,6 %) |
+| SQL-Queries | 1617 | 1168 (−27,8 %) |
+| SQL-Gesamtzeit (Ø) | 49,81 ms | 16,87 ms (−66,1 %) |
+| `build_analysis_snapshot()`-Aufrufe | 56 | 56 |
+| `_open_campaign()`-Aufrufe | 92 | 46 |
+| `sqlite_master`-Queries | 247 | 27 (−89,1 %) |
+| `PRAGMA integrity_check`-Aufrufe | 1 | 0 |
+
+Alt- vs. Neu-Code liefert gegen denselben DB-Zustand **byte-identisches JSON** für
+`run_trading_orchestrator()` — keine fachliche Änderung. Regressionssuite weiterhin
+218/218 grün.

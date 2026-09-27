@@ -57,8 +57,18 @@ class PromotionDecision:
         return to_primitive(self)
 
 
-def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+def _table_exists(conn: sqlite3.Connection, table: str, *, cache: Optional[dict[str, bool]] = None) -> bool:
+    """Table existence never changes within one connection's lifetime (a
+    run). ``cache`` lets a caller evaluating many candidates in the same run
+    (see ``table_exists_cache`` on ``evaluate_swing_candidates``) resolve
+    this once and reuse it instead of re-querying ``sqlite_master`` per
+    candidate. ``None`` (the default) is fully backward compatible."""
+    if cache is not None and table in cache:
+        return cache[table]
+    exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+    if cache is not None:
+        cache[table] = exists
+    return exists
 
 
 def _active_assignment(conn: sqlite3.Connection, security_id: int, as_of: str):
@@ -70,8 +80,8 @@ def _active_assignment(conn: sqlite3.Connection, security_id: int, as_of: str):
     ).fetchone()
 
 
-def _open_campaign(conn: sqlite3.Connection, security_id: int) -> bool:
-    return _table_exists(conn, "swing_campaign") and conn.execute(
+def _open_campaign(conn: sqlite3.Connection, security_id: int, *, table_exists_cache: Optional[dict[str, bool]] = None) -> bool:
+    return _table_exists(conn, "swing_campaign", cache=table_exists_cache) and conn.execute(
         "SELECT 1 FROM swing_campaign WHERE security_id=? AND status='open'", (security_id,)
     ).fetchone() is not None
 
@@ -85,6 +95,7 @@ def evaluate_swing_promotion(
     security_id: int,
     *,
     as_of: Optional[str] = None,
+    table_exists_cache: Optional[dict[str, bool]] = None,
 ) -> PromotionDecision:
     """Evaluate exactly one security without writing a promotion record.
 
@@ -92,6 +103,12 @@ def evaluate_swing_promotion(
     authoritative threshold for them exists, so they cannot fabricate a
     promotion rejection.  Current cash and portfolio allocation are likewise
     intentionally absent: those belong to entry sizing, not promotion.
+
+    ``table_exists_cache``, when provided by a caller evaluating many
+    candidates within one run (see ``evaluate_swing_candidates``), is shared
+    with the ``swing_campaign``/``strategy_assignment``/``fx_rates``
+    existence checks so each is resolved once per run instead of once per
+    candidate. ``None`` (the default) is fully backward compatible.
     """
     evaluation_date = as_of or date.today().isoformat()
     security = conn.execute("SELECT id, symbol, name FROM security WHERE id=?", (security_id,)).fetchone()
@@ -100,9 +117,12 @@ def evaluate_swing_promotion(
     watch = conn.execute(
         "SELECT status, priority, entry_reason, updated_at FROM watchlist WHERE security_id=?", (security_id,)
     ).fetchone()
-    snapshot = build_analysis_snapshot(security_id, as_of=evaluation_date, connection=conn)
+    snapshot = build_analysis_snapshot(
+        security_id, as_of=evaluation_date, connection=conn, table_exists_cache=table_exists_cache
+    )
     position = snapshot.position
     assignment = _active_assignment(conn, security_id, evaluation_date)
+    open_campaign = _open_campaign(conn, security_id, table_exists_cache=table_exists_cache)
     technical = snapshot.technical
 
     recommendation = PROMOTE
@@ -111,7 +131,7 @@ def evaluate_swing_promotion(
         recommendation, reasons = REJECT, ["PROMOTION_NOT_ON_WATCHLIST"]
     elif position.has_position is True or (position.shares is not None and float(position.shares) > 0):
         recommendation, reasons = REJECT, ["PROMOTION_EXISTING_POSITION"]
-    elif _open_campaign(conn, security_id):
+    elif open_campaign:
         recommendation, reasons = REJECT, ["PROMOTION_OPEN_CAMPAIGN"]
     elif assignment is not None and assignment["strategy_type"] == "swing":
         recommendation, reasons = KEEP_WATCHING, ["PROMOTION_ALREADY_SWING"]
@@ -143,7 +163,7 @@ def evaluate_swing_promotion(
         "assignment": dict(assignment) if assignment else None,
         "has_position": position.has_position,
         "shares": position.shares,
-        "open_campaign": _open_campaign(conn, security_id),
+        "open_campaign": open_campaign,
         "technical": {"quality": technical.quality.status.value, "as_of": technical.quality.as_of, "price": technical.current_price, "sma50": technical.sma50, "sma200": technical.sma200},
         "valuation": {"eur_price": position.current_price_cost_currency, "currency": position.valuation_currency, "fx": position.fx_quality.status.value},
         "recommendation": recommendation,
@@ -171,14 +191,30 @@ def evaluate_swing_promotion(
     )
 
 
-def evaluate_swing_candidates(conn: sqlite3.Connection, *, as_of: Optional[str] = None) -> list[PromotionDecision]:
-    """Evaluate zero-position active generic-watchlist rows, read-only."""
+def evaluate_swing_candidates(
+    conn: sqlite3.Connection,
+    *,
+    as_of: Optional[str] = None,
+    table_exists_cache: Optional[dict[str, bool]] = None,
+) -> list[PromotionDecision]:
+    """Evaluate zero-position active generic-watchlist rows, read-only.
+
+    ``table_exists_cache`` is shared across every candidate evaluated here
+    (creating one locally if the caller doesn't supply one), so the
+    ``swing_campaign``/``strategy_assignment``/``fx_rates`` schema-existence
+    checks run once for this whole call instead of once per candidate.
+    """
     rows = conn.execute(
         """SELECT w.security_id FROM watchlist w
            LEFT JOIN positions p ON p.security_id=w.security_id AND p.shares>0
            WHERE w.status='WATCH' AND p.security_id IS NULL ORDER BY w.priority DESC, w.security_id"""
     ).fetchall()
-    return [evaluate_swing_promotion(conn, int(row["security_id"]), as_of=as_of) for row in rows]
+    if table_exists_cache is None:
+        table_exists_cache = {}
+    return [
+        evaluate_swing_promotion(conn, int(row["security_id"]), as_of=as_of, table_exists_cache=table_exists_cache)
+        for row in rows
+    ]
 
 
 def _require_approval_schema(conn: sqlite3.Connection) -> None:
