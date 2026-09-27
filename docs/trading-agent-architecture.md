@@ -278,7 +278,7 @@ See [openwebui-trading-tool.md](openwebui-trading-tool.md) for the deploy proced
 | `database_schema()` | Yes | Full schema dump |
 | `table_info(table)` | Yes | Per-table column info |
 | `database_status()` | Yes | Summary counts/integrity |
-| `rank_watchlist()` | Yes | Dynamically loads `trading_analytics.py` from `C:\KI-Stack\Tools\trading\` at call time |
+| `rank_watchlist()` | Yes | Loads `trading_analytics.py` via the cached `_load_runtime_trading_module()` path (see note below); uses the same read-only connection as the other analytics wrappers since 2026-09-27 (previously a read-write connection) |
 | `run_trading_orchestrator(as_of=None)` | Yes | Dynamically loads `trading_orchestrator.py` (and its dependency chain) |
 | `evaluate_swing_candidate(security_id)` / `evaluate_swing_candidates()` | Yes | Dynamically loads `swing_promotion.py` |
 | `approve_swing_promotion(...)` | **No — writes** `strategy_assignment` + `candidate_promotion` | Requires a still-current plan token from `evaluate_swing_candidate` |
@@ -290,6 +290,8 @@ See [openwebui-trading-tool.md](openwebui-trading-tool.md) for the deploy proced
 Both new methods follow the exact same pattern as `run_trading_orchestrator`/`evaluate_swing_candidates`: `_load_runtime_trading_module()` loads the deployed module from `C:\KI-Stack\Tools\trading\`, `_readonly_import_connection()` opens a strict `PRAGMA query_only=ON` connection. Deployed and smoke-tested 2026-09-25 (see [openwebui-trading-tool.md](openwebui-trading-tool.md) for the verified test record).
 
 Runtime helper modules dynamically loaded from `C:\KI-Stack\Tools\trading\`: `trading_analytics.py`, `parqet_import.py`, `openwebui_upload_resolver.py`, `swing_lifecycle.py`, `analysis_contracts.py`, `trading_orchestrator.py`, `swing_promotion.py`, `strategy_suggestion.py`, `candidate_decision.py` (and their own import chains, e.g. `analysis_engine.py`, `decision_engine.py`, `portfolio_context.py`, `strategy_config.py`, `fx_resolver.py`, `capital_state.py`, `orchestrator_presentation.py`).
+
+**Since 2026-09-27**, `_load_runtime_trading_module()` caches each loaded module per class (i.e. per currently-loaded `trading_sqlite.py` version) instead of re-reading and re-`exec_module`-ing the file on every tool call. A runtime helper file change under `C:\KI-Stack\Tools\trading\` therefore only takes effect after `trading_sqlite.py`'s own `content` is redeployed (which creates a fresh module/class and thus a fresh cache) or the OpenWebUI process restarts — see [openwebui-trading-tool.md](openwebui-trading-tool.md) for the full deploy implication and the measured before/after performance numbers.
 
 ---
 

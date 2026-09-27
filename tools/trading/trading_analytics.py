@@ -62,13 +62,16 @@ def _load_price_series(
     connection: sqlite3.Connection,
     security_id: int,
     as_of: Optional[str] = None,
+    *,
+    source_id: Optional[int],
 ) -> list[float]:
     """Returns closing prices (adjusted_close preferred, else close),
     oldest first. Restricted to the Yahoo Finance source when that
     source exists, so multiple providers for the same security never
-    get mixed into a single series."""
+    get mixed into a single series.
 
-    source_id = _get_yahoo_source_id(connection)
+    ``source_id`` is resolved once by the caller (see ``_analyze_security``)
+    and passed in here rather than re-queried on every call."""
 
     if source_id is not None:
 
@@ -115,9 +118,11 @@ def _load_last_trade_date(
     connection: sqlite3.Connection,
     security_id: int,
     as_of: Optional[str] = None,
+    *,
+    source_id: Optional[int],
 ) -> Optional[str]:
-
-    source_id = _get_yahoo_source_id(connection)
+    """``source_id`` is resolved once by the caller and passed in, rather
+    than re-queried on every call -- see ``_analyze_security``."""
 
     if source_id is not None:
 
@@ -396,14 +401,15 @@ def _analyze_security(
 
     _, name, symbol = security
 
-    closes = _load_price_series(connection, security_id, as_of)
+    source_id = _get_yahoo_source_id(connection)
+    closes = _load_price_series(connection, security_id, as_of, source_id=source_id)
     data_points = len(closes)
 
     result = {
         "security_id": security_id,
         "name": name,
         "symbol": symbol,
-        "as_of": _load_last_trade_date(connection, security_id, as_of),
+        "as_of": _load_last_trade_date(connection, security_id, as_of, source_id=source_id),
         "current_price": closes[-1] if closes else None,
         "data_points": data_points,
         "quality": quality_status(data_points),

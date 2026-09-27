@@ -668,24 +668,8 @@ class Tools:
         conn: sqlite3.Connection | None = None
 
         try:
-            conn = self._connect()
-
-            module_path = Path(
-                r"C:\KI-Stack\tools\trading\trading_analytics.py"
-            )
-
-            if not module_path.exists():
-                raise FileNotFoundError(
-                    f"trading_analytics.py not found: {module_path}"
-                )
-
-            spec = importlib.util.spec_from_file_location(
-                "trading_analytics",
-                module_path,
-            )
-
-            analytics = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(analytics)
+            analytics = self._load_runtime_trading_module("trading_analytics")
+            conn = self._readonly_import_connection(self.valves.database_path)
 
             rankings = analytics.rank_watchlist(conn)
 
@@ -909,9 +893,23 @@ class Tools:
     # Parqet incremental import (OpenWebUI-authorized uploads only)
     # ============================================================
 
-    @staticmethod
-    def _load_runtime_trading_module(module_name: str):
-        """Load one deployed trading helper without accepting a caller path."""
+    # Shared across every Tools() instance created from this loaded module,
+    # so a runtime helper is exec'd at most once per deployed tool version.
+    # OpenWebUI already gives each redeployed `content` its own fresh Python
+    # module object, so this class attribute is itself recreated on every
+    # redeploy -- no separate invalidation logic is needed.
+    _runtime_module_cache: dict[str, Any] = {}
+
+    @classmethod
+    def _load_runtime_trading_module(cls, module_name: str):
+        """Load one deployed trading helper without accepting a caller path.
+
+        Cached per module name for the lifetime of this loaded tool version.
+        Falls back to a fresh load (and populates the cache) the first time,
+        or whenever the process/module was reloaded from scratch."""
+        cached = cls._runtime_module_cache.get(module_name)
+        if cached is not None:
+            return cached
         tools_directory = Path(r"C:\KI-Stack\Tools\trading")
         module_path = tools_directory / f"{module_name}.py"
         if not module_path.is_file():
@@ -926,6 +924,7 @@ class Tools:
         module = importlib.util.module_from_spec(spec)
         sys.modules[loaded_name] = module
         spec.loader.exec_module(module)
+        cls._runtime_module_cache[module_name] = module
         return module
 
     @staticmethod

@@ -16,9 +16,22 @@ SQLite-Zugriff auf die Trading-DB bereit, inklusive einer read-only Watchlist-Ra
 | Analytics-Modul (dynamisch nachgeladen) | `C:\KI-Stack\Tools\trading\trading_analytics.py` |
 | Parqet-Importmodule (dynamisch nachgeladen) | `C:\KI-Stack\Tools\trading\parqet_import.py`, `openwebui_upload_resolver.py`, `swing_lifecycle.py`, `analysis_contracts.py` |
 
-Die Methode `rank_watchlist()` des Tools lädt `trading_analytics.py` zur Laufzeit per
-`importlib.util` nach und ruft dessen `rank_watchlist(connection)` auf derselben,
-bereits offenen DB-Verbindung auf. Keine eigene DB-Logik, keine Duplikation.
+Die Methode `rank_watchlist()` des Tools lädt `trading_analytics.py` zur Laufzeit
+(gecacht, siehe unten) nach und ruft dessen `rank_watchlist(connection)` auf einer
+read-only Verbindung auf. Keine eigene DB-Logik, keine Duplikation.
+
+**Runtime-Modul-Caching (seit 2026-09-27):** `_load_runtime_trading_module()` cacht jedes
+geladene Hilfsmodul (`trading_analytics`, `trading_orchestrator`, `swing_promotion`,
+`candidate_decision`, `strategy_suggestion`, `parqet_import`, …) klassenweit für die
+Lebensdauer der aktuell geladenen Tool-Version — ein Modul wird nicht mehr bei jedem
+Toolcall neu von der Festplatte gelesen und `exec_module()`-ausgeführt, sondern nur beim
+jeweils ersten Aufruf. **Wichtige Konsequenz für Deploys:** Wird eine Runtime-Datei unter
+`C:\KI-Stack\Tools\trading\` (z. B. `trading_analytics.py`) aktualisiert, greift das
+**nicht** mehr automatisch beim nächsten Toolcall — der Cache wird erst durch ein
+Redeploy von `trading_sqlite.py`s eigenem `content` (das der zugehörigen Python-Modulinstanz
+neu erzeugt) oder einen OpenWebUI-Prozessneustart zurückgesetzt. Der bisherige
+Deploy-Ablauf unten bleibt dafür ausreichend, solange nach einer Runtime-Modul-Änderung
+zusätzlich `trading_sqlite.py` selbst redeployt wird.
 
 ## Aktuelle Funktionsübersicht (Version 1.4.0)
 
@@ -29,7 +42,7 @@ bereits offenen DB-Verbindung auf. Keine eigene DB-Logik, keine Duplikation.
 | `database_schema()` | Ja | Vollständiger Schema-Dump |
 | `table_info(table)` | Ja | Spalteninfo je Tabelle |
 | `database_status()` | Ja | Summary-Counts/Integrity |
-| `rank_watchlist()` | Ja | Lädt `trading_analytics.py` aus `C:\KI-Stack\Tools\trading\` dynamisch nach |
+| `rank_watchlist()` | Ja | Lädt `trading_analytics.py` über den gecachten `_load_runtime_trading_module()`-Pfad; nutzt seit 2026-09-27 dieselbe read-only Verbindung (`_readonly_import_connection`) wie die übrigen Analytics-Wrapper (vorher: Read-Write-Verbindung, Asymmetrie jetzt behoben) |
 | `run_trading_orchestrator(as_of=None)` | Ja | Lädt `trading_orchestrator.py` samt Abhängigkeitskette dynamisch nach |
 | `evaluate_swing_candidate(security_id)` / `evaluate_swing_candidates()` | Ja | Lädt `swing_promotion.py` dynamisch nach |
 | `approve_swing_promotion(...)` | **Nein — schreibt** `strategy_assignment` + `candidate_promotion` | Benötigt ein noch aktuelles Plan-Token aus `evaluate_swing_candidate` |
@@ -131,3 +144,24 @@ OpenWebUI tatsächlich verwendete Callable wurde separat erfolgreich ausgeführt
   - `sql_execute()` weiterhin funktionsfähig (`ok=True`)
 - `trading.db`-Hash vor/nach dem Smoke-Test identisch → keine Schreibvorgänge.
 - `webui.db`: `PRAGMA integrity_check` → `ok`.
+
+## Performance-Optimierung (27.09.2026)
+
+Drei anhand einer Baseline-Messung identifizierte Hotspots behoben (kein Architektur-,
+kein DB-Schema-, kein Output-Format-Wechsel):
+
+1. `trading_orchestrator.py`: `build_portfolio_context()` wird jetzt genau einmal pro
+   Lauf berechnet statt einmal je offener Position und je Entry-Kandidat neu; die
+   security-spezifischen Felder werden aus den bereits vorhandenen `exposures` abgeleitet
+   (`_portfolio_context_for_security()`). **3973 → 1617 SQL-Queries** (−59 %),
+   **135 ms → 80 ms** Ø-Laufzeit (direkt) bzw. **144 ms → 88 ms** (Wrapper).
+2. `trading_analytics.py`: `_get_yahoo_source_id()` wird pro `analyze_security(_as_of)`-Aufruf
+   nur noch einmal aufgelöst (vorher zweimal: einmal in `_load_price_series`, einmal in
+   `_load_last_trade_date`) und lokal weitergereicht — kein globaler Cache.
+3. `openwebui-tools/trading_sqlite.py`: `_load_runtime_trading_module()` cacht jedes
+   geladene Modul jetzt klassenweit (siehe Abschnitt oben); `rank_watchlist()`s Wrapper
+   nutzt jetzt dieselbe read-only Verbindung wie die übrigen Analytics-Wrapper.
+
+Ergebnisvergleich (alte vs. neue Implementierung, identische Produktions-DB, read-only):
+`run_trading_orchestrator()` und `rank_watchlist()` liefern **byte-identisches JSON** —
+keine fachliche Änderung. Volle Regressionssuite (218/218) weiterhin grün.

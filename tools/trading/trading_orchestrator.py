@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 import sqlite3
 from typing import Any, Optional
@@ -103,6 +103,42 @@ def _security_record(snapshot, decision, priority: str) -> dict[str, Any]:
     }
 
 
+def _portfolio_context_for_security(portfolio, security_id: int):
+    """Derive a per-security PortfolioContext from an already-computed one.
+
+    ``build_portfolio_context(security_id, ...)`` re-values every open
+    position from scratch to answer a question (current-security share of
+    the portfolio) that only needs the ``exposures`` the base call already
+    computed. This replicates that exact derivation (see
+    ``analysis_engine.build_portfolio_context``'s ``current_exposure``
+    branch) locally instead of re-querying the database once per security.
+    """
+    current_exposure = next(
+        (exposure for exposure in portfolio.exposures if exposure.security_id == security_id),
+        None,
+    )
+    allocation_available = portfolio.allocation_quality.status is AvailabilityStatus.AVAILABLE
+    if current_exposure is None:
+        current_value = 0.0
+        current_weight = 0.0 if allocation_available else None
+    else:
+        current_value = current_exposure.market_value_eur
+        current_weight = (
+            current_value / float(portfolio.total_market_value) * 100.0
+            if allocation_available
+            and current_value is not None
+            and portfolio.total_market_value is not None
+            else None
+        )
+    return replace(
+        portfolio,
+        current_security_id=security_id,
+        current_security_market_value=current_value,
+        current_security_market_value_eur=current_value,
+        current_security_weight_pct=current_weight,
+    )
+
+
 def _issue(scope: str, code: str, severity: str, *, security_id: Optional[int] = None, symbol: Optional[str] = None, details: tuple[str, ...] = ()) -> dict[str, Any]:
     return {"scope": scope, "code": code, "severity": severity, "security_id": security_id, "symbol": symbol, "details": list(details)}
 
@@ -189,7 +225,7 @@ def run_trading_orchestrator(
     for row in position_rows:
         security_id = int(row["security_id"])
         snapshot = build_analysis_snapshot(security_id, as_of=as_of, connection=conn)
-        per_security_portfolio = build_portfolio_context(security_id, as_of=as_of, connection=conn)
+        per_security_portfolio = _portfolio_context_for_security(portfolio, security_id)
         decision = decide(snapshot, strategy_config, per_security_portfolio)
         priority = PRIORITY[decision.action]
         record = _security_record(snapshot, decision, priority)
@@ -209,7 +245,7 @@ def run_trading_orchestrator(
     entry_ids = _active_swing_zero_positions(conn, evaluation_as_of)
     for security_id in entry_ids:
         snapshot = build_analysis_snapshot(security_id, as_of=as_of, connection=conn)
-        entry_portfolio = build_portfolio_context(security_id, as_of=as_of, connection=conn)
+        entry_portfolio = _portfolio_context_for_security(portfolio, security_id)
         decision = decide(snapshot, strategy_config, entry_portfolio)
         entry_results.append(_security_record(snapshot, decision, PRIORITY[decision.action]))
 
