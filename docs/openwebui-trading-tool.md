@@ -205,3 +205,42 @@ DB-Zustand, 5 Läufe, `run_trading_orchestrator()` direkt):
 Alt- vs. Neu-Code liefert gegen denselben DB-Zustand **byte-identisches JSON** für
 `run_trading_orchestrator()` — keine fachliche Änderung. Regressionssuite weiterhin
 218/218 grün.
+
+## Performance-Optimierung, Runde 3 (27.09.2026)
+
+Ein per Python-Profiling identifizierter, cross-cutting Hotspot behoben:
+
+`trading_analytics.py::annualized_volatility_pct()` berechnete die Tages-Volatilität
+bisher mit `statistics.pstdev()`. Diese Funktion konvertiert intern jeden Float exakt
+in einen `fractions.Fraction` (inkl. `math.gcd`-Reduktion), um mathematisch exakte statt
+Fließkomma-Ergebnisse zu liefern — für eine prozentuale Annäherung unnötiger Overhead,
+der in jeder Funktion auftrat, die irgendeine Security technisch analysiert
+(`rank_watchlist`, `suggest_strategy_assignments`, `evaluate_watchlist_candidates`,
+`evaluate_swing_candidates`, `run_trading_orchestrator`, `analyze_security_as_of`).
+Ersetzt durch eine einfache Float-basierte Populations-Standardabweichung
+(`Varianz = Summe((x - Mittelwert)^2) / n`, `Standardabweichung = sqrt(Varianz)`) —
+mathematisch identische Definition, nur ohne Exakt-Arithmetik. Keine Änderung an
+Annualisierung oder Prozent-Semantik, keine neue Dependency.
+
+Gemessen (identische cProfile-Methode, gemergt über alle sechs Zielfunktionen, je 5 Läufe):
+
+| Metrik | vorher | nachher |
+|---|---|---|
+| Gemergte cProfile-Gesamtzeit | 2,246 s | 1,818 s (−19,1 %) |
+| Gemergte Funktionsaufrufe | 3.360.891 | 2.416.977 (−28,1 %) |
+| `annualized_volatility_pct()` kumulative Zeit | 0,403 s | 0,041 s (−89,8 %) |
+| `math.gcd`-Aufrufe | 206.570 | 20.000* |
+| `fractions.__new__`-Aufrufe | 76.430 | 7.400* |
+
+\* Restliche Aufrufe stammen ausschließlich noch aus der zum Messzeitpunkt nicht
+neu deployten Produktionskopie (`C:\KI-Stack\Tools\trading\trading_analytics.py`,
+25 Wrapper-Aufrufe); im gefixten Dev-Repo-Pfad selbst (2470 Aufrufe von
+`annualized_volatility_pct()`) tritt die Fraction-Kette nicht mehr auf.
+
+Numerischer Vergleich (5 reale Securities + 6 Edge-Cases: leer, 1 Wert, konstant,
+normale Serie, minimale Änderungen, große Werte): maximale absolute Abweichung
+`1,4 × 10⁻¹⁴`, maximale relative Abweichung `1,4 × 10⁻¹⁶` — reines Gleitkomma-Rauschen
+im letzten Bit, keine fachlich relevante Abweichung. Vollständiger Funktions-JSON-Vergleich
+alt/neu zeigt ausschließlich Differenzen ab der 14.–15. signifikanten Nachkommastelle
+in `volatility_60d_annualized_pct`-Feldern; alle übrigen Felder byte-identisch.
+Regressionssuite weiterhin 218/218 grün.

@@ -14,7 +14,6 @@ volatility figures.
 from __future__ import annotations
 
 import sqlite3
-import statistics
 from typing import Optional
 
 
@@ -283,7 +282,14 @@ def annualized_volatility_pct(
     if len(returns) < 2:
         return None
 
-    daily_std = statistics.pstdev(returns)
+    # Plain float population standard deviation. statistics.pstdev()
+    # converts every value to an exact fractions.Fraction internally,
+    # which is unnecessary precision for a percentage approximation
+    # and was measured as a significant CPU cost (see performance
+    # profiling notes in docs/openwebui-trading-tool.md).
+    mean = sum(returns) / len(returns)
+    variance = sum((value - mean) ** 2 for value in returns) / len(returns)
+    daily_std = variance ** 0.5
 
     return daily_std * (TRADING_DAYS_PER_YEAR ** 0.5) * 100.0
 
