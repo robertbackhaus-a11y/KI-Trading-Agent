@@ -81,14 +81,6 @@ class SizingPolicyConfig:
 
 
 @dataclass(frozen=True)
-class RiskTargetConfig:
-    """Configured only; Phase 2 intentionally assigns no mathematical meaning."""
-
-    risk_target_min: float = 0.60
-    risk_target_max: float = 0.70
-
-
-@dataclass(frozen=True)
 class DataQualityConfig:
     """Deterministic data-freshness limits; not a trading rule."""
 
@@ -112,6 +104,5 @@ class StrategyConfig:
     portfolio: PortfolioTargetConfig = field(default_factory=PortfolioTargetConfig)
     capital_state: CapitalStateConfig = field(default_factory=CapitalStateConfig)
     sizing: SizingPolicyConfig = field(default_factory=SizingPolicyConfig)
-    risk: RiskTargetConfig = field(default_factory=RiskTargetConfig)
     data_quality: DataQualityConfig = field(default_factory=DataQualityConfig)
     fx: FXConfig = field(default_factory=FXConfig)
