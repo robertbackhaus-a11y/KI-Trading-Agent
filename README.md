@@ -42,9 +42,9 @@ Inputs/Outputs, DB-Zugriff und Abhängigkeiten: siehe
 | `Discover-TradingSECIdentifiers.py` | SEC-CIK-Identifier-Discovery |
 | `Resolve-TradingSecurities.py` | Security-Stammdaten-Auflösung (OpenFIGI) |
 | `Canonicalize-TradingUniverse.py` | Verifizierte Security-Stammdaten (Symbol/ISIN/WKN/Exchange/Country) für bestehende Positionen/Watchlist |
-| `Backfill-TradingFundamentalsSEC.py` | Fundamentals-Bulk-Import aus SEC-EDGAR-XBRL |
-| `Backfill-TradingFundamentalsIR.py` | Fundamentals aus Company-IR-Referenzparsern |
-| `Research-TradingFundamentals.py` | LLM-Research-Fundamentals-Pipeline (kanonisches Tool) |
+| `Backfill-TradingFundamentalsSEC.py` | Fundamentals-Bulk-Import aus SEC-EDGAR-XBRL — **weekly automated** via Windows-Task `KI-Trading-Fundamentals-SEC` (Logon + Sonntag 10:00 Uhr, `StartWhenAvailable=True`; Log: `C:\KI-Stack\logs\trading\fundamentals-sec-backfill.log`) |
+| `Backfill-TradingFundamentalsIR.py` | Fundamentals aus Company-IR-Referenzparsern — **manual/event-driven** (hartkodierte Quartals-URLs je Firma, keine Automatisierung) |
+| `Research-TradingFundamentals.py` | LLM-Research-Fundamentals-Pipeline (kanonisches Tool) — **manual/LLM-assisted** (erfordert eine aktive Claude-Session, nicht automatisierbar) |
 | `trading_analytics.py` | Technische Scoring-Bibliothek (SMA/RSI/Momentum/Drawdown/Volatility), `rank_watchlist()` |
 | `trading_orchestrator.py` | Read-only Gesamt-Portfolio-Report (komponiert Analytics/Decision/Promotion) |
 
