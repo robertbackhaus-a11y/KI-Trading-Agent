@@ -113,17 +113,26 @@ def apply_migration(conn: sqlite3.Connection) -> dict:
     return {"before": before, "after": inspect_migration(conn)}
 
 
+def _connect(path: Path, *, write: bool) -> sqlite3.Connection:
+    if not path.exists():
+        raise FileNotFoundError(f"Trading DB not found: {path}")
+    if write:
+        conn = sqlite3.connect(str(path), timeout=10.0, isolation_level=None)
+    else:
+        conn = sqlite3.connect(f"file:///{path.as_posix()}?mode=ro", uri=True, timeout=10.0)
+        conn.execute("PRAGMA query_only = ON")
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate strategy assignments (dry-run by default)")
     parser.add_argument("--db-path", type=Path, default=DB_PATH)
     parser.add_argument("--write", action="store_true", help="apply the migration")
     args = parser.parse_args()
-    if not args.db_path.exists():
-        raise FileNotFoundError(f"Trading DB not found: {args.db_path}")
 
-    conn = sqlite3.connect(str(args.db_path), timeout=10.0, isolation_level=None)
+    conn = _connect(args.db_path, write=args.write)
     try:
-        conn.execute("PRAGMA foreign_keys = ON")
         if args.write:
             print(apply_migration(conn))
         else:
