@@ -37,7 +37,8 @@ Inputs/Outputs, DB-Zugriff und Abhängigkeiten: siehe
 |---|---|
 | `Initialize-TradingDatabase.py` | DB initialisieren (Tabellen, Indizes, Views, Basis-`data_sources`) |
 | `Reset-TradingDb.py` | DB vollständig zurücksetzen (löscht bestehende DB-Datei) |
-| `Backfill-TradingMarketData.py` | Market Data Backfill (OHLCV) |
+| `Backfill-TradingMarketData.py` | Market Data Backfill (OHLCV) — läuft täglich automatisiert um 17:15 Uhr via Windows-Task `KI-Trading-MarketData-Backfill` (Log: `C:\KI-Stack\logs\trading\market-data-backfill.log`) |
+| `Backfill-TradingFXRatesECB.py` | ECB-EUR/USD-Referenzkurs-Backfill — läuft automatisiert via Windows-Task `KI-Trading-FXRates-Backfill` (Logon + täglich 17:20 Uhr, `StartWhenAvailable=True`; Log: `C:\KI-Stack\logs\trading\fx-rates-backfill.log`) |
 | `Discover-TradingSECIdentifiers.py` | SEC-CIK-Identifier-Discovery |
 | `Resolve-TradingSecurities.py` | Security-Stammdaten-Auflösung (OpenFIGI) |
 | `Canonicalize-TradingUniverse.py` | Verifizierte Security-Stammdaten (Symbol/ISIN/WKN/Exchange/Country) für bestehende Positionen/Watchlist |

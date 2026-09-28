@@ -35,17 +35,22 @@ def _confidence(snapshot: AnalysisSnapshot) -> float:
     confidence = 0.50
     if snapshot.technical.quality.status is AvailabilityStatus.PARTIAL:
         confidence -= 0.10
-    for quality, available_gain, partial_gain in (
-        (snapshot.fundamental.quality, 0.10, 0.05),
-        (snapshot.valuation.quality, 0.05, 0.02),
-        (snapshot.event_risk.quality, 0.05, 0.02),
+    # valuation/event_risk are backed by estimates/ratings/price_targets/
+    # events/news -- tables with no populating importer today (see
+    # docs/trading-agent-architecture.md, known inconsistency #4). Their
+    # UNAVAILABLE state reflects a missing data pipeline, not an actual
+    # diagnostic finding, so unlike fundamental it carries no penalty.
+    for quality, available_gain, partial_gain, unavailable_penalty in (
+        (snapshot.fundamental.quality, 0.10, 0.05, 0.05),
+        (snapshot.valuation.quality, 0.05, 0.02, 0.00),
+        (snapshot.event_risk.quality, 0.05, 0.02, 0.00),
     ):
         if quality.status is AvailabilityStatus.AVAILABLE:
             confidence += available_gain
         elif quality.status is AvailabilityStatus.PARTIAL:
             confidence += partial_gain
         elif quality.status is AvailabilityStatus.UNAVAILABLE:
-            confidence -= 0.05
+            confidence -= unavailable_penalty
     return round(_clamp_confidence(confidence), 4)
 
 
