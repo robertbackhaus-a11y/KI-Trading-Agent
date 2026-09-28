@@ -45,6 +45,7 @@ Inputs/Outputs, DB-Zugriff und Abhängigkeiten: siehe
 | `Backfill-TradingFundamentalsSEC.py` | Fundamentals-Bulk-Import aus SEC-EDGAR-XBRL — **weekly automated** via Windows-Task `KI-Trading-Fundamentals-SEC` (Logon + Sonntag 10:00 Uhr, `StartWhenAvailable=True`; Log: `C:\KI-Stack\logs\trading\fundamentals-sec-backfill.log`) |
 | `Backfill-TradingFundamentalsIR.py` | Fundamentals aus Company-IR-Referenzparsern — **manual/event-driven** (hartkodierte Quartals-URLs je Firma, keine Automatisierung) |
 | `Research-TradingFundamentals.py` | LLM-Research-Fundamentals-Pipeline (kanonisches Tool) — **manual/LLM-assisted** (erfordert eine aktive Claude-Session, nicht automatisierbar) |
+| `Backfill-TradingEventsNews.py` | `events` (SEC EDGAR 8-K/6-K, 2-Jahres-Lookback) + `news` (Yahoo Finance Search) Backfill — läuft täglich automatisiert via Windows-Task `KI-Trading-EventsNews-Backfill` (Logon + täglich 17:25 Uhr, `StartWhenAvailable=True`; Log: `C:\KI-Stack\logs\trading\events-news-backfill.log`). Inkonsistenz #4 Teil A (events/news) damit resolved; `estimates`/`ratings`/`price_targets` bleiben weiterhin bewusst offen (kein kostenloser Datenpfad) |
 | `trading_analytics.py` | Technische Scoring-Bibliothek (SMA/RSI/Momentum/Drawdown/Volatility), `rank_watchlist()` |
 | `trading_orchestrator.py` | Read-only Gesamt-Portfolio-Report (komponiert Analytics/Decision/Promotion) |
 
