@@ -2,7 +2,7 @@
 
 Eigenständiger Trading Agent / Trading-Datenbestand.
 
-Version: v0.1.0 — siehe [CHANGELOG.md](CHANGELOG.md)
+Version: v0.1.1 — siehe [CHANGELOG.md](CHANGELOG.md)
 
 ## Runtime
 
