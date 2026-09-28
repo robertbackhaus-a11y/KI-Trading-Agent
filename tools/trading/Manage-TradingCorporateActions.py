@@ -177,7 +177,7 @@ def _print(payload: object) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Manage auditable corporate actions (stock splits)")
-    parser.add_argument("--db", type=Path, default=DB_PATH, help="override trading DB path")
+    parser.add_argument("--db-path", "--db", dest="db_path", type=Path, default=DB_PATH, help="override trading DB path")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="list corporate actions")
@@ -209,7 +209,7 @@ def main() -> int:
     write = bool(getattr(args, "write", False))
     conn: Optional[sqlite3.Connection] = None
     try:
-        conn = _connect(args.db, write=write)
+        conn = _connect(args.db_path, write=write)
         if args.command == "list":
             _print(list_corporate_actions(conn, security_id=args.security_id))
             return 0

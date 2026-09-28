@@ -708,16 +708,16 @@ def _print(payload: object) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Manage explicit Swing campaign lifecycle records")
-    parser.add_argument("--db", type=Path, default=DB_PATH, help="override trading DB path")
+    parser.add_argument("--db-path", "--db", dest="db_path", type=Path, default=DB_PATH, help="override trading DB path")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="list campaign records")
-    list_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    list_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     list_parser.add_argument("--security-id", type=int)
     list_parser.add_argument("--status", choices=sorted(CAMPAIGN_STATUSES))
 
     open_parser = subparsers.add_parser("open", help="open a campaign and baseline (dry-run by default)")
-    open_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    open_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     open_parser.add_argument("--security-id", required=True, type=int)
     open_parser.add_argument("--opened-at", required=True)
     open_parser.add_argument("--original-quantity", required=True, type=float)
@@ -728,7 +728,7 @@ def _parse_args() -> argparse.Namespace:
     open_parser.add_argument("--write", action="store_true")
 
     event_parser = subparsers.add_parser("event", help="record one explicit lifecycle event (dry-run by default)")
-    event_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    event_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     event_parser.add_argument("--campaign-id", required=True, type=int)
     event_parser.add_argument("--type", dest="event_type", required=True, choices=sorted(EVENT_TYPES - {"baseline"}))
     event_parser.add_argument("--event-at", required=True)
@@ -742,7 +742,7 @@ def _parse_args() -> argparse.Namespace:
     event_parser.add_argument("--write", action="store_true")
 
     close_parser = subparsers.add_parser("close", help="close a campaign explicitly (dry-run by default)")
-    close_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    close_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     close_parser.add_argument("--campaign-id", required=True, type=int)
     close_parser.add_argument("--closed-at", required=True)
     close_parser.add_argument("--record-close-event", action="store_true")
@@ -756,7 +756,7 @@ def _parse_args() -> argparse.Namespace:
     close_parser.add_argument("--write", action="store_true")
 
     validate_parser = subparsers.add_parser("validate", help="validate campaign lifecycle integrity")
-    validate_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    validate_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -765,7 +765,7 @@ def main() -> int:
     write = bool(getattr(args, "write", False))
     conn: Optional[sqlite3.Connection] = None
     try:
-        conn = _connect(getattr(args, "command_db", None) or args.db, write=write)
+        conn = _connect(getattr(args, "command_db_path", None) or args.db_path, write=write)
         if args.command == "list":
             _print(list_campaigns(conn, security_id=args.security_id, status=args.status))
             return 0

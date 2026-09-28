@@ -339,17 +339,17 @@ def _print(payload: object) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Manage trading strategy assignments")
-    parser.add_argument("--db", type=Path, default=DB_PATH, help="override trading DB path")
+    parser.add_argument("--db-path", "--db", dest="db_path", type=Path, default=DB_PATH, help="override trading DB path")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="list assignments")
-    list_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    list_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     list_parser.add_argument("--security-id", type=int)
     list_parser.add_argument("--strategy", choices=sorted(ALLOWED_STRATEGIES))
     list_parser.add_argument("--active-only", action="store_true")
 
     set_parser = subparsers.add_parser("set", help="create one assignment (dry-run by default)")
-    set_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    set_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     set_parser.add_argument("--security-id", required=True, type=int)
     set_parser.add_argument("--strategy", required=True, choices=sorted(ALLOWED_STRATEGIES))
     set_parser.add_argument("--effective-from", required=True)
@@ -359,20 +359,20 @@ def _parse_args() -> argparse.Namespace:
     set_parser.add_argument("--write", action="store_true")
 
     close_parser = subparsers.add_parser("close", help="close one open assignment (dry-run by default)")
-    close_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    close_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     close_parser.add_argument("--security-id", required=True, type=int)
     close_parser.add_argument("--effective-to", required=True)
     close_parser.add_argument("--write", action="store_true")
 
     validate_parser = subparsers.add_parser("validate", help="validate assignment integrity")
-    validate_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    validate_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
     write = bool(getattr(args, "write", False))
-    db_path = getattr(args, "command_db", None) or args.db
+    db_path = getattr(args, "command_db_path", None) or args.db_path
     conn: Optional[sqlite3.Connection] = None
     try:
         conn = _connect(db_path, write=write)

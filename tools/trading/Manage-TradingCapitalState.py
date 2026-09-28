@@ -216,16 +216,16 @@ def _print(payload: object) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Manage auditable portfolio capital state")
-    parser.add_argument("--db", type=Path, default=DB_PATH, help="override trading DB path")
+    parser.add_argument("--db-path", "--db", dest="db_path", type=Path, default=DB_PATH, help="override trading DB path")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     show_parser = subparsers.add_parser("show", help="resolve capital state at an evaluation date")
-    show_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    show_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     show_parser.add_argument("--as-of", default=date.today().isoformat())
     show_parser.add_argument("--freshness-max-age-days", type=int)
 
     set_parser = subparsers.add_parser("set", help="record one capital state (dry-run by default)")
-    set_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    set_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     set_parser.add_argument("--as-of", required=True)
     set_parser.add_argument("--currency", required=True)
     set_parser.add_argument("--cash-available", type=float)
@@ -236,14 +236,14 @@ def _parse_args() -> argparse.Namespace:
     set_parser.add_argument("--write", action="store_true")
 
     validate_parser = subparsers.add_parser("validate", help="validate capital-state records")
-    validate_parser.add_argument("--db", dest="command_db", type=Path, help=argparse.SUPPRESS)
+    validate_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
     write = bool(getattr(args, "write", False))
-    db_path = getattr(args, "command_db", None) or args.db
+    db_path = getattr(args, "command_db_path", None) or args.db_path
     conn: Optional[sqlite3.Connection] = None
     try:
         conn = _connect(db_path, write=write)

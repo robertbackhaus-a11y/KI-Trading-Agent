@@ -107,20 +107,20 @@ def _connect(path: Path, *, write: bool) -> sqlite3.Connection:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill deterministic market snapshot currencies (dry-run by default)")
-    parser.add_argument("--db", type=Path, default=DB_PATH)
+    parser.add_argument("--db-path", "--db", dest="db_path", type=Path, default=DB_PATH)
     parser.add_argument("--watchlist-only", action="store_true")
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
-    if not args.db.is_file():
-        raise FileNotFoundError(f"Trading DB not found: {args.db}")
-    conn = _connect(args.db, write=args.write)
+    if not args.db_path.is_file():
+        raise FileNotFoundError(f"Trading DB not found: {args.db_path}")
+    conn = _connect(args.db_path, write=args.write)
     try:
         plan = build_plan(conn, watchlist_only=args.watchlist_only)
         summary = {status: sum(item.status == status for item in plan) for status in ("CURRENCY_RESOLVED", "CURRENCY_ALREADY_PRESENT", "CURRENCY_AMBIGUOUS", "CURRENCY_UNRESOLVED")}
         result = {"dry_run": not args.write, "summary": summary, "rows": [item.__dict__ for item in plan]}
         if args.write:
-            backup = args.db.with_name(args.db.name + ".snapshot-currency-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".bak")
-            shutil.copy2(args.db, backup)
+            backup = args.db_path.with_name(args.db_path.name + ".snapshot-currency-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".bak")
+            shutil.copy2(args.db_path, backup)
             result["backup"] = str(backup)
             result["updated"] = apply_plan(conn, plan)
         print(result)

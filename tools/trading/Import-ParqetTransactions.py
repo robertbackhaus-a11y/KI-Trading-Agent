@@ -48,7 +48,7 @@ def _print_human(result: dict[str, Any], *, write: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", required=True, type=Path, help="Parqet semicolon CSV export")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH, help="Trading SQLite DB path")
+    parser.add_argument("--db-path", "--db", dest="db_path", type=Path, default=DEFAULT_DB_PATH, help="Trading SQLite DB path")
     parser.add_argument("--write", action="store_true", help="Apply the exact previewed plan; preview is default")
     parser.add_argument("--include-historical", action="store_true", help="Also import explicitly classified NEW_HISTORICAL rows (requires --write)")
     parser.add_argument("--json", action="store_true", help="Emit deterministic JSON")
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--include-historical requires --write")
     try:
         if not args.write:
-            conn = _connect_read_only(args.db)
+            conn = _connect_read_only(args.db_path)
             try:
                 plan = build_import_plan(conn, args.csv)
                 result = plan.primitive()
@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 _print_human(result, write=False)
             return 0
-        conn = _connect_write(args.db)
+        conn = _connect_write(args.db_path)
         try:
             plan = build_import_plan(conn, args.csv)
             result = apply_import_plan(conn, plan, expected_plan_token=plan.plan_token, include_historical=args.include_historical, create_backup=True)
