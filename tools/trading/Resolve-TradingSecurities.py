@@ -343,8 +343,6 @@ def merge_watchlist_duplicate(
         "price_targets",
         "events",
         "news",
-        "decisions",
-        "analysis_history",
     ]:
 
         count = conn.execute(
