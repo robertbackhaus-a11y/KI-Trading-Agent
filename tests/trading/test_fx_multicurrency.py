@@ -328,11 +328,25 @@ class SchedulerConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1).split(","), list(ecb.DEFAULT_QUOTE_CURRENCIES))
 
-    def test_no_additional_tasks_were_introduced(self) -> None:
+    def test_task_set_is_the_documented_one(self) -> None:
         self.assertEqual(
             [job[0] for job in self.jobs],
-            ["MarketData-Backfill", "FXRates-Backfill", "EventsNews-Backfill", "Fundamentals-SEC"],
+            ["MarketData-Backfill", "FXRates-Backfill", "EventsNews-Backfill", "Fundamentals-SEC", "Candidate-Discovery", "Market-Intelligence"],
         )
+
+    def test_discovery_and_market_intelligence_run_after_the_evening_backfills(self) -> None:
+        def times(name: str) -> list[str]:
+            line = next(line for line in self.text.splitlines() if f"Name = '{name}'" in line)
+            match = re.search(r"At = (@\([^)]*\)|'[^']*')", line)
+            self.assertIsNotNone(match, name)
+            return re.findall(r"\d{2}:\d{2}", match.group(1))
+
+        self.assertEqual(times("EventsNews-Backfill"), ["17:25"])
+        self.assertEqual(times("Candidate-Discovery"), ["17:35"])
+        self.assertEqual(times("Market-Intelligence"), ["08:15", "17:45"])
+        for name in ("Candidate-Discovery", "Market-Intelligence"):
+            line = next(line for line in self.text.splitlines() if f"Name = '{name}'" in line)
+            self.assertIn("Logon = $false", line)  # fixed times only, no extra run at logon
 
 
 if __name__ == "__main__":

@@ -3,9 +3,12 @@
   Verwaltet die geplanten Trading-Aufgaben unter C:\tools\trading.
 
 .DESCRIPTION
-  Vier Aufgaben (Name "Trading-*"), gleiche Auslöser wie früher im KI-Stack:
-  bei Anmeldung plus täglich bzw. wöchentlich, mit Nachholen (StartWhenAvailable), wenn der Rechner aus war,
-  und ohne parallele Instanz. Ohne -Action wird nur der Status angezeigt.
+  Sechs Aufgaben (Name "Trading-*"). Die vier Backfills laufen wie früher im KI-Stack bei Anmeldung plus
+  täglich bzw. wöchentlich; Candidate Discovery (17:35) und Market Intelligence (08:15 und 17:45) laufen nur
+  zu den festen Zeiten (kein Anmelde-Auslöser) und haben ein Zeitlimit von 2 Stunden. Alle Aufgaben holen
+  verpasste Läufe nach (StartWhenAvailable) und laufen nie parallel mit sich selbst. Reihenfolge am Abend:
+  MarketData 17:15, FX 17:20, EventsNews 17:25, Discovery 17:35, Market Intelligence 17:45.
+  Ohne -Action wird nur der Status angezeigt.
 
   Die alten KI-Trading-* Aufgaben wurden am 02.10.2026 gelöscht. Ihre Definitionen liegen als XML unter
   scheduler\legacy\ und lassen sich mit Register-ScheduledTask -Xml wiederherstellen.
@@ -32,12 +35,15 @@ $ErrorActionPreference = 'Stop'
 $python = Join-Path $Root '.venv\Scripts\python.exe'
 $user = "$env:USERDOMAIN\$env:USERNAME"
 
-# Name, Skript, Argumente, Logdatei, Zeitplan
+# Name, Skript, Argumente, Logdatei, Zeitplan (At: eine oder mehrere Uhrzeiten)
+# Optional: Logon = $false (kein Anmelde-Auslöser), WorkDir (relativ zu Root), LimitHours (Zeitlimit)
 $jobs = @(
     @{ Name = 'MarketData-Backfill'; Script = 'Backfill-TradingMarketData.py';      Args = '--write'; Log = 'market-data-backfill.log';      Kind = 'Daily';  At = '17:15' },
     @{ Name = 'FXRates-Backfill';    Script = 'Backfill-TradingFXRatesECB.py';      Args = '--write --quote-currency USD,GBP,AUD,KRW'; Log = 'fx-rates-backfill.log';         Kind = 'Daily';  At = '17:20' },
     @{ Name = 'EventsNews-Backfill'; Script = 'Backfill-TradingEventsNews.py';      Args = '--write'; Log = 'events-news-backfill.log';      Kind = 'Daily';  At = '17:25' },
-    @{ Name = 'Fundamentals-SEC';    Script = 'Backfill-TradingFundamentalsSEC.py'; Args = '';        Log = 'fundamentals-sec-backfill.log'; Kind = 'Weekly'; At = '10:00' }
+    @{ Name = 'Fundamentals-SEC';    Script = 'Backfill-TradingFundamentalsSEC.py'; Args = '';        Log = 'fundamentals-sec-backfill.log'; Kind = 'Weekly'; At = '10:00' },
+    @{ Name = 'Candidate-Discovery'; Script = 'Discover-TradingCandidates.py';      Args = '';        Log = 'candidate-discovery.log';       Kind = 'Daily';  At = @('17:35'); Logon = $false; WorkDir = 'app'; LimitHours = 2 },
+    @{ Name = 'Market-Intelligence'; Script = 'Collect-TradingMarketIntelligence.py'; Args = '';      Log = 'market-intelligence.log';       Kind = 'Daily';  At = @('08:15', '17:45'); Logon = $false; WorkDir = 'app'; LimitHours = 2 }
 )
 
 function Get-TaskLine($name) {
@@ -67,13 +73,20 @@ switch ($Action) {
             $log = Join-Path $Root ("logs\" + $j.Log)
             $argLine = ('/c ""{0}" "{1}" {2} >> "{3}" 2>&1"' -f $python, $script, $j.Args, $log) -replace '\s+>>', ' >>'
             Invoke-Step "Registriere $name : cmd.exe $argLine" {
-                $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $argLine
-                $logon = New-ScheduledTaskTrigger -AtLogOn -User $user
-                if ($j.Kind -eq 'Daily') { $time = New-ScheduledTaskTrigger -Daily -At $j.At }
-                else { $time = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At $j.At }
-                $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
+                $actionParams = @{ Execute = 'cmd.exe'; Argument = $argLine }
+                if ($j.WorkDir) { $actionParams.WorkingDirectory = Join-Path $Root $j.WorkDir }
+                $action = New-ScheduledTaskAction @actionParams
+                $triggers = @()
+                if ($j.Logon -ne $false) { $triggers += New-ScheduledTaskTrigger -AtLogOn -User $user }
+                foreach ($at in @($j.At)) {
+                    if ($j.Kind -eq 'Daily') { $triggers += New-ScheduledTaskTrigger -Daily -At $at }
+                    else { $triggers += New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At $at }
+                }
+                $settingsParams = @{ StartWhenAvailable = $true; MultipleInstances = 'IgnoreNew' }
+                if ($j.LimitHours) { $settingsParams.ExecutionTimeLimit = New-TimeSpan -Hours $j.LimitHours }
+                $settings = New-ScheduledTaskSettingsSet @settingsParams
                 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-                Register-ScheduledTask -TaskName $name -Action $action -Trigger @($logon, $time) -Settings $settings -Principal $principal -Description "Trading (C:\tools\trading): $($j.Script)" | Out-Null
+                Register-ScheduledTask -TaskName $name -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description "Trading (C:\tools\trading): $($j.Script)" | Out-Null
             }
         }
     }
