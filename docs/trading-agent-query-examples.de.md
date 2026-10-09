@@ -37,17 +37,17 @@ Der Depotstatus ist ein vollständiger, rein lesender Gesamtbericht: Positionen 
 |---|---|---|
 | 1 | „Depotstatus und Handlungsbedarf“ | `run_trading_orchestrator()` |
 | 2 | „Welche Positionen soll ich verkaufen, reduzieren oder halten?“ | `run_trading_orchestrator()` |
-| 3 | „Welche Aktion hat die höchste Priorität?“ | `run_trading_orchestrator()` (`highest_priority_actions`) |
+| 3 | „Welche Aktion hat die höchste Priorität?“ | `run_trading_orchestrator()` (`position_engine`, Feld `priority`) |
 | 4 | „Wie hoch ist der Swing-Anteil im Depot?“ | `run_trading_orchestrator()` |
 | 5 | „Gibt es Allokations-Warnungen?“ | `run_trading_orchestrator()` |
 | 6 | „Wie viel Cash ist verfügbar?“ | `run_trading_orchestrator()` |
-| 7 | „Was soll ich als Nächstes prüfen?“ | `run_trading_orchestrator()` (`next_review_items`) |
+| 7 | „Was soll ich als Nächstes prüfen?“ | `run_trading_orchestrator()` (`position_engine`, `entry_plan`) |
 | 8 | „Rechne den Depotstatus für den Stichtag 2026-01-31.“ | `run_trading_orchestrator(as_of="2026-01-31")` |
 
 **Hinweise:**
 
-- Die Antwort enthält `presentation_summary` (strukturierte Felder und Zähler) und `rendered_summary_de` (fertiger Text, immer auf Deutsch). Für Standardfragen wird das direkt angezeigt; nichts wird neu gezählt, neu summiert oder neu bewertet.
-- Standardmäßig kommt die kompakte Fassung ohne die großen Ergebnislisten (`existing_position_results`, `entry_candidate_results`, `promotion_results`). `detail=true` liefert alles (rund 100.000 Zeichen) und gehört nur auf ausdrücklichen Wunsch angefragt.
+- Die Standardantwort ist ein strukturierter Status: `portfolio`, `positions`, `position_engine` (SELL/TRIM/HOLD/ADD bestehender Positionen), `promotion`, `entry_plan` (geplante und zurückgestellte NEUE Entries des Planners), `proceeds` (brutto/Steuer/netto), `capital` und `issues`. Die Werte werden so angezeigt; nichts wird neu gezählt, neu summiert oder neu bewertet.
+- `position_engine` und `entry_plan` sind getrennte Quellen: `engine_buy_count` und `engine_add_count` zählen nur BUY/ADD der Positions-Engine; 0 bedeutet nicht, dass keine neuen Entries geplant sind. Die kompakte Standardfassung hat rund 8.000 Zeichen. `detail=true` liefert das vollständige Ergebnis mit `presentation_summary`, `rendered_summary_de` (fertiger Text, immer auf Deutsch), `highest_priority_actions`, `next_review_items` und den großen Ergebnislisten (rund 95.000 Zeichen) und gehört nur auf ausdrücklichen Wunsch angefragt.
 - Ohne `as_of` gilt der aktuelle Stand. Aktionen sind Empfehlungen des Agents; die Orderausführung erfolgt außerhalb des Trading Agents.
 
 ## 2. Einstieg

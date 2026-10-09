@@ -742,12 +742,13 @@ class Tools:
         diagnostics; it cannot import data, create assignments/campaigns, or
         execute orders.
 
-        The result includes result.presentation_summary (structured,
-        engine-computed fields and counts) and result.rendered_summary_de
-        (a ready-made German portfolio-status text). For a standard
-        portfolio-status request, render presentation_summary or
-        rendered_summary_de directly. Do not recount items, recompute
-        totals, or derive a new recommendation from the raw result.
+        The default answer (detail=false) is a structured status:
+        portfolio, positions, position_engine (SELL/TRIM/HOLD/ADD of
+        existing positions), promotion, entry_plan (planner: planned and
+        deferred NEW entries), proceeds (gross/tax/net) and capital. Use
+        these figures as they are; do not recount, recompute totals or
+        derive a new recommendation. detail=true returns the complete
+        result incl. presentation_summary and rendered_summary_de.
         """
         try:
             result = await asyncio.to_thread(self._run_trading_orchestrator_sync, as_of)

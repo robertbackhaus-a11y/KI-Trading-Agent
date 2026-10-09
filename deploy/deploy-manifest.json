@@ -74,6 +74,7 @@
       "source": "mcp-tools",
       "target": "mcp",
       "files": [
+        "orchestrator_compact.py",
         "server.py",
         "smoke_test.py",
         "trading_sqlite.py"

@@ -37,17 +37,17 @@ The portfolio status is a complete, read-only report: positions with their actio
 |---|---|---|
 | 1 | “Show me the current portfolio status and required actions.” | `run_trading_orchestrator()` |
 | 2 | “Which positions should I sell, trim or hold?” | `run_trading_orchestrator()` |
-| 3 | “Which action has the highest priority?” | `run_trading_orchestrator()` (`highest_priority_actions`) |
+| 3 | “Which action has the highest priority?” | `run_trading_orchestrator()` (`position_engine`, field `priority`) |
 | 4 | “What is the swing share of the portfolio?” | `run_trading_orchestrator()` |
 | 5 | “Are there any allocation warnings?” | `run_trading_orchestrator()` |
 | 6 | “How much cash is available?” | `run_trading_orchestrator()` |
-| 7 | “What should I review next?” | `run_trading_orchestrator()` (`next_review_items`) |
+| 7 | “What should I review next?” | `run_trading_orchestrator()` (`position_engine`, `entry_plan`) |
 | 8 | “Run the portfolio status for the as-of date 2026-01-31.” | `run_trading_orchestrator(as_of="2026-01-31")` |
 
 **Notes:**
 
-- The answer contains `presentation_summary` (structured fields and counts) and `rendered_summary_de` (a ready-made text, always in German). For standard questions it is displayed as is; nothing is recounted, re-summed or re-evaluated.
-- By default the compact version is returned, without the large result lists (`existing_position_results`, `entry_candidate_results`, `promotion_results`). `detail=true` returns everything (about 100,000 characters) and should only be requested explicitly.
+- The default answer is a structured status: `portfolio`, `positions`, `position_engine` (SELL/TRIM/HOLD/ADD of existing positions), `promotion`, `entry_plan` (planned and deferred NEW entries of the planner), `proceeds` (gross/tax/net), `capital` and `issues`. The values are displayed as they are; nothing is recounted, re-summed or re-evaluated.
+- `position_engine` and `entry_plan` are separate sources: `engine_buy_count` and `engine_add_count` only count BUY/ADD of the position engine; 0 does not mean that no new entries are planned. The compact default is about 8,000 characters. `detail=true` returns the complete result with `presentation_summary`, `rendered_summary_de` (a ready-made text, always in German), `highest_priority_actions`, `next_review_items` and the large result lists (about 95,000 characters) and should only be requested explicitly.
 - Without `as_of` the current state is used. Actions are recommendations of the agent; orders are executed outside the Trading Agent.
 
 ## 2. New Entries

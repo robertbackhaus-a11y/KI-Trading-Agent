@@ -50,10 +50,9 @@ MAX_RESULT_CHARS = int(os.environ.get("TRADING_MAX_RESULT_CHARS", "40000"))
 ORCHESTRATOR = "run_trading_orchestrator"
 HEAVY_ORCHESTRATOR_KEYS = ("existing_position_results", "entry_candidate_results", "promotion_results")
 DETAIL_DOC = (
-    "\n\nMCP-Adapter: detail=false (Standard) liefert die kompakte Fassung ohne die grossen Ergebnislisten "
-    "(existing_position_results, entry_candidate_results, promotion_results); die Felder rendered_summary_de, "
-    "presentation_summary, highest_priority_actions, next_review_items, global_status usw. sind enthalten. "
-    "detail=true liefert alles (ca. 100.000 Zeichen, nur auf ausdruecklichen Wunsch)."
+    "\n\nMCP adapter: detail=false (default) returns the compact status: portfolio, positions, position_engine (SELL/TRIM/HOLD/ADD of "
+    "existing positions), promotion, entry_plan (planner: planned and deferred NEW entries), proceeds (gross/tax/net) and capital. "
+    "detail=true returns the complete result (about 95,000 characters; only on explicit request)."
 )
 
 
@@ -61,7 +60,35 @@ def _compact(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
+def _load_orchestrator_compact():
+    """The pure projection module lives next to this file; a missing or broken module must never break the tool."""
+    path = HERE / "orchestrator_compact.py"
+    try:
+        spec = importlib.util.spec_from_file_location("orchestrator_compact", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception as exc:  # noqa: BLE001
+        _log(f"orchestrator_compact unavailable ({type(exc).__name__}); falling back to the legacy slimming")
+        return None
+
+
+_COMPACT = _load_orchestrator_compact()
+
+
 def _slim_orchestrator(res):
+    """Default (detail=false) view: structured compact status; falls back to the legacy list-omitting view on any problem."""
+    if _COMPACT is not None:
+        try:
+            compact = _COMPACT.compact_orchestrator_response(res)
+            if compact is not None:
+                return compact
+        except Exception as exc:  # noqa: BLE001
+            _log(f"compact orchestrator view failed ({type(exc).__name__}); falling back to the legacy slimming")
+    return _slim_orchestrator_legacy(res)
+
+
+def _slim_orchestrator_legacy(res):
     if not isinstance(res, dict) or not isinstance(res.get("result"), dict):
         return res
     inner = dict(res["result"])
