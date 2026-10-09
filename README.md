@@ -2,7 +2,7 @@
 
 Standalone trading agent / trading data store.
 
-Version: v0.1.1 — see [CHANGELOG.md](CHANGELOG.md). Release preparation for v0.2.0 is under way (no tag and no GitHub release yet).
+Version: v0.2.0 — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Runtime
 

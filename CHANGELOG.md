@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.2.0] - 2026-10-09
+
+### Added
+- Deterministic Portfolio Action Planner (`portfolio_action_plan`): post-action capital, PROMOTE entry evaluation, ranking and sizing — simulation only, no orders
+- Net proceeds / tax simulation for planned SELL/TRIM actions (average-cost basis, conservative view)
+- Multi-currency FX support (ECB reference rates for USD, GBP, AUD and KRW; GBp pence quotes are normalized to GBP)
+- Point-in-time visibility rules for fundamentals (`filing_date` / `fetched_at`)
+- Swing campaign reconciliation for Parqet imports (transaction-linked `add` / `manual_reduction` events; ambiguous cases write nothing)
+- Candidate Discovery over a versioned large-cap universe (read-only; report plus the MCP reader `get_candidate_discovery`)
+- Market Intelligence from official feeds, SEC filings and Yahoo headlines (rule-based classification; report plus the MCP reader `get_market_intelligence`)
+- Unified Opportunity View (`get_opportunity_view`, MCP tool no. 15)
+- Automated Discovery and Market Intelligence scheduled tasks
+- Versioned deployment workflow (`deploy/Deploy-TradingAgent.ps1`: Check / Deploy / Rollback)
+- Versioned test suite (`tests/trading`, 601 tests, synthetic data only)
+- Bilingual DE/EN technical and query documentation
+
+### Changed
+- MCP responses optimized for lower context usage (compact default, `detail=true` on request, response size guard)
+- Frontend-neutral MCP architecture and documentation
+- Repository and privacy cleanup: synthetic test data, neutral default SEC User-Agent (set `SEC_USER_AGENT` for production use)
+- Public/private sector-map split (`sector_map_v1.json` is public; an optional local `sector_map_local.json` is merged by the collector)
+- Deployment and scheduler documentation updated
+
+### Fixed
+- Point-in-time handling of fundamentals: the same visibility rule on the current and the explicit `as_of` path; rows without a publication date are capped at `partial`
+- Stale or inconsistent documentation corrected (scheduler, deployment, test tracking, task names, examples)
+
+### Removed
+- `Canonicalize-TradingUniverse.py` (hand-maintained security reference list)
+
+### Operations / Deployment
+- 6 scheduled trading tasks (market data, FX rates, events/news, SEC fundamentals, candidate discovery, market intelligence)
+- Explicit runtime manifest (`deploy/deploy-manifest.json`)
+- Backup, hash, integrity and MCP smoke verification on every deploy
+- Protected local sector map (never overwritten or created by the deploy)
+
+### Documentation
+- README English-only
+- 6 complete DE/EN documentation pairs
+- Query examples for all 15 MCP tools
+
 ## [0.1.1] - 2026-09-28
 
 ### Added

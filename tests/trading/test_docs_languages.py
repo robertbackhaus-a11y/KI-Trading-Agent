@@ -89,6 +89,14 @@ class DocumentationLanguageTests(unittest.TestCase):
             self.assertLessEqual(german, 2, f"{filename}: German words ({german})")
             self.assertGreater(english, 5 * max(german, 1), filename)
 
+    def test_readme_version_matches_the_top_changelog_entry_and_keeps_the_history(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        versions = re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", changelog, flags=re.M)
+        self.assertEqual(re.search(r"^Version: v(\d+\.\d+\.\d+) — see \[CHANGELOG\.md\]\(CHANGELOG\.md\)\.$", readme, flags=re.M).group(1), versions[0])
+        self.assertEqual(versions[:3], [versions[0], "0.1.1", "0.1.0"])
+        self.assertNotRegex(readme.lower(), r"release preparation|in preparation|under way")
+
     def test_readme_links_both_language_versions_of_every_document(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for name in doc_pairs():
