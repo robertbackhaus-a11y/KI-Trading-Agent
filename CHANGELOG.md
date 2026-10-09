@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- External funding in the Portfolio Action Planner (`metadata.external_funding_available`, default off): lifts only the cash/reserve shortage for BUY and ADD; allocation, weight, data and campaign guards stay binding
+- Provider-neutral transaction import: documented canonical CSV (`Import-TradingTransactions.py --format canonical`), Parqet as a source adapter, `--create-securities`, strategy-aware initialization (`--strategy`), automatic Swing-campaign initialization and reconciliation (`--campaign-opened-at`), complete dry run on an in-memory copy, bilingual import documentation and a synthetic example CSV
+- GitHub security configuration: CodeQL, Dependency Review, Dependabot (GitHub Actions and Python), SHA-pinned actions
+- `requirements.txt` with the direct runtime dependencies
+
+### Changed
+- `parqet_import.py` is now the Parqet adapter; the import engine lives in `transaction_import.py` (former names are still exported); `Import-ParqetTransactions.py` runs `Import-TradingTransactions.py --format parqet`
+
 ## [0.2.0] - 2026-10-09
 
 ### Added

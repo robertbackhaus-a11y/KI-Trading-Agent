@@ -16,7 +16,7 @@ from corporate_actions import (
     load_corporate_actions,
     validate_new_split,
 )
-from parqet_import import rebuild_position
+from transaction_import import rebuild_position
 
 
 DB_PATH = Path(r"C:\tools\trading\data\trading.db")

@@ -21,3 +21,8 @@ Die Rangfolge der Blocker lautet: zuerst Kandidatenumfang und aktuelle Position/
 vollständige Portfolio-Bewertung/-Allokation, die aktuelle Swing-Obergrenze, Cash-Verfügbarkeit/
 -Reserve und zuletzt die technischen Einstiegseingaben. Dadurch führt eine aktuell
 übergewichtete Swing-Allokation unbedingt zu `ENTRY_SWING_ALLOCATION_LIMIT`.
+
+Externe Mittel: Ist `metadata.external_funding_available = true` gesetzt, entfällt in Entry- und ADD-Sizing ausschließlich die Cash-/Reserve-Obergrenze
+(`ENTRY_CASH_RESERVE_LIMIT`/`ADD_CASH_RESERVE_LIMIT`); Swing-Obergrenze, Gewichtslimits, Campaign-Größe und alle übrigen Blocker gelten unverändert.
+Das ist kein unbegrenztes Kapital. Die Empfehlung weist `internal_capital_eur` (aus Cash über der Reserve) und `external_funding_eur` aus; es wird
+nichts eingezahlt oder gebucht. Fehlt der Schlüssel oder ist er `false` (Standard), ändert sich nichts.

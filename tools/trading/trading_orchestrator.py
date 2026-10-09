@@ -331,7 +331,7 @@ def run_trading_orchestrator(
 
     all_issues = [*global_issues, *security_issues]
     global_blocking = sum(item["severity"] == "GLOBAL_BLOCKING" for item in all_issues)
-    capital_state_summary = {"total_portfolio_market_value_eur": portfolio.total_market_value, "swing_market_value_eur": portfolio.swing_market_value, "swing_weight_pct": portfolio.swing_weight_pct, "long_term_market_value_eur": portfolio.long_term_market_value, "long_term_weight_pct": portfolio.long_term_weight_pct, "cash_available": portfolio.cash_available, "cash_quality": portfolio.cash_quality.status.value, "buying_power": portfolio.buying_power, "buying_power_quality": portfolio.buying_power_quality.status.value, "as_of": portfolio.capital_state_as_of, "source": portfolio.capital_state_source, "allocation_guardrails": list(portfolio.allocation_guardrails)}
+    capital_state_summary = {"total_portfolio_market_value_eur": portfolio.total_market_value, "swing_market_value_eur": portfolio.swing_market_value, "swing_weight_pct": portfolio.swing_weight_pct, "long_term_market_value_eur": portfolio.long_term_market_value, "long_term_weight_pct": portfolio.long_term_weight_pct, "cash_available": portfolio.cash_available, "cash_quality": portfolio.cash_quality.status.value, "buying_power": portfolio.buying_power, "buying_power_quality": portfolio.buying_power_quality.status.value, "as_of": portfolio.capital_state_as_of, "source": portfolio.capital_state_source, "allocation_guardrails": list(portfolio.allocation_guardrails), "external_funding_available": portfolio.external_funding_available}
 
     presentation_summary_obj = build_presentation_summary(
         capital_state_summary=capital_state_summary,

@@ -23,6 +23,18 @@ Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\tradin
 This repository contains code only. The database, backups, audit/candidate JSON files,
 PDFs and logs live outside the repository (see `.gitignore`).
 
+## Python dependencies
+
+Python 3.12. The repository has no packaging metadata; `requirements.txt` lists the direct runtime dependencies at their tested versions.
+
+```
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+The tests use only the standard library's `unittest` (plus the runtime packages above):
+`.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"`.
+
 ## Documentation
 
 The technical documentation exists as a complete pair in German and English (same structure, same technical terms).
@@ -36,6 +48,7 @@ This README, the changelog, the contributing guide and the security policy are E
 | Watchlist strategy suggestion | [trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) | [trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md) |
 | Watchlist-to-Swing promotion | [trading-swing-promotion.en.md](docs/trading-swing-promotion.en.md) | [trading-swing-promotion.de.md](docs/trading-swing-promotion.de.md) |
 | Swing entry recommendations | [trading-entry-recommendations.en.md](docs/trading-entry-recommendations.en.md) | [trading-entry-recommendations.de.md](docs/trading-entry-recommendations.de.md) |
+| Transaction import (canonical CSV, Parqet) | [trading-import.en.md](docs/trading-import.en.md) | [trading-import.de.md](docs/trading-import.de.md) |
 
 ## Deploy
 
@@ -84,7 +97,9 @@ inputs/outputs, DB access and dependencies:
 | `Backfill-TradingFundamentalsIR.py` | Fundamentals from company IR reference parsers — **manual/event-driven** (hardcoded quarterly URLs per company, no automation) |
 | `Research-TradingFundamentals.py` | LLM research fundamentals pipeline (canonical tool) — **manual/LLM-assisted** (requires an active Claude session, cannot be automated) |
 | `Backfill-TradingEventsNews.py` | `events` (SEC EDGAR 8-K/6-K, 2-year lookback) + `news` (Yahoo Finance search) backfill — runs daily and automatically via the Windows task `Trading-EventsNews-Backfill` (logon + daily 17:25, `StartWhenAvailable=True`; log: `C:\tools\trading\logs\events-news-backfill.log`). This resolves inconsistency #4 part A (events/news); `estimates`/`ratings`/`price_targets` deliberately remain open (no free data path) |
-| `Import-ParqetTransactions.py` | Incremental Parqet CSV import (`transactions` + `positions`; preview is the default, `--write` makes a backup first). See the section "Parqet import and Swing campaigns" |
+| `Import-TradingTransactions.py` | Transaction import from the canonical Trading CSV (`--format canonical`) or a Parqet export (`--format parqet`): `transactions`, `positions`, strategy assignment and Swing-campaign initialization; the default is a complete dry run, `--write` makes a backup first. See the section "Transaction import and Swing campaigns" |
+| `Import-ParqetTransactions.py` | Existing entry point; same as `Import-TradingTransactions.py --format parqet` |
+| `transaction_import.py` / `parqet_import.py` | Provider-neutral import engine / Parqet source adapter |
 | `trading_analytics.py` | Technical scoring library (SMA/RSI/momentum/drawdown/volatility), `rank_watchlist()` |
 | `trading_orchestrator.py` | Read-only portfolio-wide report (composes analytics/decision/promotion) |
 | `candidate_discovery.py` / `Discover-TradingCandidates.py` | Read-only watchlist candidate discovery over a controlled universe (`universe/swing_large_cap_v1.json`); not part of the orchestrator, writes nothing to the database; runs daily and automatically via the Windows task `Trading-Candidate-Discovery` (17:35, `StartWhenAvailable=True`, no logon trigger, 2 h time limit; log: `C:\tools\trading\logs\candidate-discovery.log`). See the section "Watchlist candidate discovery" |
@@ -92,7 +107,16 @@ inputs/outputs, DB access and dependencies:
 | `opportunity_view.py` | Read-only opportunity view: joins engine/planner candidates, the last discovery report and the last market-intelligence report (news only as context, no new score); read through the MCP method `get_opportunity_view`. See the section "Unified opportunity view" |
 | `portfolio_action_planner.py` | Deterministic capital/entry plan (`portfolio_action_plan`, simulation without orders); called by the orchestrator at the end. See the section "Portfolio action planner" |
 
-## Parqet import and Swing campaigns
+## Transaction import and Swing campaigns
+
+Transactions are imported from a documented canonical CSV (any source, no Parqet needed) or from a Parqet export; both end in the same
+provider-neutral pipeline: validation, security resolution, transactions, positions, strategy assignment, Swing campaign, reconciliation.
+The example [examples/trading-import-example.csv](examples/trading-import-example.csv) is synthetic. Full reference:
+[docs/trading-import.en.md](docs/trading-import.en.md) (German: [docs/trading-import.de.md](docs/trading-import.de.md)).
+
+```
+python tools\trading\Import-TradingTransactions.py --format canonical --csv examples\trading-import-example.csv --db-path <db> --create-securities --strategy EXA=swing
+```
 
 The import reconciles unambiguously attributable trades **after** `opened_at` of an open Swing campaign
 in the same DB transaction with transaction-linked events: SELL → `manual_reduction`, BUY → `add`
@@ -103,7 +127,7 @@ otherwise `MANUAL_REVIEW_REQUIRED`. TP1/TP2/stop reasons are never derived, `ori
 closed automatically. Idempotent through the unique `transaction_id` link. Ambiguous or non-matching
 cases (several open campaigns, transfers, overselling, split) write nothing and are reported
 as `AMBIGUOUS` / `MANUAL_REVIEW_REQUIRED`. For already imported trades:
-`Import-ParqetTransactions.py --reconcile-campaigns [--write]`.
+`Import-TradingTransactions.py --reconcile-campaigns [--write]`.
 
 ## Portfolio action planner
 

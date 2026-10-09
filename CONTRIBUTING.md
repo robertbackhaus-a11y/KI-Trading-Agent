@@ -94,6 +94,16 @@ other modules, scripts) is affected.
 
 If you're unsure whether a file belongs in the repository, don't add it — ask first.
 
+## Security checks
+
+- CodeQL, Dependency Review, Dependabot and GitHub secret scanning (with push protection) run
+  automatically; see [SECURITY.md](SECURITY.md). Do not silence or work around a finding —
+  fix it or explain it in the pull request.
+- Never commit secrets, not even test ones that look real. Use obviously fake values.
+- Dependencies and GitHub Actions versions are kept current by Dependabot pull requests.
+  GitHub Actions are pinned to a full commit SHA with the version in a trailing comment;
+  workflows use the minimal `permissions:` they need and never `pull_request_target`.
+
 ## Commit messages
 
 - Write clear, descriptive commit messages that explain the change.

@@ -50,7 +50,7 @@ from analysis_contracts import (
 )
 from candidate_decision import BUY_SCORE_THRESHOLD
 from decision_engine import _confidence
-from entry_sizing import _weight_cap_value, evaluate_entry_recommendation
+from entry_sizing import _weight_cap_value, evaluate_entry_recommendation, internal_external_split
 from orchestrator_presentation import _fmt_eur, _fmt_pct, _fmt_quantity
 from portfolio_context import derive_allocation_guardrails
 from strategy_config import StrategyConfig, TaxConfig
@@ -106,6 +106,8 @@ class _State:
     swing: float
     long_term: float
     cash: Optional[float]
+    # EUR of planned purchases funded externally so far (a planning figure; nothing is booked or deposited).
+    external_used: float = 0.0
 
     @property
     def swing_pct(self) -> float:
@@ -123,14 +125,18 @@ class _State:
             swing=self.swing - proceeds if strategy == "swing" else self.swing,
             long_term=self.long_term - proceeds if strategy == "long_term" else self.long_term,
             cash=None if self.cash is None else self.cash + received,
+            external_used=self.external_used,
         )
 
-    def after_purchase(self, value: float) -> "_State":
+    def after_purchase(self, value: float, cash_used: Optional[float] = None) -> "_State":
+        """The position value rises by ``value``; cash falls by ``cash_used`` (default: all of it), the rest is externally funded."""
+        used = value if cash_used is None else cash_used
         return _State(
             total=self.total + value,
             swing=self.swing + value,
             long_term=self.long_term,
-            cash=None if self.cash is None else self.cash - value,
+            cash=None if self.cash is None else self.cash - used,
+            external_used=self.external_used + (value - used),
         )
 
     def as_portfolio(self, base: PortfolioContext, security_id: int) -> PortfolioContext:
@@ -277,6 +283,8 @@ def _existing_actions(
     *,
     cost_basis: Optional[Mapping[int, Mapping[str, Any]]] = None,
     tax: Optional[TaxConfig] = None,
+    external_funding: bool = False,
+    reserve: Optional[float] = None,
 ) -> tuple[list[dict[str, Any]], Optional[_State], dict[str, Any], float]:
     """Summarise actionable positions and fold them into the capital state.
 
@@ -341,7 +349,11 @@ def _existing_actions(
         for sale in sales:
             state = state.after_sale(sale["strategy"], sale["gross"], sale["net"])
         for value in purchases:
-            state = state.after_purchase(value)
+            if external_funding and state.cash is not None and reserve is not None:
+                internal, _external = internal_external_split(cash=state.cash, reserve=reserve, purchase=value)
+                state = state.after_purchase(value, cash_used=internal)
+            else:
+                state = state.after_purchase(value)
     return items, state, tax_summary, purchases_total
 
 
@@ -470,6 +482,7 @@ def unavailable_plan(reason: str, *, evaluation_as_of: Optional[str] = None) -> 
         "planned_entries": [],
         "deferred_entries": [],
         "final_simulated_state": {},
+        "capital": {},
         "tax_estimate": {},
         "entry_summary": {status: 0 for status in ENTRY_STATUSES},
         "methodology": _methodology(),
@@ -485,6 +498,7 @@ def _methodology(tax: Optional[TaxConfig] = None, *, net_basis: bool = False) ->
         "rank_tie_breaks": ["watchlist_priority (higher first)", "security_id (lower first)"],
         "wait_for_trigger_score_threshold": BUY_SCORE_THRESHOLD,
         "sizing": "entry_sizing.evaluate_entry_recommendation against the simulated capital state (swing maximum, cash reserve, per-security weight limits, whole-share floor)",
+        "external_funding": "metadata.external_funding_available (default false). When true only the cash/reserve shortage is lifted: Swing maximum, weight limits, position/campaign blocks, data quality and candidate status stay binding; the externally funded part is planned, never booked.",
         "proceeds_basis": "net_conservative" if net_basis else "gross",
         "taxes_modelled": net_basis,
         "fees_modelled": False,
@@ -496,6 +510,60 @@ def _methodology(tax: Optional[TaxConfig] = None, *, net_basis: bool = False) ->
             "indicative_view": "loss offset within the planned SELL/TRIM actions (display only, never used for planning)",
             "unknown_inputs": list(_TAX_UNKNOWN_INPUTS),
         },
+    }
+
+
+def _capital_view(
+    *,
+    initial: Optional[_State],
+    post_state: Optional[_State],
+    running: Optional[_State],
+    post_action: Optional[Mapping[str, Any]],
+    purchases_total: float,
+    entries_total: float,
+    external: bool,
+    portfolio: PortfolioContext,
+    cfg: StrategyConfig,
+    stop_reason: Optional[str],
+) -> dict[str, Any]:
+    """Explicit capital terms of the plan (pure arithmetic on values the planner already holds).
+
+    * ``internal_deployable_capital_eur``: cash + conservative net sale proceeds - minimum reserve (limited by an available buying power).
+    * ``allocation_headroom_eur``: Swing capacity left under the Swing maximum after the actions (percent of the invested value, so money
+      that is invested raises numerator and denominator like any purchase; external money is handled exactly like internal money).
+    * ``deployable_capital_eur``: upper bound for new BUY/ADD under the guards: the allocation headroom with external funding, otherwise
+      the smaller of internal capital and headroom.  Per-position weight limits and whole shares can lower the actual plan further.
+    * ``external_funding_required_eur``: planned capital beyond the internal capital (0 without external funding).
+    """
+    reserve = cfg.sizing.minimum_cash_reserve
+    if initial is None or post_state is None or running is None:
+        return {"external_funding_available": external}
+    cash = initial.cash
+    net_proceeds = (post_action or {}).get("expected_proceeds_net_conservative_eur")
+    internal: Optional[float] = None
+    if cash is not None and reserve is not None and net_proceeds is not None:
+        capital = cash + float(net_proceeds)
+        if portfolio.buying_power_quality.status is AvailabilityStatus.AVAILABLE and portfolio.buying_power is not None:
+            capital = min(capital, float(portfolio.buying_power))
+        internal = max(0.0, capital - reserve)
+    headroom = _weight_cap_value(total=post_state.total, current=post_state.swing, maximum=cfg.portfolio.swing_max_pct)
+    deployable = headroom if external else (None if internal is None else min(internal, headroom))
+    planned_total = purchases_total + entries_total
+    required = running.external_used if external else 0.0
+    final_view = _state_view(running, cfg)
+    return {
+        "external_funding_available": external,
+        "cash_available_eur": cash,
+        "cash_reserve_min_eur": reserve,
+        "net_sale_proceeds_conservative_eur": net_proceeds,
+        "internal_deployable_capital_eur": internal,
+        "allocation_headroom_eur": headroom,
+        "deployable_capital_eur": deployable,
+        "planned_capital_total_eur": planned_total,
+        "internal_capital_used_eur": planned_total - required,
+        "external_funding_required_eur": required,
+        "remaining_buying_capacity_eur": final_view["remaining_swing_capacity_eur"] if external else final_view["deployable_cash_eur"],
+        "limiting_guard": stop_reason or ("ALL_READY_CANDIDATES_PLANNED" if planned_total > 0 else "NO_ENTRY_PLANNED"),
     }
 
 
@@ -517,6 +585,7 @@ def build_portfolio_action_plan(
     """
     cfg = config or StrategyConfig()
     candidate_snapshots = candidate_snapshots or {}
+    external = bool(portfolio.external_funding_available)  # lifts only the cash/reserve shortage; every other guard stays binding
     warnings: list[str] = ["CONCENTRATION_SINGLE_SECURITY_LIMITS_ONLY"]
     initial = _initial_state(portfolio)
     if initial is None:
@@ -528,7 +597,8 @@ def build_portfolio_action_plan(
 
     # A. existing actions   B. post-action capital
     actions, post_state, tax_estimate, purchases_total = _existing_actions(
-        [*existing_position_results, *entry_candidate_results], initial, warnings, cost_basis=position_cost_basis, tax=cfg.tax
+        [*existing_position_results, *entry_candidate_results], initial, warnings, cost_basis=position_cost_basis, tax=cfg.tax,
+        external_funding=external, reserve=cfg.sizing.minimum_cash_reserve,
     )
     proceeds_total = tax_estimate["gross_proceeds_total_eur"]
     net_basis = tax_estimate["tax_estimate_quality"] != "not_estimated"
@@ -593,7 +663,7 @@ def build_portfolio_action_plan(
         if stop_reason is None:
             if running.swing_pct >= cfg.portfolio.swing_max_pct * 100.0 - _EPS:
                 stop_reason = "STOPPED_SWING_MAX_REACHED"
-            elif running.cash is not None and reserve is not None and running.cash <= reserve + _EPS:
+            elif not external and running.cash is not None and reserve is not None and running.cash <= reserve + _EPS:
                 stop_reason = "STOPPED_CASH_RESERVE_REACHED"
         if stop_reason is not None:
             defer(candidate, stop_reason)
@@ -606,13 +676,21 @@ def build_portfolio_action_plan(
             if raw == "ENTRY_SWING_ALLOCATION_LIMIT":
                 stop_reason = "STOPPED_SWING_MAX_REACHED"
                 defer(candidate, stop_reason)
-            elif raw in ("ENTRY_QUANTITY_ZERO", "ENTRY_CASH_RESERVE_LIMIT") and (deployable is None or price is None or deployable < price):
+            elif not external and raw in ("ENTRY_QUANTITY_ZERO", "ENTRY_CASH_RESERVE_LIMIT") and (deployable is None or price is None or deployable < price):
                 stop_reason = "STOPPED_CAPITAL_EXHAUSTED"
+                defer(candidate, stop_reason)
+            elif (
+                external and raw == "ENTRY_QUANTITY_ZERO" and price is not None
+                and _weight_cap_value(total=running.total, current=running.swing, maximum=cfg.portfolio.swing_max_pct) < price
+            ):
+                # with external funding the Swing maximum (not cash) is what runs out: less than one share of Swing capacity is left
+                stop_reason = "STOPPED_SWING_MAX_REACHED"
                 defer(candidate, stop_reason)
             else:
                 defer(candidate, _DEFERRAL_REASON.get(raw, raw))
             continue
         sizing = _sizing_view(rec)
+        running = running.after_purchase(sizing["proposed_capital_eur"], cash_used=rec.internal_capital_eur)
         planned.append({
             "rank": candidate["rank"],
             "security_id": sid,
@@ -623,11 +701,12 @@ def build_portfolio_action_plan(
             "expected_weight_pct": sizing["resulting_portfolio_weight_pct"],
             "resulting_position_value_eur": sizing["resulting_position_value_eur"],
             "resulting_swing_allocation_pct": sizing["resulting_swing_allocation_pct"],
-            "cash_after_eur": sizing["cash_after_eur"],
+            "cash_after_eur": running.cash,
+            "internal_capital_eur": rec.internal_capital_eur,
+            "external_funding_eur": rec.external_funding_eur,
             "entry_score": candidate["entry_score"],
             "reason": "ENTRY_READY",
         })
-        running = running.after_purchase(sizing["proposed_capital_eur"])
 
     # G. final simulated state
     final_state = None
@@ -636,6 +715,15 @@ def build_portfolio_action_plan(
         final_state = {"planned_entries_total_eur": entries_total, **_state_view(running, cfg)}
         final_state["swing_within_max"] = running.swing_pct <= cfg.portfolio.swing_max_pct * 100.0 + 1e-6
         final_state["cash_above_reserve"] = running.cash is None or reserve is None or running.cash >= reserve - 1e-6
+
+    capital = _capital_view(
+        initial=initial, post_state=post_state, running=running, post_action=post_action, purchases_total=purchases_total,
+        entries_total=sum(entry["capital_eur"] for entry in planned), external=external, portfolio=portfolio, cfg=cfg, stop_reason=stop_reason,
+    )
+    if external:
+        warnings.append("EXTERNAL_FUNDING_ASSUMED_AVAILABLE")
+        if (capital.get("external_funding_required_eur") or 0.0) > 0:
+            warnings.append("EXTERNAL_FUNDING_REQUIRED_FOR_PLAN")
 
     order = {status: index for index, status in enumerate(ENTRY_STATUSES)}
     candidates = sorted((c for c, _, _ in evaluated), key=lambda c: (order[c["entry_status"]], c["rank"] if c["rank"] is not None else 10**9, -(c["entry_score"] if c["entry_score"] is not None else -1e18), int(c["security_id"])))
@@ -646,13 +734,14 @@ def build_portfolio_action_plan(
         "simulation_only": True,
         "orders_created": False,
         "evaluation_as_of": portfolio.evaluation_as_of,
-        "current_state": {**_state_view(initial, cfg), "allocation_guardrails_current": list(portfolio.allocation_guardrails), "buying_power_eur": portfolio.buying_power, "minimum_cash_reserve_eur": reserve, "swing_target_pct": [cfg.portfolio.swing_min_pct * 100.0, cfg.portfolio.swing_max_pct * 100.0], "long_term_target_pct": [cfg.portfolio.long_term_min_pct * 100.0, cfg.portfolio.long_term_max_pct * 100.0]} if initial is not None else {},
+        "current_state": {**_state_view(initial, cfg), "allocation_guardrails_current": list(portfolio.allocation_guardrails), "buying_power_eur": portfolio.buying_power, "minimum_cash_reserve_eur": reserve, "swing_target_pct": [cfg.portfolio.swing_min_pct * 100.0, cfg.portfolio.swing_max_pct * 100.0], "long_term_target_pct": [cfg.portfolio.long_term_min_pct * 100.0, cfg.portfolio.long_term_max_pct * 100.0], "external_funding_available": external} if initial is not None else {},
         "existing_position_actions": actions,
         "post_action_state": post_action or {},
         "entry_candidates": candidates,
         "planned_entries": planned,
         "deferred_entries": deferred,
         "final_simulated_state": final_state or {},
+        "capital": capital,
         "tax_estimate": tax_estimate,
         "entry_summary": summary,
         "methodology": _methodology(cfg.tax, net_basis=net_basis),
@@ -713,6 +802,9 @@ def render_plan_de(plan: Mapping[str, Any]) -> str:
         lines.append(f"   {entry['rank']}. {entry['symbol']}:{_fmt_quantity(entry['quantity'])} Stk. (ca. {_fmt_eur(entry['capital_eur'])}, Gewicht {_fmt_pct(entry['expected_weight_pct'])}, Swing danach {_fmt_pct(entry['resulting_swing_allocation_pct'])})")
     if not plan["planned_entries"]:
         lines.append("   keine")
+    funding = plan.get("capital") or {}
+    if funding.get("external_funding_available"):
+        lines.append(f"   Externes Kapital (Annahme: verfügbar): für den Plan nötig {_fmt_eur(funding.get('external_funding_required_eur'))}, intern finanziert {_fmt_eur(funding.get('internal_capital_used_eur'))}")
     if plan["deferred_entries"]:
         lines.append("   Zurückgestellt: " + ", ".join(f"{d['symbol']} ({d['reason']})" for d in plan["deferred_entries"]))
     lines.append(f"6. Final (simuliert): Swing {_fmt_pct(fin['swing_pct'])}, Long-Term {_fmt_pct(fin['long_term_pct'])}, Cash {_fmt_eur(fin['cash_eur'])}")

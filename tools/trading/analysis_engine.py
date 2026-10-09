@@ -1049,6 +1049,7 @@ def build_portfolio_context(
             allocation_quality=allocation_quality,
             allocation_guardrails=guardrails,
             exposures=exposures,
+            external_funding_available=capital_state.external_funding_available,
         )
     finally:
         if owns_connection:

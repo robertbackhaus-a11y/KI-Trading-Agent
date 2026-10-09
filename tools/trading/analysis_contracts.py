@@ -255,6 +255,8 @@ class CapitalStateContext:
     buying_power_quality: DataQuality
     as_of: Optional[str]
     source: Optional[str]
+    # Standing planning capability (metadata flag), not a cash booking; False unless explicitly enabled.
+    external_funding_available: bool = False
 
 
 @dataclass(frozen=True)
@@ -287,6 +289,8 @@ class PortfolioContext:
     allocation_quality: DataQuality
     allocation_guardrails: tuple[str, ...] = ()
     exposures: tuple[PortfolioSecurityExposure, ...] = ()
+    # True: low internal cash alone must not block BUY/ADD sizing; allocation, weight, data and campaign guards stay binding.
+    external_funding_available: bool = False
 
 
 @dataclass(frozen=True)

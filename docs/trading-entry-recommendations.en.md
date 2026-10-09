@@ -22,3 +22,8 @@ Blocker precedence is candidate scope and current position/campaign first,
 then complete portfolio valuation/allocation, the current Swing ceiling,
 cash availability/reserve, and finally technical entry inputs.  This makes a
 currently overweight Swing allocation an unconditional `ENTRY_SWING_ALLOCATION_LIMIT`.
+
+External funding: with `metadata.external_funding_available = true` entry and ADD sizing drop only the cash/reserve cap
+(`ENTRY_CASH_RESERVE_LIMIT`/`ADD_CASH_RESERVE_LIMIT`); the Swing ceiling, weight limits, campaign size and all other blockers apply
+unchanged. This is not unlimited capital. The recommendation reports `internal_capital_eur` (from cash above the reserve) and `external_funding_eur`;
+nothing is deposited or booked. A missing key or `false` (default) changes nothing.

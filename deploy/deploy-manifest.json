@@ -19,6 +19,7 @@
         "Discover-TradingCandidates.py",
         "Discover-TradingSECIdentifiers.py",
         "Import-ParqetTransactions.py",
+        "Import-TradingTransactions.py",
         "Initialize-TradingDatabase.py",
         "Manage-TradingCapitalState.py",
         "Manage-TradingCorporateActions.py",
@@ -57,7 +58,8 @@
         "swing_lifecycle.py",
         "swing_promotion.py",
         "trading_analytics.py",
-        "trading_orchestrator.py"
+        "trading_orchestrator.py",
+        "transaction_import.py"
       ]
     },
     {

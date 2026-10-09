@@ -33,6 +33,10 @@ ACTION_TAX_FIELDS = (
     "price_eur", "gross_proceeds_eur", "estimated_realized_gain_eur", "estimated_tax_eur_conservative",
     "estimated_net_proceeds_eur_conservative", "estimated_purchase_eur",
 )
+FUNDING_FIELDS = (
+    "external_funding_available", "cash_available_eur", "cash_reserve_min_eur", "internal_deployable_capital_eur", "deployable_capital_eur",
+    "external_funding_required_eur", "internal_capital_used_eur", "limiting_guard",
+)
 PLANNED_ENTRY_FIELDS = (
     "rank", "symbol", "quantity", "price_eur", "capital_eur", "expected_weight_pct", "resulting_swing_allocation_pct", "cash_after_eur", "entry_score",
 )
@@ -102,7 +106,9 @@ def _entry_plan(inner: Mapping[str, Any]) -> dict:
         return out
     final = _d(plan.get("final_simulated_state"))
     out["entry_status_counts"] = dict(_d(plan.get("entry_summary")))
-    planned = [_pick(item, PLANNED_ENTRY_FIELDS) for item in _l(plan.get("planned_entries")) if isinstance(item, Mapping)]
+    funding = _d(plan.get("capital"))
+    split = ("internal_capital_eur", "external_funding_eur") if funding.get("external_funding_available") else ()  # the split only matters (and only costs tokens) with external funding
+    planned = [_pick(item, PLANNED_ENTRY_FIELDS + split) for item in _l(plan.get("planned_entries")) if isinstance(item, Mapping)]
     out["planned_count"] = len(planned)
     out["planned_total_eur"] = final.get("planned_entries_total_eur")
     out["planned_entries"] = planned
@@ -121,7 +127,8 @@ def _entry_plan(inner: Mapping[str, Any]) -> dict:
         if isinstance(item, Mapping) and item.get("entry_status") not in (None, "ENTRY_READY"):
             not_ready.setdefault(item["entry_status"], []).append(item.get("symbol"))
     out["not_ready_candidates"] = not_ready
-    out["remaining_buying_capacity_eur"] = final.get("deployable_cash_eur")
+    out["funding"] = _pick(funding, FUNDING_FIELDS) if funding.get("external_funding_available") else {"external_funding_available": False}
+    out["remaining_buying_capacity_eur"] = funding["remaining_buying_capacity_eur"] if funding.get("external_funding_available") else final.get("deployable_cash_eur")
     return out
 
 

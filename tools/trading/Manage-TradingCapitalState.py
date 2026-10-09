@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Optional
 
 from capital_state import (
+    EXTERNAL_FUNDING_KEY,
     FEATURE_VERSION,
     FEATURE_VERSION_KEY,
     TABLE_NAME,
+    read_external_funding_available,
     resolve_capital_state,
 )
 from strategy_config import CapitalStateConfig
@@ -189,6 +191,32 @@ def show_capital_state(
     }
 
 
+def external_funding(conn: sqlite3.Connection, *, available: Optional[bool] = None, write: bool = False) -> dict:
+    """Show (``available`` is None) or set the standing flag ``metadata.external_funding_available``.
+
+    The flag is a planning capability for the Portfolio Action Planner, not a booking: no cash transaction, no capital-state row and no
+    order is created.  Without ``--write`` a change is only previewed.  A missing key means false.
+    """
+
+    current = read_external_funding_available(conn)
+    if available is None:
+        return {"external_funding_available": current, "key": f"metadata.{EXTERNAL_FUNDING_KEY}"}
+    value = "true" if available else "false"
+    if not write:
+        return {"dry_run": True, "key": f"metadata.{EXTERNAL_FUNDING_KEY}", "current": current, "would_set": available}
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            "INSERT INTO metadata(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (EXTERNAL_FUNDING_KEY, value),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"dry_run": False, "key": f"metadata.{EXTERNAL_FUNDING_KEY}", "previous": current, "external_funding_available": available}
+
+
 def validate_capital_states(conn: sqlite3.Connection) -> list[str]:
     try:
         _require_feature(conn)
@@ -235,6 +263,11 @@ def _parse_args() -> argparse.Namespace:
     set_parser.add_argument("--notes")
     set_parser.add_argument("--write", action="store_true")
 
+    funding_parser = subparsers.add_parser("external-funding", help="show or set the external-funding planning flag (dry-run by default)")
+    funding_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
+    funding_parser.add_argument("--available", choices=("true", "false"), help="omit to show the current value")
+    funding_parser.add_argument("--write", action="store_true")
+
     validate_parser = subparsers.add_parser("validate", help="validate capital-state records")
     validate_parser.add_argument("--db-path", "--db", dest="command_db_path", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args()
@@ -253,6 +286,9 @@ def main() -> int:
                 evaluation_as_of=args.as_of,
                 freshness_max_age_days=args.freshness_max_age_days,
             ))
+            return 0
+        if args.command == "external-funding":
+            _print(external_funding(conn, available=None if args.available is None else args.available == "true", write=write))
             return 0
         if args.command == "set":
             _print(set_capital_state(

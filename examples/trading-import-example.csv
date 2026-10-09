@@ -1,0 +1,10 @@
+transaction_date,transaction_type,isin,symbol,wkn,name,shares,price,amount,fees,taxes,currency,broker,external_id,realized_gain,asset_type,notes
+2026-01-12T09:30:00Z,BUY,US0000000001,EXA,,Example Corp A,50,20.00,1000.00,1.00,0,EUR,demo-broker,,,stock,opening position
+2026-02-10T10:00:00Z,BUY,US0000000001,EXA,,Example Corp A,25,22.00,550.00,1.00,0,EUR,demo-broker,,,stock,add
+2026-03-05T14:15:00Z,SELL,US0000000001,EXA,,Example Corp A,30,25.00,750.00,1.00,0,EUR,demo-broker,,,stock,partial sale
+2025-06-02,BUY,US0000000002,EXB,,Example Corp B,100,10.00,1000.00,0,0,EUR,demo-broker,,,stock,long-term core
+2025-09-01,BUY,US0000000002,EXB,,Example Corp B,50,11.00,550.00,0,0,EUR,demo-broker,,,stock,
+2025-12-15,DIVIDEND,US0000000002,EXB,,Example Corp B,,,15.50,0,2.04,EUR,demo-broker,,,stock,annual dividend
+2026-02-01,COST,US0000000002,EXB,,Example Corp B,,,4.50,0,0,EUR,demo-broker,,,stock,custody fee
+2026-02-02T15:45:00Z,BUY,US0000000003,EXC,,Example Corp C,10,150.00,1500.00,1.00,0,USD,demo-broker,,,stock,foreign currency
+2026-01-05,TRANSFERIN,US0000000004,EXD,,Example Corp D,20,,2000.00,0,0,EUR,,,,stock,securities moved in from another account

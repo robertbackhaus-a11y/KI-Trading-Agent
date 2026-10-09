@@ -13,6 +13,8 @@ from strategy_config import CapitalStateConfig
 FEATURE_VERSION_KEY = "portfolio_capital_state_schema_version"
 FEATURE_VERSION = "1"
 TABLE_NAME = "portfolio_capital_state"
+EXTERNAL_FUNDING_KEY = "external_funding_available"
+_TRUE_VALUES = {"1", "true", "yes"}
 ALLOWED_QUALITIES = {
     AvailabilityStatus.AVAILABLE,
     AvailabilityStatus.PARTIAL,
@@ -50,9 +52,22 @@ def capital_state_schema_available(conn: sqlite3.Connection) -> bool:
     return marker is not None and marker[0] == FEATURE_VERSION
 
 
-def _unavailable(evaluation_as_of: str, detail: str) -> CapitalStateContext:
+def read_external_funding_available(conn: sqlite3.Connection) -> bool:
+    """Standing flag ``metadata.external_funding_available``.
+
+    A missing table, a missing key or any other value means False, so existing installations keep their behaviour.
+    """
+
+    try:
+        row = conn.execute("SELECT value FROM metadata WHERE key = ?", (EXTERNAL_FUNDING_KEY,)).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None and str(row[0]).strip().lower() in _TRUE_VALUES
+
+
+def _unavailable(evaluation_as_of: str, detail: str, external_funding_available: bool = False) -> CapitalStateContext:
     quality = DataQuality(AvailabilityStatus.UNAVAILABLE, (detail,), evaluation_as_of)
-    return CapitalStateContext(None, quality, None, quality, None, None)
+    return CapitalStateContext(None, quality, None, quality, None, None, external_funding_available)
 
 
 def _field_quality(
@@ -84,6 +99,7 @@ def resolve_capital_state(
     """
 
     evaluation_date = _iso_date(evaluation_as_of)
+    external_funding = read_external_funding_available(conn)
     expected_currency = base_currency.upper()
     if expected_currency != "EUR":
         raise ValueError("capital-state resolution currently supports EUR only")
@@ -91,6 +107,7 @@ def resolve_capital_state(
         return _unavailable(
             evaluation_date,
             "portfolio_capital_state migration feature version 1 is unavailable",
+            external_funding,
         )
     row = conn.execute(
         """
@@ -103,19 +120,20 @@ def resolve_capital_state(
         (evaluation_date,),
     ).fetchone()
     if row is None:
-        return _unavailable(evaluation_date, "no capital state exists at or before evaluation_as_of")
+        return _unavailable(evaluation_date, "no capital state exists at or before evaluation_as_of", external_funding)
     state_as_of = _iso_date(row["as_of"])
     if str(row["base_currency"]).upper() != expected_currency:
         return _unavailable(
             evaluation_date,
             f"capital state base currency {row['base_currency']} is not {expected_currency}",
+            external_funding,
         )
     try:
         status = AvailabilityStatus(row["quality"])
     except ValueError:
-        return _unavailable(evaluation_date, f"capital state has invalid quality {row['quality']}")
+        return _unavailable(evaluation_date, f"capital state has invalid quality {row['quality']}", external_funding)
     if status not in ALLOWED_QUALITIES:
-        return _unavailable(evaluation_date, f"capital state has unsupported quality {row['quality']}")
+        return _unavailable(evaluation_date, f"capital state has unsupported quality {row['quality']}", external_funding)
 
     source_quality = DataQuality(status, (), state_as_of)
     freshness = config or CapitalStateConfig()
@@ -141,4 +159,5 @@ def resolve_capital_state(
         ),
         as_of=state_as_of,
         source=row["source"],
+        external_funding_available=external_funding,
     )

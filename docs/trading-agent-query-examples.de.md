@@ -216,11 +216,13 @@ Der Portfolio Action Planner rechnet deterministisch, wie viel Kapital nach den 
 | 3 | „Wie viel Swing-Kapazität ist noch frei?“ | `run_trading_orchestrator()` |
 | 4 | „Warum stoppt der Plan?“ | `get_opportunity_view(status="ENTRY_READY")` (`STOPPED_CAPITAL_EXHAUSTED`) |
 | 5 | „Wie hoch ist die Summe der geplanten Entries?“ | `get_opportunity_view()` |
+| 6 | „Wird externes Kapital angenommen, und wie viel fehlt dem Plan ohne Einzahlung?“ | `run_trading_orchestrator()` (`entry_plan.funding`) |
 
 **Hinweise:**
 
 - Post-Action-Kapital = Erlös aus SELL/TRIM abzüglich geschätzter Steuer. Daraus ergeben sich Cash, Swing-Anteil und freie Swing-Kapazität nach den Aktionen.
 - Grenzen des Sizings: Swing-Maximum 40 %, Cash-Reserve (Standard im Code 10.000 EUR), maximales Positionsgewicht, ganze Stück abgerundet. Es wird sequentiell nach Rang vergeben.
+- `external_funding_available = true` ist kein unbegrenztes Kapital: Es hebt nur den Cash-/Reserve-Engpass auf. Swing-Maximum, Positionsgewichte, bestehende Positionen/Campaigns, Datenqualität und Kandidatenstatus gelten weiter. Der Plan zeigt dann `external_funding_required_eur` (Kapitaleinsatz über dem intern verfügbaren Kapital) und je Entry den internen/externen Anteil. Es wird nichts eingezahlt oder gebucht; ohne den Schalter (Standard) ändert sich nichts.
 - Nicht modelliert: Gebühren, FIFO-Lots, Verlusttopf und Freibetrag, Sektor-Konzentration. Es gelten nur die Einzeltitel-Limits.
 - `get_opportunity_view` zeigt in der kompakten Antwort einen minimalen Kapitalrahmen (Cash, Cash nach Verkäufen, konservativer Nettoerlös, geplante Entries, verbleibende Kaufkapazität, Swing-Anteil).
 
@@ -418,4 +420,5 @@ Statuswerte und Tool-Namen werden nicht übersetzt.
 | `BLOCKED_EXISTING_POSITION`, `BLOCKED_EXISTING_CAMPAIGN` | Entry blockiert, weil bereits eine Position bzw. eine offene Campaign besteht. |
 | `DISCOVERY_READY`, `DISCOVERY_WATCH` | Neuer Kandidat der Discovery: bereit bzw. beobachtenswert. |
 | `NEWS_HIGH_ATTENTION`, `NEWS_ATTENTION`, `NEWS_CLEAR`, `NEWS_UNAVAILABLE` | News-Kontext je Kandidat und Position; er ist Warnung und Kontext, nie ein Signal. |
+| `external_funding_available`, `external_funding_required` | Schalter (Standard aus), der nur den Cash-Engpass aufhebt, bzw. der Kapitalbetrag des Plans über dem intern verfügbaren Kapital; keine Einzahlung, kein unbegrenztes Kapital. |
 | `STOPPED_CAPITAL_EXHAUSTED` | Der Entry-Plan hat den Kandidaten nicht mehr geplant, weil das Kapital erschöpft war. |

@@ -1,0 +1,35 @@
+version: 2
+
+# Version updates arrive as pull requests only (never merged automatically) and at most weekly.
+# Security updates for known vulnerabilities are a separate repository setting.
+updates:
+  # The pinned GitHub Actions of .github/workflows (Dependabot keeps the commit SHA and the version comment in sync).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  # Direct Python dependencies of requirements.txt. Major updates are never proposed (they need a deliberate decision);
+  # minor/patch updates arrive as one grouped pull request.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "deps"

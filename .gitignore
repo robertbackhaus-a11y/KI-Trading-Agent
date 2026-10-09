@@ -4,6 +4,7 @@
 *.sqlite
 *.sqlite3
 *.csv
+!examples/trading-import-example.csv
 *.xlsx
 *.xls
 *.bak-*

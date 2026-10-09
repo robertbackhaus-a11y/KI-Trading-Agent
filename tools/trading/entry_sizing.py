@@ -31,6 +31,21 @@ class EntryRecommendation:
     cash_before: Optional[float]
     cash_after: Optional[float]
     block_reasons: tuple[str, ...] = ()
+    # EUR of the purchase funded from cash above the reserve / from external funding (only differs from 0 when external funding is available).
+    internal_capital_eur: Optional[float] = None
+    external_funding_eur: Optional[float] = None
+
+
+def internal_external_split(*, cash: float, reserve: float, purchase: float, buying_power: Optional[float] = None) -> tuple[float, float]:
+    """Split a purchase into ``(internal, external)`` EUR.
+
+    ``internal`` is what cash (limited by an available buying power) above the minimum reserve can fund; the rest is ``external``.
+    The reserve itself is never used up and nothing is booked: this is a pure planning figure.
+    """
+
+    capital = float(cash) if buying_power is None else min(float(cash), float(buying_power))
+    internal = min(float(purchase), max(0.0, capital - float(reserve)))
+    return internal, float(purchase) - internal
 
 
 def _blocked(
@@ -126,7 +141,9 @@ def evaluate_entry_recommendation(
         return _blocked("ENTRY_SWING_ALLOCATION_LIMIT", security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
     if portfolio.cash_quality.status is not AvailabilityStatus.AVAILABLE or cash is None:
         return _blocked("ENTRY_CASH_UNAVAILABLE", security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
-    if policy.minimum_cash_reserve is None or float(cash) <= policy.minimum_cash_reserve:
+    # External funding lifts only the cash/reserve shortage; an undefined reserve is still a configuration gap.
+    external = bool(portfolio.external_funding_available)
+    if policy.minimum_cash_reserve is None or (not external and float(cash) <= policy.minimum_cash_reserve):
         return _blocked("ENTRY_CASH_RESERVE_LIMIT", security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
 
     technical = snapshot.technical
@@ -171,12 +188,15 @@ def evaluate_entry_recommendation(
     swing_value = float(portfolio.swing_market_value)
     security_value = float(portfolio.current_security_market_value_eur or 0.0)
     available_capital = float(cash)
+    buying_power = None
     if portfolio.buying_power_quality.status is AvailabilityStatus.AVAILABLE and portfolio.buying_power is not None:
-        available_capital = min(available_capital, float(portfolio.buying_power))
+        buying_power = float(portfolio.buying_power)
+        available_capital = min(available_capital, buying_power)
     initial_cap = _weight_cap_value(total=total, current=security_value, maximum=policy.max_initial_swing_weight)
     security_cap = _weight_cap_value(total=total, current=security_value, maximum=policy.max_security_weight)
     swing_cap = _weight_cap_value(total=total, current=swing_value, maximum=config.portfolio.swing_max_pct)
-    cash_cap = max(0.0, available_capital - float(policy.minimum_cash_reserve))
+    # Weight and Swing ceilings are cash independent (percent of the invested value); only the cash cap is lifted by external funding.
+    cash_cap = float("inf") if external else max(0.0, available_capital - float(policy.minimum_cash_reserve))
     allowed = min(initial_cap, security_cap, swing_cap, cash_cap)
     quantity = float(max(0, floor(allowed / current_eur + 1e-12)))
     if quantity <= 0:
@@ -200,6 +220,9 @@ def evaluate_entry_recommendation(
         return _blocked("ENTRY_INITIAL_WEIGHT_LIMIT", current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
     if projected_swing > config.portfolio.swing_max_pct + 1e-12:
         return _blocked("ENTRY_SWING_ALLOCATION_LIMIT", current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
+    internal, external_eur = internal_external_split(cash=float(cash), reserve=float(policy.minimum_cash_reserve), purchase=purchase, buying_power=buying_power)
+    if not external:
+        internal, external_eur = purchase, 0.0  # without external funding the cash cap guarantees an internally funded purchase
     return EntryRecommendation(
         eligible=True,
         recommended_quantity=quantity,
@@ -211,5 +234,7 @@ def evaluate_entry_recommendation(
         projected_swing_allocation=projected_swing,
         initial_position_weight=initial_weight,
         cash_before=float(cash),
-        cash_after=float(cash) - purchase,
+        cash_after=float(cash) - internal,
+        internal_capital_eur=internal,
+        external_funding_eur=external_eur,
     )

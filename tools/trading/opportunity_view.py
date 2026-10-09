@@ -362,8 +362,11 @@ def _capital(plan: Mapping[str, Any]) -> dict[str, Any]:
     if not plan:
         return {"engine_status": "UNAVAILABLE", "capital": {}, "after_actions": {}, "after_plan": {}, "planned_entries": [], "deferred_entries": []}
     cur, post, final = plan.get("current_state") or {}, plan.get("post_action_state") or {}, plan.get("final_simulated_state") or {}
+    funding = plan.get("capital") or {}
+    external = bool(funding.get("external_funding_available"))
     return {
         "engine_status": plan.get("status") or "AVAILABLE",
+        "funding": {key: _round(value) if key.endswith("_eur") else value for key, value in funding.items()} if external else {"external_funding_available": False},
         "capital": {
             "cash_eur": _round(cur.get("cash_eur")), "deployable_cash_eur": _round(cur.get("deployable_cash_eur")), "minimum_cash_reserve_eur": _round(cur.get("minimum_cash_reserve_eur")),
             "swing_pct": _round(cur.get("swing_pct")), "swing_target_pct": cur.get("swing_target_pct"), "long_term_pct": _round(cur.get("long_term_pct")), "long_term_target_pct": cur.get("long_term_target_pct"),
@@ -378,7 +381,7 @@ def _capital(plan: Mapping[str, Any]) -> dict[str, Any]:
         },
         "after_plan": {
             "planned_entries_count": len(plan.get("planned_entries") or []), "planned_entries_total_eur": _round(final.get("planned_entries_total_eur")),
-            "cash_eur": _round(final.get("cash_eur")), "remaining_buying_capacity_eur": _round(final.get("deployable_cash_eur")),
+            "cash_eur": _round(final.get("cash_eur")), "remaining_buying_capacity_eur": _round(funding.get("remaining_buying_capacity_eur") if external else final.get("deployable_cash_eur")),
             "remaining_swing_capacity_eur": _round(final.get("remaining_swing_capacity_eur")), "swing_pct": _round(final.get("swing_pct")),
             "cash_above_reserve": final.get("cash_above_reserve"), "swing_within_max": final.get("swing_within_max"),
         },
@@ -389,7 +392,9 @@ def _capital(plan: Mapping[str, Any]) -> dict[str, Any]:
 
 def _capital_fit(price_eur: Any, capital: Mapping[str, Any]) -> Optional[dict[str, Any]]:
     price = _num(price_eur)
-    after_actions = _num((capital.get("after_actions") or {}).get("deployable_cash_eur"))
+    funding = capital.get("funding") or {}
+    # With external funding the cash shortage is lifted: one share is compared with the allocation headroom, not with cash over the reserve.
+    after_actions = _num(funding.get("deployable_capital_eur") if funding.get("external_funding_available") else (capital.get("after_actions") or {}).get("deployable_cash_eur"))
     after_plan = _num((capital.get("after_plan") or {}).get("remaining_buying_capacity_eur"))
     if price is None or after_actions is None or after_plan is None:
         return None

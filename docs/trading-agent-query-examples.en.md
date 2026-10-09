@@ -216,11 +216,13 @@ The portfolio action planner deterministically computes how much capital is free
 | 3 | “How much swing capacity is still free?” | `run_trading_orchestrator()` |
 | 4 | “Why does the plan stop?” | `get_opportunity_view(status="ENTRY_READY")` (`STOPPED_CAPITAL_EXHAUSTED`) |
 | 5 | “What is the total of the planned entries?” | `get_opportunity_view()` |
+| 6 | “Is external funding assumed, and how much does the plan lack without a deposit?” | `run_trading_orchestrator()` (`entry_plan.funding`) |
 
 **Notes:**
 
 - Post-action capital = proceeds from SELL/TRIM minus estimated tax. From that follow cash, swing share and free swing capacity after the actions.
 - Sizing limits: swing maximum 40 %, cash reserve (code default 10,000 EUR), maximum position weight, whole shares rounded down. Capital is allocated sequentially by rank.
+- `external_funding_available = true` is not unlimited capital: it lifts only the cash/reserve shortage. Swing maximum, position weights, existing positions/campaigns, data quality and candidate status still apply. The plan then shows `external_funding_required_eur` (capital use above the internally available capital) and the internal/external share per entry. Nothing is deposited or booked; without the switch (default) nothing changes.
 - Not modelled: fees, FIFO lots, loss pot and allowance, sector concentration. Only the single-position limits apply.
 - In its compact answer `get_opportunity_view` shows a minimal capital frame (cash, cash after sales, conservative net proceeds, planned entries, remaining buying capacity, swing share).
 
@@ -418,4 +420,5 @@ Status values and tool names are not translated.
 | `BLOCKED_EXISTING_POSITION`, `BLOCKED_EXISTING_CAMPAIGN` | Entry blocked because a position or an open campaign already exists. |
 | `DISCOVERY_READY`, `DISCOVERY_WATCH` | New discovery candidate: ready or worth watching. |
 | `NEWS_HIGH_ATTENTION`, `NEWS_ATTENTION`, `NEWS_CLEAR`, `NEWS_UNAVAILABLE` | News context per candidate and position; it is a warning and context, never a signal. |
+| `external_funding_available`, `external_funding_required` | Switch (default off) that lifts only the cash shortage, and the plan's capital use above the internally available capital; no deposit, not unlimited capital. |
 | `STOPPED_CAPITAL_EXHAUSTED` | The entry plan did not plan the candidate any more because capital was exhausted. |

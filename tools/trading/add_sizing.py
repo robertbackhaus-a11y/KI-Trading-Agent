@@ -12,6 +12,7 @@ from analysis_contracts import (
     PortfolioContext,
     StrategyType,
 )
+from entry_sizing import internal_external_split
 from strategy_config import StrategyConfig
 
 
@@ -32,6 +33,9 @@ class AddRecommendation:
     cash_before: Optional[float]
     cash_after: Optional[float]
     block_reasons: tuple[str, ...] = ()
+    # EUR of the purchase funded from cash above the reserve / from external funding (see entry_sizing.internal_external_split).
+    internal_capital_eur: Optional[float] = None
+    external_funding_eur: Optional[float] = None
 
 
 def _result(
@@ -216,12 +220,16 @@ def evaluate_add_recommendation(
 
     swing_ceiling = config.portfolio.swing_max_pct
     capital = float(cash)
+    buying_power = None
     if (
         portfolio.buying_power_quality.status is AvailabilityStatus.AVAILABLE
         and portfolio.buying_power is not None
     ):
-        capital = min(capital, float(portfolio.buying_power))
-    cash_cap = max(0, floor((capital - policy.minimum_cash_reserve) / current_eur))
+        buying_power = float(portfolio.buying_power)
+        capital = min(capital, buying_power)
+    # External funding lifts only the cash/reserve cap; position, Swing and campaign-size ceilings stay binding.
+    external = bool(portfolio.external_funding_available)
+    cash_cap = float("inf") if external else max(0, floor((capital - policy.minimum_cash_reserve) / current_eur))
     security_cap = _cap_quantity(
         current_value=float(portfolio.current_security_market_value_eur),
         total_value=float(portfolio.total_market_value),
@@ -248,6 +256,9 @@ def evaluate_add_recommendation(
     total = float(portfolio.total_market_value) + purchase
     projected_security = (float(portfolio.current_security_market_value_eur) + purchase) / total
     projected_swing = (float(portfolio.swing_market_value) + purchase) / total
+    internal, external_eur = internal_external_split(cash=float(cash), reserve=float(policy.minimum_cash_reserve), purchase=purchase, buying_power=buying_power)
+    if not external:
+        internal, external_eur = purchase, 0.0  # without external funding the cash cap guarantees an internally funded purchase
     return AddRecommendation(
         eligible=True,
         base_quantity=base,
@@ -260,6 +271,8 @@ def evaluate_add_recommendation(
         current_swing_allocation=swing_allocation,
         projected_swing_allocation=projected_swing,
         cash_before=float(cash),
-        cash_after=float(cash) - purchase,
+        cash_after=float(cash) - internal,
         block_reasons=(),
+        internal_capital_eur=internal,
+        external_funding_eur=external_eur,
     )
