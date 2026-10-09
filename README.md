@@ -23,6 +23,12 @@ Zugangsweg: MCP-Client (LLM-Frontend) → Trading MCP Server (`C:\tools\trading\
 Dieses Repository enthält nur den Code. Die Datenbank, Backups, Audit-/Candidate-JSONs,
 PDFs und Logs liegen außerhalb des Repos (siehe `.gitignore`).
 
+## Usage / Abfragen
+
+Deutsch: [Trading Agent – Abfragen und Beispiele](docs/trading-agent-query-examples.de.md)
+
+English: [Trading Agent – Queries and Examples](docs/trading-agent-query-examples.en.md)
+
 ## Deploy
 
 Die Produktion (`-Root`, Standard `C:\tools\trading`) wird nur über das versionierte Skript `deploy\Deploy-TradingAgent.ps1` aktualisiert.
@@ -145,8 +151,8 @@ python tools\trading\Discover-TradingCandidates.py [--limit N] [--top N] [--json
 - **MCP:** `get_candidate_discovery(status, limit, detail, symbol)` liest **nur** den letzten fertigen Report — **kein** Discovery-Lauf,
   kein Yahoo-Aufruf, keine DB- oder Watchlist-Zugriffe. Ohne Report: `UNAVAILABLE` / `NO_DISCOVERY_REPORT`. Ein alter Report wird nicht
   versteckt, sondern mit Alter und `REPORT_STALE` ausgewiesen (Grenze: `market_data_max_age_days`). Der MCP-Client liest also den letzten fertigen
-  Report, die Discovery bleibt read-only und es gibt keine automatische Watchlist-Aufnahme. Eine automatische tägliche Ausführung ist
-  nicht eingerichtet.
+  Report, die Discovery bleibt read-only und es gibt keine automatische Watchlist-Aufnahme. Der Report wird im Referenz-Setup täglich um 17:35
+  vom Windows-Task `Trading-Candidate-Discovery` erzeugt (nicht vom MCP-Tool).
 
 ## Market Intelligence
 
@@ -186,7 +192,7 @@ python tools\trading\Collect-TradingMarketIntelligence.py [--top N] [--json] [--
   Ereignisse selbst (Zeit, Wichtigkeit, Kategorie, Schlagzeile, Quelle, Impact, bis zu 3 Reason Codes; bei `symbol=...` zusätzlich `link`
   DIRECT/SHARED/SECTOR/LOOSE, sonst die betroffenen Symbole/Sektoren/Regionen). Kein `rendered_de`, keine Quellenstatistik, kein Lauf-Protokoll,
   keine Methodik. `detail=true` (höchstens 25) liefert alles. Die Antwort bleibt unter dem MCP-Limit von 40.000 Zeichen (sonst
-  `RESPONSE_TRIMMED_TO_SIZE_BUDGET`). Eine automatische Ausführung ist nicht eingerichtet.
+  `RESPONSE_TRIMMED_TO_SIZE_BUDGET`). Der Report wird im Referenz-Setup täglich um 08:15 und 17:45 vom Windows-Task `Trading-Market-Intelligence` erzeugt (nicht vom MCP-Tool).
 - **Bekannte Grenzen:** Yahoo ordnet Schlagzeilen teils lose Symbolen zu (Ticker-Homonyme, Marktberichte); Stichwort-Klassifikation hat
   `confidence: LOW`; Impact ist meist `UNKNOWN`.
 
@@ -222,8 +228,8 @@ kombinierten Score (kein „Score + News-Bonus/Malus").
   verfügbares Kapital nach den geplanten Verkäufen bzw. nach den geplanten Entries) — keine Menge, keine Order.
 - **Typische Fragen an den Assistenten:** „beste neue Chancen" → `source=DISCOVERY`; „Discovery mit relevanten News" → `source=DISCOVERY, news_status=RELEVANT`;
   „ENTRY_READY mit High-Impact-News" → `status=ENTRY_READY, news_status=NEWS_HIGH_ATTENTION`; „technisch stark und news-unauffällig" →
-  `news_status=NEWS_CLEAR`; „NVDA vor AAPL?" → `symbol=NVDA,AAPL` (Rang, Score, Plan-Status, Verzögerungsgrund); „Neues zu AAPL, NVDA, MSFT" →
-  `symbol=AAPL,NVDA,MSFT`; „passt ins freie Kapital" → `source=DISCOVERY` (`capital_fit`, Abschnitt Kapital); „Discovery READY ohne HIGH-News" →
+  `news_status=NEWS_CLEAR`; „NVDA vor AAPL?" → `symbol=NVDA,AAPL` (Rang, Score, Plan-Status, Verzögerungsgrund); „Neues zu AAPL, NVDA, GOOGL" →
+  `symbol=AAPL,NVDA,GOOGL`; „passt ins freie Kapital" → `source=DISCOVERY` (`capital_fit`, Abschnitt Kapital); „Discovery READY ohne HIGH-News" →
   `source=DISCOVERY, status=DISCOVERY_READY, news_status=NOT_HIGH`. Standard-`limit` 30 (höchstens 40 kompakt, 10 Detail): ein Statusfilter wie ENTRY_READY liefert alle Treffer in einem Aufruf. Die Antwort bleibt unter
   34.000 Zeichen (sonst `RESPONSE_TRIMMED_TO_SIZE_BUDGET`; im Detail zuerst Nebenabschnitte, dann die letzten Zeilen).
 - **Grenzen:** Ein Unternehmen wird nur über seinen Namen oder einen geklammerten Ticker erkannt (Kürzel ohne Namensbestandteil zählen
