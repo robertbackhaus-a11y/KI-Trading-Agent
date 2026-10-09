@@ -1,0 +1,33 @@
+# Databases and exports (private data never belongs in the repository)
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.csv
+*.xlsx
+*.xls
+*.bak-*
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+secrets*
+credentials*
+*.pem
+*.key
+tools/trading/universe/*_local.json
+
+# Runtime output
+logs/
+*.log
+data/
+fundamentals-audit/
+**/backup/
+**/backups/
+**/latest.json
+
+# Python
+*.pyc
+__pycache__/
+.pytest_cache/

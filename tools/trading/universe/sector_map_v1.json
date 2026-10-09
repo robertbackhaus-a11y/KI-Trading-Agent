@@ -1,0 +1,21 @@
+{
+  "map_id": "sector_map_v1",
+  "version": 1,
+  "description": "Curated, static, versioned coarse sector classification of the symbols the market intelligence can meet (the discovery universe; own portfolio/watchlist symbols can be added in an optional, not versioned sector_map_local.json next to this file). Yahoo Finance symbols. It is a reviewable reference list, not a data feed: symbols that are not listed have no sector and are never mapped by sector. A symbol belongs to exactly one sector.",
+  "sectors": {
+    "SEMICONDUCTORS": ["NVDA", "AMD", "AVGO", "QCOM", "MU", "MRVL", "TXN", "KLAC", "AMAT", "LRCX", "ASML.AS", "TSM", "000660.KS", "005930.KS", "IFX.DE", "AIXA.DE", "INTC"],
+    "SOFTWARE_AI": ["MSFT", "ORCL", "CRM", "ADBE", "NOW", "INTU", "PANW", "CRWD", "PLTR", "CDNS", "SNPS", "IBM", "SAP.DE", "WTC.AX", "XRO.AX"],
+    "TECH_HARDWARE": ["AAPL", "DELL", "SMCI", "CSCO", "ANET"],
+    "INTERNET_MEDIA": ["GOOGL", "META", "NFLX", "AMZN", "UBER", "DIS"],
+    "HEALTHCARE_PHARMA": ["LLY", "ABBV", "MRK", "PFE", "TMO", "ISRG", "REGN", "AMGN", "GILD", "UNH", "JNJ", "BAYN.DE", "SAN.PA", "AZN.L", "SHL.DE", "CSL.AX", "ROG.SW", "NOVN.SW", "NOVO-B.CO"],
+    "DEFENSE_AEROSPACE": ["LMT", "RTX", "NOC", "BA", "GE", "RHM.DE", "HAG.DE", "BA.L", "HO.PA", "AIR.PA", "SAF.PA", "RR.L", "MTX.DE", "SAAB-B.ST"],
+    "ENERGY": ["CVX", "XOM", "COP", "SHEL.L", "TTE.PA"],
+    "MATERIALS_CHEMICALS": ["LIN", "BAS.DE", "AI.PA", "BHP.AX"],
+    "FINANCIALS": ["JPM", "V", "MA", "BAC", "GS", "MS", "BRK-B", "ALV.DE", "MUV2.DE", "DBK.DE", "DB1.DE", "INGA.AS", "BNP.PA", "ISP.MI", "UCG.MI", "SAN.MC", "HSBA.L", "CBA.AX", "ADYEN.AS"],
+    "CONSUMER": ["WMT", "COST", "HD", "PG", "KO", "PEP", "MCD", "NKE", "MC.PA", "OR.PA", "RMS.PA", "ITX.MC", "ADS.DE", "ULVR.L", "NESN.SW"],
+    "AUTOMOTIVE": ["TSLA", "BMW.DE", "MBG.DE", "VOW3.DE", "RACE.MI"],
+    "INDUSTRIALS": ["CAT", "DE", "HON", "UNP", "SIE.DE", "DHL.DE", "SU.PA", "ENR.DE"],
+    "UTILITIES": ["NEE", "ENEL.MI", "IBE.MC", "EOAN.DE", "RWE.DE"],
+    "TELECOM": ["DTE.DE"]
+  }
+}
