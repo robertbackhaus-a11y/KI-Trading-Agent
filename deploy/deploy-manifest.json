@@ -1,0 +1,107 @@
+{
+  "manifest_version": 1,
+  "description": "Explicit list of the runtime files deployed to the production root. Nothing outside this list is ever copied, overwritten or deleted. Keep it in sync with the repo: tests/trading/test_deploy_manifest.py fails if a runtime file is neither listed here nor in not_deployed.",
+  "expected_tool_count": 15,
+  "groups": [
+    {
+      "name": "app",
+      "source": "tools/trading",
+      "target": "app",
+      "files": [
+        "Audit-TradingDataQuality.py",
+        "Backfill-TradingEventsNews.py",
+        "Backfill-TradingFXRatesECB.py",
+        "Backfill-TradingFundamentalsIR.py",
+        "Backfill-TradingFundamentalsSEC.py",
+        "Backfill-TradingMarketData.py",
+        "Backfill-TradingMarketSnapshotCurrency.py",
+        "Collect-TradingMarketIntelligence.py",
+        "Discover-TradingCandidates.py",
+        "Discover-TradingSECIdentifiers.py",
+        "Import-ParqetTransactions.py",
+        "Initialize-TradingDatabase.py",
+        "Manage-TradingCapitalState.py",
+        "Manage-TradingCorporateActions.py",
+        "Manage-TradingStrategyAssignments.py",
+        "Manage-TradingSwingCampaigns.py",
+        "Migrate-TradingCandidatePromotions.py",
+        "Migrate-TradingCapitalState.py",
+        "Migrate-TradingCorporateActions.py",
+        "Migrate-TradingFXRates.py",
+        "Migrate-TradingStrategyAssignments.py",
+        "Migrate-TradingSwingLifecycle.py",
+        "Research-TradingFundamentals.py",
+        "Reset-TradingDb.py",
+        "Resolve-TradingSecurities.py",
+        "Run-TradingOrchestrator.py",
+        "add_sizing.py",
+        "analysis_contracts.py",
+        "analysis_engine.py",
+        "candidate_decision.py",
+        "candidate_discovery.py",
+        "capital_state.py",
+        "corporate_actions.py",
+        "decision_engine.py",
+        "discovery_report.py",
+        "entry_sizing.py",
+        "fx_resolver.py",
+        "intelligence_report.py",
+        "market_intelligence.py",
+        "opportunity_view.py",
+        "orchestrator_presentation.py",
+        "parqet_import.py",
+        "portfolio_action_planner.py",
+        "portfolio_context.py",
+        "strategy_config.py",
+        "strategy_suggestion.py",
+        "swing_lifecycle.py",
+        "swing_promotion.py",
+        "trading_analytics.py",
+        "trading_orchestrator.py"
+      ]
+    },
+    {
+      "name": "app-universe",
+      "source": "tools/trading/universe",
+      "target": "app/universe",
+      "files": [
+        "sector_map_v1.json",
+        "swing_large_cap_v1.json"
+      ]
+    },
+    {
+      "name": "mcp",
+      "source": "mcp-tools",
+      "target": "mcp",
+      "files": [
+        "server.py",
+        "smoke_test.py",
+        "trading_sqlite.py"
+      ]
+    },
+    {
+      "name": "scheduler",
+      "source": "scheduler",
+      "target": "scheduler",
+      "files": [
+        "Manage-TradingTasks.ps1"
+      ]
+    }
+  ],
+  "protected": [
+    "app/universe/sector_map_local.json"
+  ],
+  "not_deployed": [
+    "tools/Add-TradingWatchlist.py",
+    "tests/",
+    "docs/",
+    "deploy/",
+    ".git/",
+    ".gitignore",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "LICENSE"
+  ]
+}

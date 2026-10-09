@@ -23,6 +23,23 @@ Zugangsweg: MCP-Client (LLM-Frontend) → Trading MCP Server (`C:\tools\trading\
 Dieses Repository enthält nur den Code. Die Datenbank, Backups, Audit-/Candidate-JSONs,
 PDFs und Logs liegen außerhalb des Repos (siehe `.gitignore`).
 
+## Deploy
+
+Die Produktion (`-Root`, Standard `C:\tools\trading`) wird nur über das versionierte Skript `deploy\Deploy-TradingAgent.ps1` aktualisiert.
+Es kopiert ausschließlich die Dateien aus `deploy\deploy-manifest.json` (explizite Liste, kein Wildcard-Kopieren; eine neue Runtime-Datei
+muss dort eingetragen werden, ein Test erzwingt das). Tests, Doku, `.git`, DB, Logs und Daten werden nie angefasst.
+
+```powershell
+powershell -File deploy\Deploy-TradingAgent.ps1 -Action Check      # nur lesen: Pfade, Manifest, Syntax, DB integrity_check, Plan
+powershell -File deploy\Deploy-TradingAgent.ps1 -Action Deploy     # Backup, kopieren, Hash-Vergleich, py_compile, integrity_check, MCP-Smoke-Test (-DryRun: nur Plan)
+powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\tools\trading\backup\deploy-<Zeitstempel>
+```
+
+- **Backups:** ersetzte Dateien nach `backup\deploy-<Zeitstempel>\` (mit `backup-manifest.json`), Datenbank-Kopie über die SQLite-Backup-API nach `data\trading.db.bak-deploy-<Zeitstempel>`.
+- **Rollback:** kopiert nur die dort gesicherten Dateien zurück; die Datenbank wird nur mit ausdrücklichem `-RestoreDb` zurückgespielt (vorher Sicherheitskopie `trading.db.bak-pre-rollback-<Zeitstempel>`).
+- **Nach jedem Deploy** laufende MCP-Prozesse bzw. das Frontend neu starten (Python-Module werden pro Prozess gecacht). Der Scheduler wird nicht neu registriert, es wird kein Collector gestartet, es gibt keine Schema-Migration.
+- **Privat:** `app\universe\sector_map_local.json` (git-ignoriert, nicht im Manifest) bleibt unangetastet; fehlt sie, gibt es nur eine Warnung.
+
 ## Architektur
 
 ```
