@@ -1,5 +1,7 @@
 # Watchlist-to-Swing promotion
 
+Deutsche Version: [trading-swing-promotion.de.md](trading-swing-promotion.de.md)
+
 Generic `watchlist.status = 'WATCH'` expresses research interest only.  It
 does not make a security a Swing candidate and it never causes a trade.
 

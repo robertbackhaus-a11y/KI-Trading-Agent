@@ -19,7 +19,7 @@ existing architecture or module boundaries.
 ## Architecture and code conventions
 
 - Respect the existing architecture and module boundaries — see
-  [docs/trading-agent-architecture.md](docs/trading-agent-architecture.md) for the
+  [docs/trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) for the
   current component flow and module inventory before adding a new one.
 - Reuse existing modules/functions instead of duplicating logic. If you need something
   a module already provides (analytics scoring, portfolio valuation, FX resolution,
@@ -43,15 +43,17 @@ same pull request — not as a follow-up:
 
 - `README.md` if the change affects the architecture overview, tool inventory, or
   data flow.
-- The relevant file(s) under `docs/` (`trading-agent-architecture.md` plus any more
-  specific doc — `trading-candidate-decision.md`, `trading-strategy-suggestion.md`,
-  `trading-swing-promotion.md`, `trading-entry-recommendations.md` — that covers the
+- The relevant file(s) under `docs/` (`trading-agent-architecture` plus any more
+  specific doc — `trading-candidate-decision`, `trading-strategy-suggestion`,
+  `trading-swing-promotion`, `trading-entry-recommendations`, `trading-agent-query-examples` — that covers the
   touched component). The MCP tool (`mcp-tools/`) is documented in
-  `trading-agent-architecture.md` §5.
+  `trading-agent-architecture` §5. Every technical document exists in German and English
+  (`<name>.de.md` / `<name>.en.md`); update **both** language versions in the same pull request
+  (`tests/trading/test_docs_languages.py` checks that their structure and technical terms stay equal).
 - Any new or changed business constant, threshold, or status value (a score threshold,
   a confidence weight, a guardrail name, an allowed status string, a schema
   feature-version key, etc.) must be documented with its exact value, matching
-  `docs/trading-agent-architecture.md`'s existing constants tables.
+  `docs/trading-agent-architecture.en.md`'s existing constants tables (and the German twin).
 
 ## Tests
 
@@ -63,7 +65,7 @@ same pull request — not as a follow-up:
   C:\tools\trading\.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"
   ```
 
-  Run it from the repository root (`C:\tools\src\Trading-Agent-Dev`), where `tests/trading`
+  Run it from the repository root, where `tests/trading`
   resolves. The default `python` on PATH typically lacks the dependencies this suite needs
   (e.g. `pydantic`) — use the Trading venv above, or your own equivalent environment with
   the same packages.

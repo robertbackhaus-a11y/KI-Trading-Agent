@@ -2,7 +2,7 @@
 
 Deutsche Version: [trading-agent-query-examples.de.md](trading-agent-query-examples.de.md)
 
-This document shows which questions the Trading Agent answers and which MCP tool sits behind each of them. It is front-end neutral: any MCP-capable client can use the tools with natural language. The examples use neutral tickers and are not investment advice. The architecture is described in [trading-agent-architecture.md](trading-agent-architecture.md), the overview in the [README](../README.md).
+This document shows which questions the Trading Agent answers and which MCP tool sits behind each of them. It is front-end neutral: any MCP-capable client can use the tools with natural language. The examples use neutral tickers and are not investment advice. The architecture is described in [trading-agent-architecture.en.md](trading-agent-architecture.en.md), the overview in the [README](../README.md).
 
 **Principles:** `PROMOTE` is not a `BUY`. `DISCOVERY` is not `PROMOTE`. `NEWS` is not a signal. No orders: execution takes place outside the Trading Agent.
 
@@ -300,7 +300,7 @@ Symbols can be assigned `swing`, `long_term` or `unknown`. The agent suggests an
 **Notes:**
 
 - A suggestion is not an assignment: `suggest_strategy_assignments` writes nothing and only considers watchlist entries without an active assignment. `long_term` is never derived from momentum alone (the only basis at present: `asset_type` ETF or fund).
-- The result of the promotion check is `PROMOTE` or `KEEP_WATCHING`. `PROMOTE` is not a `BUY`; it is the input to the entry evaluation.
+- The result of the promotion check is `PROMOTE`, `KEEP_WATCHING`, `REJECT` or `DATA_INSUFFICIENT`. `PROMOTE` is not a `BUY`; it is the input to the entry evaluation.
 - `approve_swing_promotion` is the only domain write tool. It is called only after explicit approval of the returned token, accepts no strategy, quantity, price, SQL or campaign parameters, re-evaluates the current state and creates exactly one `swing` assignment.
 - Neither a campaign nor an order is created.
 
@@ -411,7 +411,7 @@ Status values and tool names are not translated.
 | Status value | Meaning |
 |---|---|
 | `SELL`, `TRIM`, `HOLD`, `ADD` | Actions of the portfolio status for existing positions: sell, reduce, hold, add. |
-| `PROMOTE`, `KEEP_WATCHING` | Result of the promotion check: eligible for a swing assignment, or keep watching. |
+| `PROMOTE`, `KEEP_WATCHING`, `REJECT`, `DATA_INSUFFICIENT` | Result of the promotion check: eligible for a swing assignment, keep watching, rejected, or not enough data. |
 | `ENTRY_READY` | PROMOTE candidate that passes all entry checks and is ranked. |
 | `WAIT_FOR_TRIGGER` | PROMOTE candidate that is still waiting for a trigger. |
 | `BLOCKED_BY_ALLOCATION`, `BLOCKED_BY_DATA`, `BLOCKED_BY_CONCENTRATION` | Entry blocked by an allocation limit, missing data or a concentration limit, respectively. |

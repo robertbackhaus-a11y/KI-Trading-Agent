@@ -1,5 +1,7 @@
 # Watchlist candidate decision status
 
+Deutsche Version: [trading-candidate-decision.de.md](trading-candidate-decision.de.md)
+
 `candidate_decision.evaluate_watchlist_candidates(connection, as_of=None)` is
 read-only and returns one `CandidateDecision` per `watchlist.status = 'WATCH'`
 entry: `security_id`, `symbol`, `analytics_score`, `analytics_quality`,
@@ -8,7 +10,7 @@ entry: `security_id`, `symbol`, `analytics_score`, `analytics_quality`,
 
 It does not replace or duplicate `swing_promotion.py`. That module answers
 *"should this watchlist entry become a Swing strategy assignment"* (see
-[trading-swing-promotion.md](trading-swing-promotion.md)). This module
+[trading-swing-promotion.en.md](trading-swing-promotion.en.md)). This module
 answers a narrower, later question — *"given today's analytics, the current
 strategy assignment, any open campaign, and the current portfolio allocation,
 is a fresh BUY currently justified"* — by composing the outputs of already
@@ -42,7 +44,7 @@ resolve to `INSUFFICIENT_DATA` or `DEFERRED` rather than defaulting to `BUY`.
 This function places no order, writes nothing, and never opens a Swing
 campaign. A `BUY` status is an input to the still-separate, still-manual
 promotion/approval/execution sequence described in
-[trading-swing-promotion.md](trading-swing-promotion.md); it is not itself an
+[trading-swing-promotion.en.md](trading-swing-promotion.en.md); it is not itself an
 execution trigger.
 
 ## MCP exposure
@@ -51,4 +53,4 @@ Exposed read-only via the Trading MCP server's `trading_sqlite` tool (used by
 an MCP client; repo source `mcp-tools/trading_sqlite.py`, runtime
 `C:\tools\trading\mcp`) as `evaluate_watchlist_candidates(as_of=None)`, which
 calls this function unchanged — no decision logic is duplicated in the tool
-layer. See [trading-agent-architecture.md](trading-agent-architecture.md) §5.
+layer. See [trading-agent-architecture.en.md](trading-agent-architecture.en.md) §5.

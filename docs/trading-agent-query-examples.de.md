@@ -2,7 +2,7 @@
 
 English version: [trading-agent-query-examples.en.md](trading-agent-query-examples.en.md)
 
-Dieses Dokument zeigt, welche Fragen der Trading Agent beantwortet und welches MCP-Tool dahintersteht. Es ist frontend-neutral: Jeder MCP-fähige Client kann die Tools mit natürlicher Sprache nutzen. Die Beispiele verwenden neutrale Ticker und sind keine Anlageempfehlung. Die Architektur steht in [trading-agent-architecture.md](trading-agent-architecture.md), der Überblick in der [README](../README.md).
+Dieses Dokument zeigt, welche Fragen der Trading Agent beantwortet und welches MCP-Tool dahintersteht. Es ist frontend-neutral: Jeder MCP-fähige Client kann die Tools mit natürlicher Sprache nutzen. Die Beispiele verwenden neutrale Ticker und sind keine Anlageempfehlung. Die Architektur steht in [trading-agent-architecture.de.md](trading-agent-architecture.de.md), der Überblick in der [README](../README.md).
 
 **Grundsätze:** `PROMOTE` ist kein `BUY`. `DISCOVERY` ist kein `PROMOTE`. `NEWS` ist kein Signal. Keine Orders: Die Ausführung erfolgt außerhalb des Trading Agents.
 
@@ -300,7 +300,7 @@ Titel können `swing`, `long_term` oder `unknown` zugeordnet werden. Der Agent s
 **Hinweise:**
 
 - Ein Vorschlag ist keine Zuordnung: `suggest_strategy_assignments` schreibt nichts und betrachtet nur Watchlist-Titel ohne aktive Zuordnung. `long_term` wird nie allein aus dem Momentum abgeleitet (einzige Grundlage derzeit: `asset_type` ETF oder Fonds).
-- Ergebnis der Promotion-Prüfung ist `PROMOTE` oder `KEEP_WATCHING`. `PROMOTE` ist kein `BUY`, sondern die Eingabe der Entry-Bewertung.
+- Ergebnis der Promotion-Prüfung ist `PROMOTE`, `KEEP_WATCHING`, `REJECT` oder `DATA_INSUFFICIENT`. `PROMOTE` ist kein `BUY`, sondern die Eingabe der Entry-Bewertung.
 - `approve_swing_promotion` ist das einzige fachliche Schreib-Tool. Es wird erst nach ausdrücklicher Freigabe des zurückgegebenen Tokens aufgerufen, nimmt keine Strategie-, Mengen-, Preis-, SQL- oder Campaign-Parameter an, wertet den aktuellen Stand neu aus und legt genau eine `swing`-Zuordnung an.
 - Es entstehen weder eine Campaign noch eine Order.
 
@@ -411,7 +411,7 @@ Statuswerte und Tool-Namen werden nicht übersetzt.
 | Statuswert | Bedeutung |
 |---|---|
 | `SELL`, `TRIM`, `HOLD`, `ADD` | Aktionen des Depotstatus für bestehende Positionen: verkaufen, reduzieren, halten, aufstocken. |
-| `PROMOTE`, `KEEP_WATCHING` | Ergebnis der Promotion-Prüfung: geeignet für eine Swing-Zuordnung bzw. weiter beobachten. |
+| `PROMOTE`, `KEEP_WATCHING`, `REJECT`, `DATA_INSUFFICIENT` | Ergebnis der Promotion-Prüfung: geeignet für eine Swing-Zuordnung, weiter beobachten, abgelehnt bzw. zu wenige Daten. |
 | `ENTRY_READY` | PROMOTE-Kandidat, der alle Entry-Prüfungen besteht und gerankt wird. |
 | `WAIT_FOR_TRIGGER` | PROMOTE-Kandidat, der noch auf einen Auslöser wartet. |
 | `BLOCKED_BY_ALLOCATION`, `BLOCKED_BY_DATA`, `BLOCKED_BY_CONCENTRATION` | Entry blockiert durch Allokationsgrenze, fehlende Daten bzw. Konzentrationslimit. |

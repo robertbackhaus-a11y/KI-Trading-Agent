@@ -13,7 +13,7 @@ Two independent, already-registered sources, one per table:
 Both are read-only against the source, dry-run by default, and require
 --write to persist. No estimates/ratings/price_targets here -- those need a
 paid data plan or browser-authenticated session, neither of which exists in
-this repo (see docs/trading-agent-architecture.md, known inconsistency #4).
+this repo (see docs/trading-agent-architecture.en.md, known inconsistency #4).
 """
 
 from __future__ import annotations

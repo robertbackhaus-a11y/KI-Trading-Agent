@@ -1,5 +1,7 @@
 # Swing entry recommendations
 
+Deutsche Version: [trading-entry-recommendations.de.md](trading-entry-recommendations.de.md)
+
 Phase 3B.7 produces a `BUY` recommendation only for a security with an
 active explicit `strategy_assignment` of `swing`, no open position, and no
 open Swing campaign.  The generic `watchlist` is not an entry-candidate

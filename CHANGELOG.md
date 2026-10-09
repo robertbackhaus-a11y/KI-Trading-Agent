@@ -3,20 +3,20 @@
 ## [0.1.1] - 2026-09-28
 
 ### Added
-- Swing-Horizon (`horizon_months_min`/`horizon_months_max`) jetzt funktional durchgesetzt — Runner schließt automatisch ab `horizon_months_max` (`SWING_MAX_HORIZON_REACHED`)
-- Produktive Events/News-Pipeline (`Backfill-TradingEventsNews.py`): `events` aus SEC EDGAR (8-K/6-K), `news` aus Yahoo Finance Search
-- Automatisierte tägliche/wöchentliche Backfills als Windows Scheduled Tasks: Market Data, FX-Rates, SEC Fundamentals, Events/News
+- Swing horizon (`horizon_months_min`/`horizon_months_max`) is now functionally enforced — the runner closes automatically from `horizon_months_max` onward (`SWING_MAX_HORIZON_REACHED`)
+- Productive events/news pipeline (`Backfill-TradingEventsNews.py`): `events` from SEC EDGAR (8-K/6-K), `news` from Yahoo Finance search
+- Automated daily/weekly backfills as Windows Scheduled Tasks: market data, FX rates, SEC fundamentals, events/news
 
 ### Changed
-- Swing-TP1/TP2-Mengenlogik zentral aus `SwingStrategyConfig` abgeleitet statt hartcodierter Literale
-- `decision_engine._confidence()`: `valuation`/`event_risk` UNAVAILABLE wirkt neutral statt als Malus
-- CLI-Datenbankpfad-Parameter über alle Tools auf `--db-path` vereinheitlicht (`--db` bleibt als Alias funktionsfähig)
-- Diverse Laufzeit-/Query-Optimierungen im Orchestrator-Runtime-Pfad
+- Swing TP1/TP2 quantity logic is derived centrally from `SwingStrategyConfig` instead of hardcoded literals
+- `decision_engine._confidence()`: `valuation`/`event_risk` UNAVAILABLE now acts neutrally instead of as a penalty
+- CLI database path parameter unified to `--db-path` across all tools (`--db` remains a working alias)
+- Various runtime/query optimizations in the orchestrator runtime path
 
 ### Fixed
-- Unbenutztes `RiskTargetConfig` (ohne definierte Semantik) entfernt
-- Tote Schema-Tabellen `decisions`/`analysis_history` entfernt
-- `Migrate-TradingStrategyAssignments.py`-Dry-Run öffnet jetzt strukturell eine read-only Verbindung (`mode=ro` + `PRAGMA query_only`)
+- Removed the unused `RiskTargetConfig` (without defined semantics)
+- Removed the dead schema tables `decisions`/`analysis_history`
+- The `Migrate-TradingStrategyAssignments.py` dry run now structurally opens a read-only connection (`mode=ro` + `PRAGMA query_only`)
 
 ### Known limitations
 - estimates/ratings/price_targets currently have no productive data source
@@ -26,29 +26,29 @@
 
 ## v0.1.0
 
-Erster funktionsfähiger Release des Trading Agenten.
+First functional release of the Trading Agent.
 
-Enthalten:
-- Trading-DB und Schema
-- Security Master Data / Symbol Resolution
-- Market Data und Market Snapshot
-- Fundamentals Research / SEC / IR
-- FX-Unterstützung
-- Portfolio Context und Allocation Guardrails
-- Strategy Assignment
-- Swing Campaign Lifecycle
-- Entry-/Add-Sizing
-- Analytics und Watchlist Ranking
-- Candidate Decision
-- Strategy Suggestion
-- Swing Promotion
-- Decision Engine
-- Trading Orchestrator
-- Parqet Import
-- Corporate Actions / Split Handling
-- OpenWebUI Trading Tool
-- CLI-/Management-Tools
-- technische Dokumentation
-- Apache-2.0 License
-- Security / Contributing Policy
-- 218 Tests
+Included:
+- Trading DB and schema
+- Security master data / symbol resolution
+- Market data and market snapshot
+- Fundamentals research / SEC / IR
+- FX support
+- Portfolio context and allocation guardrails
+- Strategy assignment
+- Swing campaign lifecycle
+- Entry/add sizing
+- Analytics and watchlist ranking
+- Candidate decision
+- Strategy suggestion
+- Swing promotion
+- Decision engine
+- Trading orchestrator
+- Parqet import
+- Corporate actions / split handling
+- OpenWebUI trading tool
+- CLI/management tools
+- Technical documentation
+- Apache-2.0 license
+- Security / contributing policy
+- 218 tests

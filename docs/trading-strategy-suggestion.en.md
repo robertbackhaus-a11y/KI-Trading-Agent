@@ -1,5 +1,7 @@
 # Watchlist strategy suggestion
 
+Deutsche Version: [trading-strategy-suggestion.de.md](trading-strategy-suggestion.de.md)
+
 `strategy_suggestion.suggest_strategy_assignments(connection, as_of=None)` is
 read-only and returns one `StrategySuggestion` (`security_id`, `symbol`,
 `suggested_strategy`, `confidence`, `reasons`) for every
@@ -10,7 +12,7 @@ never overridden, never re-suggested.
 **A suggestion is not an assignment.** This function writes nothing. Turning
 a `swing` suggestion into a real `strategy_assignment` row still requires the
 separate, existing, explicit
-[`swing_promotion.approve_swing_promotion`](trading-swing-promotion.md) path
+[`swing_promotion.approve_swing_promotion`](trading-swing-promotion.en.md) path
 with its own plan-token and eligibility checks. This module does not call
 that path and does not open a Swing campaign. There is currently no
 promotion path for `long_term` at all; a `long_term` suggestion is purely
@@ -49,4 +51,4 @@ Exposed read-only via the Trading MCP server's `trading_sqlite` tool (used by
 an MCP client; repo source `mcp-tools/trading_sqlite.py`, runtime
 `C:\tools\trading\mcp`) as `suggest_strategy_assignments(as_of=None)`, which
 calls this function unchanged — no suggestion logic is duplicated in the tool
-layer. See [trading-agent-architecture.md](trading-agent-architecture.md) §5.
+layer. See [trading-agent-architecture.en.md](trading-agent-architecture.en.md) §5.

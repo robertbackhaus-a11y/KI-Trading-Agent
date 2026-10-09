@@ -6,7 +6,7 @@ suggestion is diagnostic input for a human decision -- it never writes a
 ``strategy_assignment`` row itself. Turning a suggestion into an actual
 assignment remains the separate, existing, explicit
 ``swing_promotion.approve_swing_promotion`` path (see
-``docs/trading-swing-promotion.md``); this module never calls it and never
+``docs/trading-swing-promotion.en.md``); this module never calls it and never
 touches the database.
 
 Reuses rather than reimplements:

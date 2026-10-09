@@ -2,7 +2,7 @@
 
 valuation/event_risk are backed by estimates/ratings/price_targets/events/
 news -- tables with no populating importer today (known inconsistency #4 in
-docs/trading-agent-architecture.md). Their UNAVAILABLE state now reflects a
+docs/trading-agent-architecture.en.md). Their UNAVAILABLE state now reflects a
 missing data pipeline, not a diagnostic finding, and carries no penalty.
 fundamental (backed by the actively populated `fundamentals` table) is
 unchanged.

@@ -37,7 +37,7 @@ def _confidence(snapshot: AnalysisSnapshot) -> float:
         confidence -= 0.10
     # valuation/event_risk are backed by estimates/ratings/price_targets/
     # events/news -- tables with no populating importer today (see
-    # docs/trading-agent-architecture.md, known inconsistency #4). Their
+    # docs/trading-agent-architecture.en.md, known inconsistency #4). Their
     # UNAVAILABLE state reflects a missing data pipeline, not an actual
     # diagnostic finding, so unlike fundamental it carries no penalty.
     for quality, available_gain, partial_gain, unavailable_penalty in (

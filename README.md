@@ -1,52 +1,60 @@
 # Trading Agent
 
-Eigenständiger Trading Agent / Trading-Datenbestand.
+Standalone trading agent / trading data store.
 
-Version: v0.1.1 — siehe [CHANGELOG.md](CHANGELOG.md)
+Version: v0.1.1 — see [CHANGELOG.md](CHANGELOG.md). Release preparation for v0.2.0 is under way (no tag and no GitHub release yet).
 
 ## Runtime
 
-Produktive Datenbank:
+Production database:
 
 ```
 C:\tools\trading\data\trading.db
 ```
 
-Produktive Runtime: `C:\tools\trading` (`app\` Fachmodule/Skripte, `mcp\` MCP-Adapter, `data\`, `logs\`).
-Der Agent ist MCP-basiert und an kein bestimmtes Frontend gekoppelt (jeder MCP-fähige LLM-Client kann ihn nutzen).
-Im Repo versioniert: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) und
-`scheduler\Manage-TradingTasks.ps1` (Verwaltung der geplanten Aufgaben).
+Production runtime: `C:\tools\trading` (`app\` domain modules/scripts, `mcp\` MCP adapter, `data\`, `logs\`).
+The agent is MCP-based and not tied to a particular front end (any MCP-capable LLM client can use it).
+Versioned in this repository: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) and
+`scheduler\Manage-TradingTasks.ps1` (management of the scheduled tasks).
 
-Zugangsweg: MCP-Client (LLM-Frontend) → Trading MCP Server (`C:\tools\trading\mcp`, Repo-Quelle `mcp-tools\`, 15 Tools)
-→ Runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
+Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 15 tools)
+→ runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
 
-Dieses Repository enthält nur den Code. Die Datenbank, Backups, Audit-/Candidate-JSONs,
-PDFs und Logs liegen außerhalb des Repos (siehe `.gitignore`).
+This repository contains code only. The database, backups, audit/candidate JSON files,
+PDFs and logs live outside the repository (see `.gitignore`).
 
-## Usage / Abfragen
+## Documentation
 
-Deutsch: [Trading Agent – Abfragen und Beispiele](docs/trading-agent-query-examples.de.md)
+The technical documentation exists as a complete pair in German and English (same structure, same technical terms).
+This README, the changelog, the contributing guide and the security policy are English only.
 
-English: [Trading Agent – Queries and Examples](docs/trading-agent-query-examples.en.md)
+| Topic | English | Deutsch |
+|---|---|---|
+| Queries and examples (15 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
+| Architecture reference | [trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) | [trading-agent-architecture.de.md](docs/trading-agent-architecture.de.md) |
+| Watchlist candidate decision status | [trading-candidate-decision.en.md](docs/trading-candidate-decision.en.md) | [trading-candidate-decision.de.md](docs/trading-candidate-decision.de.md) |
+| Watchlist strategy suggestion | [trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) | [trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md) |
+| Watchlist-to-Swing promotion | [trading-swing-promotion.en.md](docs/trading-swing-promotion.en.md) | [trading-swing-promotion.de.md](docs/trading-swing-promotion.de.md) |
+| Swing entry recommendations | [trading-entry-recommendations.en.md](docs/trading-entry-recommendations.en.md) | [trading-entry-recommendations.de.md](docs/trading-entry-recommendations.de.md) |
 
 ## Deploy
 
-Die Produktion (`-Root`, Standard `C:\tools\trading`) wird nur über das versionierte Skript `deploy\Deploy-TradingAgent.ps1` aktualisiert.
-Es kopiert ausschließlich die Dateien aus `deploy\deploy-manifest.json` (explizite Liste, kein Wildcard-Kopieren; eine neue Runtime-Datei
-muss dort eingetragen werden, ein Test erzwingt das). Tests, Doku, `.git`, DB, Logs und Daten werden nie angefasst.
+Production (`-Root`, default `C:\tools\trading`) is only updated through the versioned script `deploy\Deploy-TradingAgent.ps1`.
+It copies exclusively the files listed in `deploy\deploy-manifest.json` (an explicit list, no wildcard copying; a new runtime file
+has to be added there, a test enforces this). Tests, docs, `.git`, database, logs and data are never touched.
 
 ```powershell
-powershell -File deploy\Deploy-TradingAgent.ps1 -Action Check      # nur lesen: Pfade, Manifest, Syntax, DB integrity_check, Plan
-powershell -File deploy\Deploy-TradingAgent.ps1 -Action Deploy     # Backup, kopieren, Hash-Vergleich, py_compile, integrity_check, MCP-Smoke-Test (-DryRun: nur Plan)
-powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\tools\trading\backup\deploy-<Zeitstempel>
+powershell -File deploy\Deploy-TradingAgent.ps1 -Action Check      # read only: paths, manifest, syntax, DB integrity_check, plan
+powershell -File deploy\Deploy-TradingAgent.ps1 -Action Deploy     # backup, copy, hash comparison, py_compile, integrity_check, MCP smoke test (-DryRun: plan only)
+powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\tools\trading\backup\deploy-<timestamp>
 ```
 
-- **Backups:** ersetzte Dateien nach `backup\deploy-<Zeitstempel>\` (mit `backup-manifest.json`), Datenbank-Kopie über die SQLite-Backup-API nach `data\trading.db.bak-deploy-<Zeitstempel>`.
-- **Rollback:** kopiert nur die dort gesicherten Dateien zurück; die Datenbank wird nur mit ausdrücklichem `-RestoreDb` zurückgespielt (vorher Sicherheitskopie `trading.db.bak-pre-rollback-<Zeitstempel>`).
-- **Nach jedem Deploy** laufende MCP-Prozesse bzw. das Frontend neu starten (Python-Module werden pro Prozess gecacht). Der Scheduler wird nicht neu registriert, es wird kein Collector gestartet, es gibt keine Schema-Migration.
-- **Privat:** `app\universe\sector_map_local.json` (git-ignoriert, nicht im Manifest) bleibt unangetastet; fehlt sie, gibt es nur eine Warnung.
+- **Backups:** replaced files go to `backup\deploy-<timestamp>\` (with `backup-manifest.json`); the database copy is made through the SQLite backup API to `data\trading.db.bak-deploy-<timestamp>`.
+- **Rollback:** copies back only the files saved there; the database is restored only with an explicit `-RestoreDb` (a safety copy `trading.db.bak-pre-rollback-<timestamp>` is made first).
+- **After every deploy** restart running MCP processes or the front end (Python modules are cached per process). The scheduler is not re-registered, no collector is started, and there is no schema migration.
+- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched; if it is missing, only a warning is printed.
 
-## Architektur
+## Architecture
 
 ```
 Market/Fundamental Data -> Analytics -> Strategy Suggestion -> Strategy Assignment
@@ -54,224 +62,224 @@ Market/Fundamental Data -> Analytics -> Strategy Suggestion -> Strategy Assignme
   -> Decision Engine/Orchestrator -> Agent Output
 ```
 
-Vollständige, code-verifizierte Referenz aller Tools/Module, fester Werte/Schwellenwerte,
-des Entscheidungsflusses und des DB-Schemas:
-[docs/trading-agent-architecture.md](docs/trading-agent-architecture.md).
+Complete, code-verified reference of all tools/modules, fixed values/thresholds,
+the decision flow and the DB schema:
+[docs/trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) (German: [docs/trading-agent-architecture.de.md](docs/trading-agent-architecture.de.md)).
 
-## Hauptscripte (`tools/trading/`)
+## Main scripts (`tools/trading/`)
 
-Auszug der wichtigsten Einstiegspunkte — vollständige Liste aller ~40 Module mit Zweck,
-Inputs/Outputs, DB-Zugriff und Abhängigkeiten: siehe
-[docs/trading-agent-architecture.md](docs/trading-agent-architecture.md#2-tool--module-inventory).
+Excerpt of the most important entry points — the complete list of all ~40 modules with purpose,
+inputs/outputs, DB access and dependencies:
+[docs/trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md#2-tool--module-inventory).
 
-| Script | Zweck |
+| Script | Purpose |
 |---|---|
-| `Initialize-TradingDatabase.py` | DB initialisieren (Tabellen, Indizes, Views, Basis-`data_sources`) |
-| `Reset-TradingDb.py --db-path <Pfad>` (Pfad Pflicht, kein Default) | DB vollständig zurücksetzen (löscht bestehende DB-Datei) |
-| `Backfill-TradingMarketData.py` | Market Data Backfill (OHLCV) — läuft täglich automatisiert um 17:15 Uhr via Windows-Task `Trading-MarketData-Backfill` (Log: `C:\tools\trading\logs\market-data-backfill.log`) |
-| `Backfill-TradingFXRatesECB.py` | ECB-EUR-Referenzkurs-Backfill für USD, GBP, AUD und KRW in einem Lauf (`--quote-currency`, kommagetrennt, Default = diese vier; GBp-Pence-Kurse werden im Resolver nach GBP normalisiert) — läuft automatisiert via Windows-Task `Trading-FXRates-Backfill` (Logon + täglich 17:20 Uhr, `StartWhenAvailable=True`; Log: `C:\tools\trading\logs\fx-rates-backfill.log`) |
-| `Discover-TradingSECIdentifiers.py` | SEC-CIK-Identifier-Discovery |
-| `Resolve-TradingSecurities.py` | Security-Stammdaten-Auflösung (OpenFIGI) |
-| `Backfill-TradingFundamentalsSEC.py` | Fundamentals-Bulk-Import aus SEC-EDGAR-XBRL — **weekly automated** via Windows-Task `Trading-Fundamentals-SEC` (Logon + Sonntag 10:00 Uhr, `StartWhenAvailable=True`; Log: `C:\tools\trading\logs\fundamentals-sec-backfill.log`) |
-| `Backfill-TradingFundamentalsIR.py` | Fundamentals aus Company-IR-Referenzparsern — **manual/event-driven** (hartkodierte Quartals-URLs je Firma, keine Automatisierung) |
-| `Research-TradingFundamentals.py` | LLM-Research-Fundamentals-Pipeline (kanonisches Tool) — **manual/LLM-assisted** (erfordert eine aktive Claude-Session, nicht automatisierbar) |
-| `Backfill-TradingEventsNews.py` | `events` (SEC EDGAR 8-K/6-K, 2-Jahres-Lookback) + `news` (Yahoo Finance Search) Backfill — läuft täglich automatisiert via Windows-Task `Trading-EventsNews-Backfill` (Logon + täglich 17:25 Uhr, `StartWhenAvailable=True`; Log: `C:\tools\trading\logs\events-news-backfill.log`). Inkonsistenz #4 Teil A (events/news) damit resolved; `estimates`/`ratings`/`price_targets` bleiben weiterhin bewusst offen (kein kostenloser Datenpfad) |
-| `Import-ParqetTransactions.py` | Inkrementeller Parqet-CSV-Import (`transactions` + `positions`; Vorschau ist Default, `--write` legt vorher ein Backup an). Siehe Abschnitt „Parqet-Import und Swing-Campaigns" |
-| `trading_analytics.py` | Technische Scoring-Bibliothek (SMA/RSI/Momentum/Drawdown/Volatility), `rank_watchlist()` |
-| `trading_orchestrator.py` | Read-only Gesamt-Portfolio-Report (komponiert Analytics/Decision/Promotion) |
-| `candidate_discovery.py` / `Discover-TradingCandidates.py` | Read-only Watchlist-Kandidaten-Discovery über ein kontrolliertes Universum (`universe/swing_large_cap_v1.json`); kein Teil des Orchestrators, schreibt nichts in die Datenbank; läuft täglich automatisiert via Windows-Task `Trading-Candidate-Discovery` (17:35 Uhr, `StartWhenAvailable=True`, kein Anmelde-Auslöser, Zeitlimit 2 h; Log: `C:\tools\trading\logs\candidate-discovery.log`). Siehe Abschnitt „Watchlist Candidate Discovery" |
-| `market_intelligence.py` / `intelligence_report.py` / `Collect-TradingMarketIntelligence.py` | Read-only Market Intelligence: Wirtschafts-/Markt-News aus offiziellen Quellen, SEC und Yahoo-Schlagzeilen, regelbasiert klassifiziert und auf Depot/Watchlist/Discovery abgebildet; der CLI-Lauf (täglich automatisiert via Windows-Task `Trading-Market-Intelligence`, 08:15 und 17:45 Uhr, `StartWhenAvailable=True`, kein Anmelde-Auslöser, Zeitlimit 2 h; Log: `C:\tools\trading\logs\market-intelligence.log`) schreibt einen Report, der MCP-Reader liest ihn nur. Kein Teil des Orchestrators, kein Signal. Siehe Abschnitt „Market Intelligence" |
-| `opportunity_view.py` | Read-only Opportunity View: führt Engine-/Planner-Kandidaten, den letzten Discovery-Report und den letzten Market-Intelligence-Report zusammen (News nur als Kontext, kein neuer Score); gelesen über die MCP-Methode `get_opportunity_view`. Siehe Abschnitt „Unified Opportunity View" |
-| `portfolio_action_planner.py` | Deterministischer Kapital-/Entry-Plan (`portfolio_action_plan`, Simulation ohne Orders); vom Orchestrator am Ende aufgerufen. Siehe Abschnitt „Portfolio Action Planner" |
+| `Initialize-TradingDatabase.py` | Initialize the DB (tables, indexes, views, base `data_sources`) |
+| `Reset-TradingDb.py --db-path <path>` (path required, no default) | Fully reset the DB (deletes the existing DB file) |
+| `Backfill-TradingMarketData.py` | Market data backfill (OHLCV) — runs automatically every day at 17:15 via the Windows task `Trading-MarketData-Backfill` (log: `C:\tools\trading\logs\market-data-backfill.log`) |
+| `Backfill-TradingFXRatesECB.py` | ECB EUR reference-rate backfill for USD, GBP, AUD and KRW in one run (`--quote-currency`, comma separated, default = these four; GBp pence quotes are normalized to GBP in the resolver) — runs automatically via the Windows task `Trading-FXRates-Backfill` (logon + daily 17:20, `StartWhenAvailable=True`; log: `C:\tools\trading\logs\fx-rates-backfill.log`) |
+| `Discover-TradingSECIdentifiers.py` | SEC CIK identifier discovery |
+| `Resolve-TradingSecurities.py` | Security master data resolution (OpenFIGI) |
+| `Backfill-TradingFundamentalsSEC.py` | Bulk fundamentals import from SEC EDGAR XBRL — **weekly automated** via the Windows task `Trading-Fundamentals-SEC` (logon + Sunday 10:00, `StartWhenAvailable=True`; log: `C:\tools\trading\logs\fundamentals-sec-backfill.log`) |
+| `Backfill-TradingFundamentalsIR.py` | Fundamentals from company IR reference parsers — **manual/event-driven** (hardcoded quarterly URLs per company, no automation) |
+| `Research-TradingFundamentals.py` | LLM research fundamentals pipeline (canonical tool) — **manual/LLM-assisted** (requires an active Claude session, cannot be automated) |
+| `Backfill-TradingEventsNews.py` | `events` (SEC EDGAR 8-K/6-K, 2-year lookback) + `news` (Yahoo Finance search) backfill — runs daily and automatically via the Windows task `Trading-EventsNews-Backfill` (logon + daily 17:25, `StartWhenAvailable=True`; log: `C:\tools\trading\logs\events-news-backfill.log`). This resolves inconsistency #4 part A (events/news); `estimates`/`ratings`/`price_targets` deliberately remain open (no free data path) |
+| `Import-ParqetTransactions.py` | Incremental Parqet CSV import (`transactions` + `positions`; preview is the default, `--write` makes a backup first). See the section "Parqet import and Swing campaigns" |
+| `trading_analytics.py` | Technical scoring library (SMA/RSI/momentum/drawdown/volatility), `rank_watchlist()` |
+| `trading_orchestrator.py` | Read-only portfolio-wide report (composes analytics/decision/promotion) |
+| `candidate_discovery.py` / `Discover-TradingCandidates.py` | Read-only watchlist candidate discovery over a controlled universe (`universe/swing_large_cap_v1.json`); not part of the orchestrator, writes nothing to the database; runs daily and automatically via the Windows task `Trading-Candidate-Discovery` (17:35, `StartWhenAvailable=True`, no logon trigger, 2 h time limit; log: `C:\tools\trading\logs\candidate-discovery.log`). See the section "Watchlist candidate discovery" |
+| `market_intelligence.py` / `intelligence_report.py` / `Collect-TradingMarketIntelligence.py` | Read-only market intelligence: economic/market news from official sources, SEC and Yahoo headlines, rule-based classification and mapping to portfolio/watchlist/discovery; the CLI run (daily and automatic via the Windows task `Trading-Market-Intelligence`, 08:15 and 17:45, `StartWhenAvailable=True`, no logon trigger, 2 h time limit; log: `C:\tools\trading\logs\market-intelligence.log`) writes a report that the MCP reader only reads. Not part of the orchestrator, not a signal. See the section "Market intelligence" |
+| `opportunity_view.py` | Read-only opportunity view: joins engine/planner candidates, the last discovery report and the last market-intelligence report (news only as context, no new score); read through the MCP method `get_opportunity_view`. See the section "Unified opportunity view" |
+| `portfolio_action_planner.py` | Deterministic capital/entry plan (`portfolio_action_plan`, simulation without orders); called by the orchestrator at the end. See the section "Portfolio action planner" |
 
-## Parqet-Import und Swing-Campaigns
+## Parqet import and Swing campaigns
 
-Der Import reconciliert eindeutig zuordenbare Trades **nach** `opened_at` einer offenen Swing-Campaign
-in derselben DB-Transaktion mit transaktionsverknüpften Events: SELL → `manual_reduction`, BUY → `add`
-(Menge/Preis exakt aus der Transaktion). Trades **vor** `opened_at` gehören zur Baseline und werden ignoriert.
-Ein Trade am selben Kalendertag wie `opened_at` wird nur reconciliert, wenn er der einzige unverlinkte
-Same-Day-Trade ist und die Mengenhistorie ihn eindeutig nach der Baseline einordnet (z. B. 143 − 45 = 98);
-sonst `MANUAL_REVIEW_REQUIRED`. Es werden nie TP1/TP2-/Stop-Gründe abgeleitet, `original_quantity` bleibt unverändert, Campaigns werden nicht
-automatisch geschlossen. Idempotent über die eindeutige `transaction_id`-Verknüpfung. Mehrdeutige oder nicht
-exakt aufgehende Fälle (mehrere offene Campaigns, Transfers, Overselling, Split) schreiben nichts und werden
-als `AMBIGUOUS` / `MANUAL_REVIEW_REQUIRED` gemeldet. Bereits importierte Trades:
+The import reconciles unambiguously attributable trades **after** `opened_at` of an open Swing campaign
+in the same DB transaction with transaction-linked events: SELL → `manual_reduction`, BUY → `add`
+(quantity/price exactly from the transaction). Trades **before** `opened_at` belong to the baseline and are ignored.
+A trade on the same calendar day as `opened_at` is only reconciled if it is the only unlinked
+same-day trade and the quantity history places it unambiguously after the baseline (e.g. 120 − 30 = 90);
+otherwise `MANUAL_REVIEW_REQUIRED`. TP1/TP2/stop reasons are never derived, `original_quantity` stays unchanged, campaigns are not
+closed automatically. Idempotent through the unique `transaction_id` link. Ambiguous or non-matching
+cases (several open campaigns, transfers, overselling, split) write nothing and are reported
+as `AMBIGUOUS` / `MANUAL_REVIEW_REQUIRED`. For already imported trades:
 `Import-ParqetTransactions.py --reconcile-campaigns [--write]`.
 
-## Portfolio Action Planner
+## Portfolio action planner
 
-`tools/trading/portfolio_action_planner.py` erzeugt den `portfolio_action_plan` — rein deterministisch,
-ohne LLM-Rangfolge, ohne Orders, ohne DB-Writes und ohne automatische Strategieänderung. Der Orchestrator
-gibt ihn in `run_trading_orchestrator` mit aus (keine neue MCP-Methode).
+`tools/trading/portfolio_action_planner.py` produces the `portfolio_action_plan` — purely deterministic,
+without LLM ranking, without orders, without DB writes and without automatic strategy changes. The orchestrator
+returns it as part of `run_trading_orchestrator` (no new MCP method).
 
-**PROMOTE ist kein BUY.** PROMOTE ist nur die Eingabe der Entry-Bewertung:
+**PROMOTE is not a BUY.** PROMOTE is only the input of the entry evaluation:
 
 ```
 PROMOTE  → ENTRY-EVALUATION → RANKING → POSITION SIZING → PLANNED ENTRY
 SELL/TRIM → POST-ACTION CAPITAL → ENTRY PLAN
 ```
 
-- **Post-Action-Kapital:** Erlös je SELL/TRIM (Menge × aktueller EUR-Kurs) abzüglich einer **geschätzten Steuer**
-  → Cash, Swing-/Long-Term-Anteil und freie Swing-Kapazität nach den Aktionen. Die Steuer (25 % KESt + 5,5 % Soli =
-  26,375 %, Kirchensteuer 0 %) fällt nur auf den realisierten Gewinn an, nie auf den Brutto-Erlös; ein Verlust ergibt
-  keine negative Steuer und kein zusätzliches Cash. Basis ist `positions.avg_cost` (Durchschnitts-Einstand,
-  **kein FIFO**; `tax_estimate_quality = estimated_from_average_cost`). Geplant wird mit der **konservativen** Sicht
-  (keine Verlustverrechnung); die Sicht mit planinterner Verlustverrechnung wird nur zusätzlich angezeigt.
-  Verlusttopf, Freistellungsauftrag und bereits realisierte Ergebnisse des Jahres sind unbekannt und werden nicht erfunden.
-- **Entry-Status** (nur PROMOTE-Kandidaten): `ENTRY_READY`, `WAIT_FOR_TRIGGER`, `BLOCKED_BY_ALLOCATION`,
+- **Post-action capital:** proceeds per SELL/TRIM (quantity × current EUR price) minus an **estimated tax**
+  → cash, Swing/long-term share and free Swing capacity after the actions. The tax (25 % capital gains tax + 5.5 % solidarity surcharge =
+  26.375 %, church tax 0 %) applies only to the realized gain, never to the gross proceeds; a loss yields
+  no negative tax and no additional cash. The basis is `positions.avg_cost` (average cost,
+  **not FIFO**; `tax_estimate_quality = estimated_from_average_cost`). Planning uses the **conservative** view
+  (no loss offsetting); the view with in-plan loss offsetting is only shown additionally.
+  Loss pot, tax allowance and results already realized this year are unknown and are not invented.
+- **Entry status** (PROMOTE candidates only): `ENTRY_READY`, `WAIT_FOR_TRIGGER`, `BLOCKED_BY_ALLOCATION`,
   `BLOCKED_BY_DATA`, `BLOCKED_BY_CONCENTRATION`, `BLOCKED_EXISTING_POSITION`, `BLOCKED_EXISTING_CAMPAIGN`.
-- **Ranking** nur für `ENTRY_READY`: `entry_score = momentum_score × confidence` (bestehender Analytics-Score ×
-  bestehender Datenqualitäts-Wert der Decision Engine); Gleichstand: höhere Watchlist-Priorität, dann niedrigere `security_id`.
-- **Sizing/Allokation:** bestehende Entry-Logik (Swing-Maximum 40 %, Cash-Reserve, max. Positionsgewicht, ganze
-  Stück abgerundet), sequentiell nach Rang; Stopp bei Swing-Maximum, Cash-Reserve oder erschöpftem Kapital.
-- **Nicht modelliert:** Gebühren, FIFO-Lots, Verlusttopf/Freibetrag, Sektor-Konzentration (keine Sektor-Daten für Bestandspositionen — es gelten
-  nur die Einzeltitel-Limits).
+- **Ranking** for `ENTRY_READY` only: `entry_score = momentum_score × confidence` (existing analytics score ×
+  existing data-quality value of the decision engine); ties: higher watchlist priority, then lower `security_id`.
+- **Sizing/allocation:** existing entry logic (Swing maximum 40 %, cash reserve, maximum position weight, whole
+  shares rounded down), sequentially by rank; stops at the Swing maximum, the cash reserve or exhausted capital.
+- **Not modelled:** fees, FIFO lots, loss pot/allowance, sector concentration (no sector data for held positions — only
+  the single-position limits apply).
 
-## Watchlist Candidate Discovery
+## Watchlist candidate discovery
 
-`DISCOVERY ≠ PROMOTE ≠ ENTRY_READY ≠ ORDER`: Die Discovery schlägt neue Titel nur **vor**. Sie legt keine Security, keinen
-Watchlist-Eintrag, keine Strategy-Zuweisung, keine Campaign, keinen BUY und keinen Entry-Plan an; Version 1 ist read-only.
+`DISCOVERY ≠ PROMOTE ≠ ENTRY_READY ≠ ORDER`: The discovery only **suggests** new symbols. It creates no security, no
+watchlist entry, no strategy assignment, no campaign, no BUY and no entry plan; version 1 is read-only.
 
 ```
 python tools\trading\Discover-TradingCandidates.py [--limit N] [--top N] [--json] [--output FILE] [--cache-dir DIR]
 ```
 
-- **Universum:** versionierte, statische Liste liquider Large Caps (`tools/trading/universe/swing_large_cap_v1.json`, keine
-  offizielle Indexzusammensetzung); Yahoo-Symbole wie in der bestehenden Market-Data-Pipeline. Keine freie Web-/LLM-Suche.
-- **Pre-Filter** vor dem ersten Request: bereits im Depot / auf der Watchlist (Yahoo-Symbol), kein Aktien-Typ, Kurswährung nicht
-  bewertbar (bestehender FX-Resolver). Danach: Mindestkurs 5 EUR, Median-Handelsvolumen 60 Tage ≥ 5 Mio. EUR (`DiscoveryConfig`,
-  Vorschlag), Historie/Frische nach der bestehenden Technik-Regel.
-- **Analyse:** unveränderte Engine (`build_analysis_snapshot`, `evaluate_swing_promotion`) auf einer flüchtigen In-Memory-Kopie
-  des Produktions-Schemas; keine zweite Bewertungslogik. Fundamentals, Bewertung und Events werden für neue Titel **nicht** geholt.
-- **Score:** `discovery_score = momentum_score × confidence` (wie der `entry_score` des Planners), Gleichstand: höherer Momentum-Score,
-  dann Symbol. Status: `DISCOVERY_READY` (Trend intakt und Momentum ≥ 20), `DISCOVERY_WATCH`, `DISCOVERY_DATA_INSUFFICIENT`, `DISCOVERY_REJECTED`.
-- **Ablauf für den MCP-Client:** `Universum → Scan (CLI) → Report → MCP-Reader → MCP-Client`. Der lange Lauf (mehrere Minuten, Yahoo-Requests) bleibt
-  das explizite Skript; es schreibt nach erfolgreichem, vollständigem Lauf einen strukturierten Report nach
-  `C:\tools\trading\data\candidate-discovery\` (`latest.json`, atomar ersetzt, plus optional `candidate-discovery-YYYYMMDD-HHMMSS.json`;
-  `--output-dir`, `--no-history`). Ein fehlgeschlagener Lauf lässt den letzten gültigen Report unberührt.
-- **MCP:** `get_candidate_discovery(status, limit, detail, symbol)` liest **nur** den letzten fertigen Report — **kein** Discovery-Lauf,
-  kein Yahoo-Aufruf, keine DB- oder Watchlist-Zugriffe. Ohne Report: `UNAVAILABLE` / `NO_DISCOVERY_REPORT`. Ein alter Report wird nicht
-  versteckt, sondern mit Alter und `REPORT_STALE` ausgewiesen (Grenze: `market_data_max_age_days`). Der MCP-Client liest also den letzten fertigen
-  Report, die Discovery bleibt read-only und es gibt keine automatische Watchlist-Aufnahme. Der Report wird im Referenz-Setup täglich um 17:35
-  vom Windows-Task `Trading-Candidate-Discovery` erzeugt (nicht vom MCP-Tool).
+- **Universe:** versioned, static list of liquid large caps (`tools/trading/universe/swing_large_cap_v1.json`, not an
+  official index composition); Yahoo symbols as in the existing market-data pipeline. No free web/LLM search.
+- **Pre-filter** before the first request: already held / on the watchlist (Yahoo symbol), not an equity type, quote currency cannot be
+  valued (existing FX resolver). Afterwards: minimum price 5 EUR, 60-day median traded value ≥ 5 M EUR (`DiscoveryConfig`,
+  proposal), history/freshness according to the existing technical rule.
+- **Analysis:** unchanged engine (`build_analysis_snapshot`, `evaluate_swing_promotion`) on a volatile in-memory copy
+  of the production schema; no second rating logic. Fundamentals, valuation and events are **not** fetched for new symbols.
+- **Score:** `discovery_score = momentum_score × confidence` (like the planner's `entry_score`), ties: higher momentum score,
+  then symbol. Status: `DISCOVERY_READY` (trend intact and momentum ≥ 20), `DISCOVERY_WATCH`, `DISCOVERY_DATA_INSUFFICIENT`, `DISCOVERY_REJECTED`.
+- **Flow for the MCP client:** `universe → scan (CLI) → report → MCP reader → MCP client`. The long run (several minutes, Yahoo requests) stays
+  the explicit script; after a successful, complete run it writes a structured report to
+  `C:\tools\trading\data\candidate-discovery\` (`latest.json`, replaced atomically, plus optionally `candidate-discovery-YYYYMMDD-HHMMSS.json`;
+  `--output-dir`, `--no-history`). A failed run leaves the last valid report untouched.
+- **MCP:** `get_candidate_discovery(status, limit, detail, symbol)` reads **only** the last finished report — **no** discovery run,
+  no Yahoo call, no DB or watchlist access. Without a report: `UNAVAILABLE` / `NO_DISCOVERY_REPORT`. An old report is not
+  hidden but shown with its age and `REPORT_STALE` (limit: `market_data_max_age_days`). The MCP client therefore reads the last finished
+  report, the discovery stays read-only and there is no automatic watchlist addition. In the reference setup the report is produced daily at 17:35
+  by the Windows task `Trading-Candidate-Discovery` (not by the MCP tool).
 
-## Market Intelligence
+## Market intelligence
 
-`NEWS ≠ SIGNAL ≠ BUY ≠ SELL`: Die Market Intelligence ordnet Nachrichten **nur ein** (Kategorie, Wichtigkeit, betroffene Titel). Sie
-ändert kein Signal, keine Empfehlung, kein Ranking, kein Sizing und legt keine Orders an. Version 1 ist read-only und deterministisch;
-ein LLM entscheidet nichts und erzeugt keine Nachrichten.
+`NEWS ≠ SIGNAL ≠ BUY ≠ SELL`: Market intelligence **only classifies** news (category, importance, affected symbols). It
+changes no signal, no recommendation, no ranking, no sizing and creates no orders. Version 1 is read-only and deterministic;
+no LLM decides anything or produces news.
 
 ```
 python tools\trading\Collect-TradingMarketIntelligence.py [--top N] [--json] [--output-dir DIR] [--no-history] [--discovery-news-limit N]
 ```
 
-- **Ablauf für den MCP-Client:** `Quellen → Collect-CLI → Report → MCP-Reader → MCP-Client`. Der Abruf der Quellen ist das explizite Skript; es schreibt nach
-  einem erfolgreichen Lauf `C:\tools\trading\data\market-intelligence\latest.json` (atomar ersetzt: Temp-Datei → erneut lesen/validieren
-  → `os.replace`; plus optional `market-intelligence-YYYYMMDD-HHMMSS.json`). Fehlgeschlagener Lauf (keine einzige Quelle antwortet)
-  lässt den letzten gültigen Report unberührt; einzelne ausgefallene Feeds erscheinen als Warnung `FEED_FAILED:<feed>`.
-- **Quellen:** offizielle Feeds ohne API-Key — EZB (Pressemitteilungen, Statistik), Fed (Geldpolitik, Pressemitteilungen), BLS (CPI,
-  Beschäftigung), BEA, Destatis, EIA (Today in Energy, Pressemitteilungen); SEC-8-K-Ereignisse und gecachte Yahoo-Schlagzeilen aus der
-  Datenbank (nur lesen); frische Yahoo-Schlagzeilen für `DISCOVERY_READY`-Kandidaten des Discovery-Reports. Eurostat ist in v1 nicht
-  angebunden; `COMMODITIES` ist nicht implementiert.
-- **Kategorien:** MACRO, MONETARY_POLICY, INFLATION, LABOR_MARKET, ECONOMIC_GROWTH, GEOPOLITICS, ENERGY, SECTOR, COMPANY, EARNINGS,
-  GUIDANCE, REGULATORY, M_AND_A. Feste Regeltabellen je Quelle bzw. Schlagzeilen-Schlüsselwörter; `event_id` ist ein stabiler Hash
-  aus Quellentyp und kanonischer URL/Accession (Duplikate werden zusammengeführt).
-- **Relevanz (HIGH/MEDIUM/LOW):** feste Tabelle. HIGH nur für Primärquellen (z. B. EZB-/Fed-Zinsentscheid, SEC-Pflichtmeldungen wie
-  Übernahme/Delisting), Unternehmens-Pressemitteilungs-Dienste oder Schlüsselwort-Klassen, deren Schlagzeile das verknüpfte Unternehmen
-  **mit Namen** nennt (ein bloßer Ticker zählt nicht). Sekundärquellen mit reinen Schlüsselwörtern sind höchstens MEDIUM; Stock-Pick-Artikel
-  sind LOW; geplante Makro-Veröffentlichungen sind MEDIUM (ob eine Überraschung vorliegt, ist ohne Konsensdaten nicht prüfbar);
-  GEOPOLITICS ist höchstens MEDIUM.
-- **Impact:** `UNKNOWN`, solange keine verlässliche Regel greift. Eine Richtung wird nie aus einer Schlagzeile gelesen; nur die Struktur einer
-  Primär-Meldung (Delisting-Hinweis, Cybersecurity-Vorfall 1.05, Non-Reliance 4.02) ergibt `NEGATIVE`. Jedes Ereignis nennt `impact_basis`.
-- **Abbildung:** `affected_portfolio_symbols`, `affected_watchlist_symbols`, `affected_discovery_symbols`; Sektor-Ereignisse (explizite
-  Schlüsselwörter, EIA) erreichen die Titel dieses Sektors über die statische Zuordnung `universe/sector_map_v1.json`; Makro-Ereignisse tragen
-  `portfolio_region_exposure` (Region je Yahoo-Suffix der Depot-Titel).
-- **MCP:** `get_market_intelligence(scope, category, importance, symbol, sector, limit, detail)` liest **nur** den letzten fertigen Report —
-  kein Web-Abruf, kein Scan, kein DB-Zugriff. `scope`: ALL, PORTFOLIO, WATCHLIST, DISCOVERY, MACRO. Ohne Report: `UNAVAILABLE` /
-  `NO_MARKET_INTELLIGENCE_REPORT`; ein alter Report wird mit Alter und `REPORT_STALE` ausgewiesen (Grenze 24 h, `MarketIntelligenceConfig`).
-  Die kompakte Antwort (höchstens 50 Ereignisse) enthält nur kurze Frische, den aktiven Filter, die Zähler je Wichtigkeit aller Treffer und die
-  Ereignisse selbst (Zeit, Wichtigkeit, Kategorie, Schlagzeile, Quelle, Impact, bis zu 3 Reason Codes; bei `symbol=...` zusätzlich `link`
-  DIRECT/SHARED/SECTOR/LOOSE, sonst die betroffenen Symbole/Sektoren/Regionen). Kein `rendered_de`, keine Quellenstatistik, kein Lauf-Protokoll,
-  keine Methodik. `detail=true` (höchstens 25) liefert alles. Die Antwort bleibt unter dem MCP-Limit von 40.000 Zeichen (sonst
-  `RESPONSE_TRIMMED_TO_SIZE_BUDGET`). Der Report wird im Referenz-Setup täglich um 08:15 und 17:45 vom Windows-Task `Trading-Market-Intelligence` erzeugt (nicht vom MCP-Tool).
-- **Bekannte Grenzen:** Yahoo ordnet Schlagzeilen teils lose Symbolen zu (Ticker-Homonyme, Marktberichte); Stichwort-Klassifikation hat
-  `confidence: LOW`; Impact ist meist `UNKNOWN`.
+- **Flow for the MCP client:** `sources → collect CLI → report → MCP reader → MCP client`. Fetching the sources is the explicit script; after
+  a successful run it writes `C:\tools\trading\data\market-intelligence\latest.json` (replaced atomically: temp file → re-read/validate
+  → `os.replace`; plus optionally `market-intelligence-YYYYMMDD-HHMMSS.json`). A failed run (not a single source answers)
+  leaves the last valid report untouched; individual failed feeds appear as the warning `FEED_FAILED:<feed>`.
+- **Sources:** official feeds without an API key — ECB (press releases, statistics), Fed (monetary policy, press releases), BLS (CPI,
+  employment), BEA, Destatis, EIA (Today in Energy, press releases); SEC 8-K events and cached Yahoo headlines from the
+  database (read only); fresh Yahoo headlines for `DISCOVERY_READY` candidates of the discovery report. Eurostat is not
+  connected in v1; `COMMODITIES` is not implemented.
+- **Categories:** MACRO, MONETARY_POLICY, INFLATION, LABOR_MARKET, ECONOMIC_GROWTH, GEOPOLITICS, ENERGY, SECTOR, COMPANY, EARNINGS,
+  GUIDANCE, REGULATORY, M_AND_A. Fixed rule tables per source and headline keywords; `event_id` is a stable hash
+  of source type and canonical URL/accession (duplicates are merged).
+- **Importance (HIGH/MEDIUM/LOW):** fixed table. HIGH only for primary sources (e.g. ECB/Fed rate decision, mandatory SEC filings such as
+  acquisition/delisting), company press-release wires, or keyword classes whose headline names the linked company
+  **by name** (a bare ticker does not count). Secondary sources with plain keywords are MEDIUM at most; stock-pick articles
+  are LOW; scheduled macro releases are MEDIUM (whether there is a surprise cannot be checked without consensus data);
+  GEOPOLITICS is MEDIUM at most.
+- **Impact:** `UNKNOWN` as long as no reliable rule applies. A direction is never read from a headline; only the structure of a
+  primary filing (delisting notice, cybersecurity incident 1.05, non-reliance 4.02) yields `NEGATIVE`. Every event states its `impact_basis`.
+- **Mapping:** `affected_portfolio_symbols`, `affected_watchlist_symbols`, `affected_discovery_symbols`; sector events (explicit
+  keywords, EIA) reach the symbols of that sector through the static mapping `universe/sector_map_v1.json`; macro events carry
+  `portfolio_region_exposure` (region per Yahoo suffix of the held symbols).
+- **MCP:** `get_market_intelligence(scope, category, importance, symbol, sector, limit, detail)` reads **only** the last finished report —
+  no web fetch, no scan, no DB access. `scope`: ALL, PORTFOLIO, WATCHLIST, DISCOVERY, MACRO. Without a report: `UNAVAILABLE` /
+  `NO_MARKET_INTELLIGENCE_REPORT`; an old report is shown with its age and `REPORT_STALE` (limit 24 h, `MarketIntelligenceConfig`).
+  The compact answer (at most 50 events) contains only short freshness, the active filter, the counters per importance of all matches and the
+  events themselves (time, importance, category, headline, source, impact, up to 3 reason codes; with `symbol=...` additionally `link`
+  DIRECT/SHARED/SECTOR/LOOSE, otherwise the affected symbols/sectors/regions). No `rendered_de`, no source statistics, no run log,
+  no methodology. `detail=true` (at most 25) returns everything. The answer stays below the MCP limit of 40,000 characters (otherwise
+  `RESPONSE_TRIMMED_TO_SIZE_BUDGET`). In the reference setup the report is produced daily at 08:15 and 17:45 by the Windows task `Trading-Market-Intelligence` (not by the MCP tool).
+- **Known limits:** Yahoo sometimes attaches headlines to symbols loosely (ticker homonyms, market wrap-ups); keyword classification has
+  `confidence: LOW`; impact is mostly `UNKNOWN`.
 
-## Unified Opportunity View
+## Unified opportunity view
 
-`DISCOVERY + MARKET INTELLIGENCE + PORTFOLIO/PLANNER-KONTEXT → eine Opportunity-Ausgabe`. Die Ansicht **führt nur zusammen**, was schon
-existiert; sie rechnet keinen Score, kein Ranking, keine Positionsgröße und keine Empfehlung und erzeugt keine Order. News bleiben Kontext
-und Warnung: sie ändern weder `discovery_score` noch PROMOTE/ENTRY_READY, Rang, Sizing oder SELL/TRIM/HOLD. Es gibt **keinen**
-kombinierten Score (kein „Score + News-Bonus/Malus").
+`DISCOVERY + MARKET INTELLIGENCE + PORTFOLIO/PLANNER CONTEXT → one opportunity output`. The view **only joins** what already
+exists; it computes no score, no ranking, no position size and no recommendation and creates no order. News stays context
+and warning: it changes neither `discovery_score` nor PROMOTE/ENTRY_READY, rank, sizing or SELL/TRIM/HOLD. There is **no**
+combined score (no “score + news bonus/malus”).
 
-- **MCP:** `get_opportunity_view(source, status, news_status, symbol, limit, detail)` (Tool Nr. 15). Es liest nur: den Orchestrator auf der
-  gewohnten read-only Verbindung, den letzten Discovery-Report und den letzten Market-Intelligence-Report. Kein Web-Zugriff, kein
-  Discovery-/Collector-Lauf, keine DB-Writes, keine neue Tabelle, keine neue Persistenz. Fehlt ein Report, ist das Ergebnis `PARTIAL`
-  (der Rest wird gezeigt, `market_context` bzw. Discovery-Teil `UNAVAILABLE`); `UNAVAILABLE` nur, wenn gar nichts vorliegt. Beide Reports werden
-  mit Stand, Alter und `stale` offen ausgewiesen (Discovery: `market_data_max_age_days`, Market Intelligence: 24 h).
-- **Ergebnis kompakt (Standard):** nur das Angefragte — Status und Frische beider Reports, ein minimaler Kapitalrahmen (Cash, Cash nach den
-  geplanten Verkäufen, konservativer Nettoerlös, geplante Entries, verbleibende Kaufkapazität, Swing-Anteil und -Korridor), die passenden
-  `opportunities` (Entry-Status/-Rang/-Score, Momentum, Plan-Status mit geplantem Kapital, vom Engine-Sizing vorgeschlagenes Kapital
-  `proposed_capital_eur`/`proposed_quantity`, Stop-Grund wie `STOPPED_CAPITAL_EXHAUSTED`, News-Status mit Zählern und dem wichtigsten Event) und
-  `warnings` als Codes. Bei `symbol=...` kommen nur diese Symbole (und ggf. die so benannten Depotpositionen). Keine Depotliste, keine
-  Discovery-Liste, kein Makro-Block, keine globale High-Attention-Liste, kein `rendered_de`. Leere Felder werden weggelassen.
-- **Ergebnis `detail=true`:** zusätzlich `metadata`-Felder, `portfolio_context` (mit Depotpositionen), `watchlist_candidates`,
-  `discovery_candidates`, `market_context` (Makro, High-Attention), Methodik und `rendered_de` (fertige Tabellen).
-- **Kandidaten:** A) Watchlist-/PROMOTE-Kandidaten des Planners (alle `entry_status`), B) `DISCOVERY_READY` aus dem Discovery-Report. `source`
-  = `WATCHLIST`, `DISCOVERY` oder `BOTH` (Symbol in beiden). Keine automatische Watchlist-Aufnahme, keine Strategy-Zuweisung.
-- **Reihenfolge:** ENTRY_READY → WAIT_FOR_TRIGGER → DISCOVERY_READY → Sonstige; innerhalb der Gruppe der Engine-Rang (dann `entry_score`,
-  Discovery-Rang, Watchlist-Priorität). Die bestehenden Scores (`discovery_score`, `entry_score`, `momentum_score`, `confidence`) bleiben getrennt sichtbar.
-- **News-Kontext je Kandidat und Depotposition:** `NEWS_HIGH_ATTENTION` (mindestens ein *direkt* symbolbezogenes HIGH-Event: SEC-Meldung oder
-  Schlagzeile, die das Unternehmen nennt, auch „(TICKER)"), `NEWS_ATTENTION` (direktes MEDIUM-Event oder ein nur über den Sektor bzw. lose
-  zugeordnetes HIGH-Event), `NEWS_CLEAR` (nur LOW / lose MEDIUM / keine Meldung), `NEWS_UNAVAILABLE` (kein gültiger MI-Report). Mit Zählern
-  (alle / direkt), den wichtigsten Events (Kategorie, Impact, `link` DIRECT/SECTOR/LOOSE, Reason Codes) und der Begründung `status_reasons`.
-- **Kapital:** bei Kandidaten ohne Planner-Eintrag (Discovery) nur ein informativer Vergleich `capital_fit` (Preis einer Aktie gegen frei
-  verfügbares Kapital nach den geplanten Verkäufen bzw. nach den geplanten Entries) — keine Menge, keine Order.
-- **Typische Fragen an den Assistenten:** „beste neue Chancen" → `source=DISCOVERY`; „Discovery mit relevanten News" → `source=DISCOVERY, news_status=RELEVANT`;
-  „ENTRY_READY mit High-Impact-News" → `status=ENTRY_READY, news_status=NEWS_HIGH_ATTENTION`; „technisch stark und news-unauffällig" →
-  `news_status=NEWS_CLEAR`; „NVDA vor AAPL?" → `symbol=NVDA,AAPL` (Rang, Score, Plan-Status, Verzögerungsgrund); „Neues zu AAPL, NVDA, GOOGL" →
-  `symbol=AAPL,NVDA,GOOGL`; „passt ins freie Kapital" → `source=DISCOVERY` (`capital_fit`, Abschnitt Kapital); „Discovery READY ohne HIGH-News" →
-  `source=DISCOVERY, status=DISCOVERY_READY, news_status=NOT_HIGH`. Standard-`limit` 30 (höchstens 40 kompakt, 10 Detail): ein Statusfilter wie ENTRY_READY liefert alle Treffer in einem Aufruf. Die Antwort bleibt unter
-  34.000 Zeichen (sonst `RESPONSE_TRIMMED_TO_SIZE_BUDGET`; im Detail zuerst Nebenabschnitte, dann die letzten Zeilen).
-- **Grenzen:** Ein Unternehmen wird nur über seinen Namen oder einen geklammerten Ticker erkannt (Kürzel ohne Namensbestandteil zählen
-  nicht als direkt); Yahoo ordnet Schlagzeilen teils lose zu; viele `NEWS_ATTENTION` sind Analysten-Kursziele (COMPANY/MEDIUM).
+- **MCP:** `get_opportunity_view(source, status, news_status, symbol, limit, detail)` (tool no. 15). It only reads: the orchestrator on the
+  usual read-only connection, the last discovery report and the last market-intelligence report. No web access, no
+  discovery/collector run, no DB writes, no new table, no new persistence. If a report is missing, the result is `PARTIAL`
+  (the rest is shown, `market_context` or the discovery part `UNAVAILABLE`); `UNAVAILABLE` only if nothing at all is present. Both reports are shown openly
+  with state, age and `stale` (discovery: `market_data_max_age_days`, market intelligence: 24 h).
+- **Compact result (default):** only what was asked — status and freshness of both reports, a minimal capital frame (cash, cash after the
+  planned sales, conservative net proceeds, planned entries, remaining buying capacity, Swing share and corridor), the matching
+  `opportunities` (entry status/rank/score, momentum, plan status with planned capital, capital proposed by the engine's sizing
+  `proposed_capital_eur`/`proposed_quantity`, stop reason such as `STOPPED_CAPITAL_EXHAUSTED`, news status with counts and the most important event) and
+  `warnings` as codes. With `symbol=...` only these symbols (and, if applicable, the held positions of that name) are returned. No position list, no
+  discovery list, no macro block, no global high-attention list, no `rendered_de`. Empty fields are omitted.
+- **Result with `detail=true`:** additionally `metadata` fields, `portfolio_context` (with held positions), `watchlist_candidates`,
+  `discovery_candidates`, `market_context` (macro, high attention), methodology and `rendered_de` (ready-made tables).
+- **Candidates:** A) watchlist/PROMOTE candidates of the planner (all `entry_status`), B) `DISCOVERY_READY` from the discovery report. `source`
+  = `WATCHLIST`, `DISCOVERY` or `BOTH` (symbol in both). No automatic watchlist addition, no strategy assignment.
+- **Order:** ENTRY_READY → WAIT_FOR_TRIGGER → DISCOVERY_READY → other; within the group the engine rank (then `entry_score`,
+  discovery rank, watchlist priority). The existing scores (`discovery_score`, `entry_score`, `momentum_score`, `confidence`) stay visible separately.
+- **News context per candidate and held position:** `NEWS_HIGH_ATTENTION` (at least one *directly* symbol-related HIGH event: SEC filing or
+  a headline that names the company, also “(TICKER)”), `NEWS_ATTENTION` (a direct MEDIUM event or a HIGH event matched only through the sector or
+  loosely), `NEWS_CLEAR` (only LOW / loose MEDIUM / no item), `NEWS_UNAVAILABLE` (no valid MI report). With counts
+  (all / direct), the most important events (category, impact, `link` DIRECT/SECTOR/LOOSE, reason codes) and the justification `status_reasons`.
+- **Capital:** for candidates without a planner entry (discovery) only an informative comparison `capital_fit` (price of one share against free
+  capital after the planned sales or after the planned entries) — no quantity, no order.
+- **Typical questions to the assistant:** “best new opportunities” → `source=DISCOVERY`; “discovery with relevant news” → `source=DISCOVERY, news_status=RELEVANT`;
+  “ENTRY_READY with high-impact news” → `status=ENTRY_READY, news_status=NEWS_HIGH_ATTENTION`; “technically strong and no news concerns” →
+  `news_status=NEWS_CLEAR`; “NVDA ahead of AAPL?” → `symbol=NVDA,AAPL` (rank, score, plan status, delay reason); “news on AAPL, NVDA, GOOGL” →
+  `symbol=AAPL,NVDA,GOOGL`; “does it fit into the free capital” → `source=DISCOVERY` (`capital_fit`, section Capital); “discovery READY without HIGH news” →
+  `source=DISCOVERY, status=DISCOVERY_READY, news_status=NOT_HIGH`. Default `limit` 30 (at most 40 compact, 10 detail): a status filter such as ENTRY_READY returns all matches in one call. The answer stays below
+  34,000 characters (otherwise `RESPONSE_TRIMMED_TO_SIZE_BUDGET`; in detail mode first secondary sections, then the last rows).
+- **Limits:** A company is recognised only by its name or a parenthesised ticker (a short form without a name part does not count
+  as direct); Yahoo sometimes attaches headlines loosely; many `NEWS_ATTENTION` rows are analyst price targets (COMPANY/MEDIUM).
 
-## Watchlist-Kandidaten-Status
+## Watchlist candidate status
 
-`tools/trading/candidate_decision.py::evaluate_watchlist_candidates()` ist read-only und
-verdichtet Analytics-Score (`trading_analytics.rank_watchlist`), aktive Strategiezuordnung,
-offenen Swing-Campaign-Status und die Portfolio-Allokations-Guardrails zu einem strukturierten
-`BUY` / `WATCH` / `DEFERRED` / `INSUFFICIENT_DATA` je Watchlist-Titel. Keine Orders, keine
-DB-Writes, keine automatische Campaign-Eröffnung. Auch über den Trading MCP Server (MCP-Client) erreichbar
-(`evaluate_watchlist_candidates()`). Details und Entscheidungsreihenfolge siehe
-[docs/trading-candidate-decision.md](docs/trading-candidate-decision.md).
+`tools/trading/candidate_decision.py::evaluate_watchlist_candidates()` is read-only and
+condenses the analytics score (`trading_analytics.rank_watchlist`), the active strategy assignment,
+the open Swing campaign status and the portfolio allocation guardrails into a structured
+`BUY` / `WATCH` / `DEFERRED` / `INSUFFICIENT_DATA` per watchlist entry. No orders, no
+DB writes, no automatic campaign opening. Also available through the Trading MCP server (MCP client)
+(`evaluate_watchlist_candidates()`). For details and the decision order see
+[docs/trading-candidate-decision.en.md](docs/trading-candidate-decision.en.md) (German: [docs/trading-candidate-decision.de.md](docs/trading-candidate-decision.de.md)).
 
-## Watchlist-Strategie-Vorschlag
+## Watchlist strategy suggestion
 
-`tools/trading/strategy_suggestion.py::suggest_strategy_assignments()` ist read-only und
-schlägt für Watchlist-Titel **ohne aktive** `strategy_assignment` `swing` / `long_term` /
-`unknown` vor. Ein Vorschlag ist **keine** Zuordnung — er schreibt nichts und ersetzt nicht
-den bestehenden `swing_promotion.approve_swing_promotion`-Pfad. `long_term` wird nie allein
-aus dem Momentum-Score abgeleitet (einzige Long-Term-Grundlage aktuell: `asset_type` ∈
-`{etf, fund}`). Auch über den Trading MCP Server (MCP-Client) erreichbar (`suggest_strategy_assignments()`).
-Details siehe [docs/trading-strategy-suggestion.md](docs/trading-strategy-suggestion.md).
+`tools/trading/strategy_suggestion.py::suggest_strategy_assignments()` is read-only and
+suggests `swing` / `long_term` /
+`unknown` for watchlist entries **without an active** `strategy_assignment`. A suggestion is **not** an assignment — it writes nothing and does not replace
+the existing `swing_promotion.approve_swing_promotion` path. `long_term` is never derived solely
+from the momentum score (the only long-term basis at present: `asset_type` ∈
+`{etf, fund}`). Also available through the Trading MCP server (MCP client) (`suggest_strategy_assignments()`).
+For details see [docs/trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) (German: [docs/trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md)).
 
-## Prinzip
+## Principle
 
 ```
 LLM    = Research + Interpretation + Mapping
 Python = DB I/O + Prompt + Validation + Write
 ```
 
-Die LLM-Recherche liefert Kandidaten-JSON; Python validiert strukturell und schreibt
-kontrolliert (mit Overwrite-Schutz) in die Datenbank. Keine neuen firmenspezifischen
-Parser ohne Notwendigkeit — bestehende Company-IR-Referenzparser bleiben Ausnahmen.
+The LLM research delivers candidate JSON; Python validates it structurally and writes
+in a controlled way (with overwrite protection) to the database. No new company-specific
+parsers without need — existing company IR reference parsers remain exceptions.
 
-## Datenquellen
+## Data sources
 
 - Yahoo Finance
 - SEC EDGAR
 - Company Investor Relations
-- Regulatorische Quellen (z. B. DART/OpenDART, ESEF)
+- Regulatory sources (e.g. DART/OpenDART, ESEF)
 
 ## Contributing, Security and License
 
