@@ -94,7 +94,8 @@ class DocumentationLanguageTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         versions = re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", changelog, flags=re.M)
         self.assertEqual(re.search(r"^Version: v(\d+\.\d+\.\d+) — see \[CHANGELOG\.md\]\(CHANGELOG\.md\)\.$", readme, flags=re.M).group(1), versions[0])
-        self.assertEqual(versions[:3], [versions[0], "0.1.1", "0.1.0"])
+        self.assertEqual(versions[-2:], ["0.1.1", "0.1.0"])  # the history stays below the newest entries
+        self.assertIn("0.2.0", versions)
         self.assertNotRegex(readme.lower(), r"release preparation|in preparation|under way")
 
     def test_readme_links_both_language_versions_of_every_document(self) -> None:

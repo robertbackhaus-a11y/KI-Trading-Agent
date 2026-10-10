@@ -1,15 +1,21 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-10-09
 
 ### Added
-- External funding in the Portfolio Action Planner (`metadata.external_funding_available`, default off): lifts only the cash/reserve shortage for BUY and ADD; allocation, weight, data and campaign guards stay binding
-- Provider-neutral transaction import: documented canonical CSV (`Import-TradingTransactions.py --format canonical`), Parqet as a source adapter, `--create-securities`, strategy-aware initialization (`--strategy`), automatic Swing-campaign initialization and reconciliation (`--campaign-opened-at`), complete dry run on an in-memory copy, bilingual import documentation and a synthetic example CSV
-- GitHub security configuration: CodeQL, Dependency Review, Dependabot (GitHub Actions and Python), SHA-pinned actions
-- `requirements.txt` with the direct runtime dependencies
+- External funding in the Portfolio Action Planner (`metadata.external_funding_available`, default off): lifts only the cash/reserve shortage for BUY and ADD; the Swing maximum and the weight, data and campaign guards stay binding, and nothing is booked
+- Generic canonical CSV transaction import (`Import-TradingTransactions.py --format canonical`), independent of any broker or portfolio tool
+- Parqet source adapter on the same import path (`--format parqet`); cumulative exports, duplicate and historical detection and the dry run keep working
+- Strategy-aware initialization: `--strategy`, `--create-securities`, `effective_from` taken from the start of the held position
+- Automatic Swing-campaign initialization and reconciliation, with `--campaign-opened-at` for starts that cannot be derived (for example after a transfer-in)
+- Complete dry run on an in-memory copy of the database, and a result with `validation_status` and `open_items`
+- Import documentation in German and English (`docs/trading-import.de.md`, `docs/trading-import.en.md`) and a synthetic example CSV (`examples/trading-import-example.csv`)
+- GitHub CodeQL, Dependency Review and Dependabot (GitHub Actions and Python), with SHA-pinned actions
+- `requirements.txt` with the direct runtime dependencies at their tested versions
 
 ### Changed
-- `parqet_import.py` is now the Parqet adapter; the import engine lives in `transaction_import.py` (former names are still exported); `Import-ParqetTransactions.py` runs `Import-TradingTransactions.py --format parqet`
+- The Parqet importer is now a thin adapter on the provider-neutral import engine `transaction_import.py` (the former names are still exported); `Import-ParqetTransactions.py` runs `Import-TradingTransactions.py --format parqet`
+- `imports.records_failed` now counts only rows that could not be processed
 
 ## [0.2.0] - 2026-10-09
 
