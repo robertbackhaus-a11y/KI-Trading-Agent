@@ -358,7 +358,7 @@ class ReportAndReaderTests(unittest.TestCase):
 
     def test_the_report_stays_valid_and_carries_an_alias_table(self) -> None:
         self.assertEqual(ir.validate_report(self.report), [])
-        self.assertEqual(sorted(self.report["aliases"]), ["1", "2"])
+        self.assertEqual(sorted(self.report["aliases"]), ["1", "2", "3", "4", "5"])  # event securities plus every portfolio / watchlist security
         self.assertEqual(self.report["aliases"]["2"]["isin"], "DE0000000002")
 
     def test_a_report_without_the_new_optional_fields_is_still_valid_and_queryable(self) -> None:
@@ -385,6 +385,18 @@ class ReportAndReaderTests(unittest.TestCase):
         self.assertEqual(headlines["golf"], ["Golf Defense wins a large order"])
         self.assertEqual(self.query(symbol="ALFA")["matching"], self.query(symbol="US0000000001")["matching"])
         self.assertEqual(self.query(symbol="ZZZZ")["matching"], 0)
+
+    def test_k_a_sector_scoped_event_is_found_under_every_alias_of_the_security(self) -> None:
+        sector = mit.news_item("AXIO", "Defense stocks rally on NATO spending", url="https://finance.yahoo.com/n/sector.html", publisher="Zacks")
+        result = build(news=[sector])
+        (event,) = result["events"]
+        self.assertIn("GOLF.DE", event["affected_symbols"])  # reached through the sector only: no security id of GOLF in the event
+        self.assertNotIn(2, event["security_ids"])
+        report = ir.build_report(result, generated_at=NOW, collection={})
+        self.assertIn("2", report["aliases"])  # a portfolio security without own events still resolves in the reader
+        counts = {query: ir.query_report(report, now=NOW, symbol=query)["matching"] for query in ("GOLF.DE", "golf", "DE0000000002")}
+        self.assertEqual(len(set(counts.values())), 1, counts)
+        self.assertGreaterEqual(counts["DE0000000002"], 1)
 
     def test_o_the_slim_answer_does_not_grow_and_carries_no_diagnostics(self) -> None:
         slim = self.query(symbol="GOLF.DE")

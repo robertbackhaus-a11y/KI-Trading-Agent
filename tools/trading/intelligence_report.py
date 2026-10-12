@@ -224,7 +224,10 @@ def query_report(
     wanted_symbol = symbol.strip().upper() if symbol and symbol.strip() else None
     wanted_sector = sector.strip().upper() if sector and sector.strip() else None
     metadata = report["metadata"]
-    wanted_ids = frozenset(AliasIndex.from_table(report.get("aliases") or {}).security_ids_for_query(wanted_symbol)) if wanted_symbol else frozenset()
+    alias_index = AliasIndex.from_table(report.get("aliases") or {})
+    wanted_ids = frozenset(alias_index.security_ids_for_query(wanted_symbol)) if wanted_symbol else frozenset()
+    # every alias of the same security finds the same events: also the report key (Yahoo symbol) under which sector-scoped events list the security
+    wanted_terms = (wanted_symbol, *sorted({(alias_index.key_for(i) or "").upper() for i in wanted_ids} - {"", wanted_symbol})) if wanted_symbol else ()
     matching = []
     for event in report["events"]:
         if wanted_scope == "PORTFOLIO" and not event["affected_portfolio_symbols"]:
@@ -239,7 +242,7 @@ def query_report(
             continue
         if wanted_importance and event["importance"] != wanted_importance:
             continue
-        if wanted_symbol and not _symbol_matches(event, wanted_symbol, wanted_ids):
+        if wanted_symbol and not any(_symbol_matches(event, term, wanted_ids) for term in wanted_terms):
             continue
         if wanted_sector and wanted_sector not in event["affected_sectors"]:
             continue

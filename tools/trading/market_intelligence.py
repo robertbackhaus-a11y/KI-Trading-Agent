@@ -718,7 +718,9 @@ def build_market_intelligence(
         },
         "lookback_since": since,
         "news_feed_stats": dict(sorted(feed_stats.items())),
-        "aliases": base_index.report_table(i for e in mapped for i in e["security_ids"]),
+        # the securities of the events plus every portfolio / watchlist security, so that any alias or ISIN of them resolves in the DB-free reader
+        "aliases": base_index.report_table([*(i for e in mapped for i in e["security_ids"]),
+                                            *(int(v["security_id"]) for universe in (portfolio, watchlist) for v in universe.values() if v.get("security_id") is not None)]),
     }
 
 
