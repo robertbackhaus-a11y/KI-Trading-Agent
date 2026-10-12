@@ -35,6 +35,10 @@ python -m venv .venv
 The tests use only the standard library's `unittest` (plus the runtime packages above):
 `.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"`.
 
+The optional desktop GUI (`gui/`, development status, read-only cockpit) has its own environment and its own pinned
+`requirements-gui.txt` (`PySide6-Essentials` and `mcp`); the runtime environment above does not change. See
+[docs/gui.en.md](docs/gui.en.md) (German: [docs/gui.de.md](docs/gui.de.md)).
+
 ## Documentation
 
 The technical documentation exists as a complete pair in German and English (same structure, same technical terms).
@@ -49,6 +53,7 @@ This README, the changelog, the contributing guide and the security policy are E
 | Watchlist-to-Swing promotion | [trading-swing-promotion.en.md](docs/trading-swing-promotion.en.md) | [trading-swing-promotion.de.md](docs/trading-swing-promotion.de.md) |
 | Swing entry recommendations | [trading-entry-recommendations.en.md](docs/trading-entry-recommendations.en.md) | [trading-entry-recommendations.de.md](docs/trading-entry-recommendations.de.md) |
 | Transaction import (canonical CSV, Parqet) | [trading-import.en.md](docs/trading-import.en.md) | [trading-import.de.md](docs/trading-import.de.md) |
+| Desktop GUI (development status) | [gui.en.md](docs/gui.en.md) | [gui.de.md](docs/gui.de.md) |
 
 ## Deploy
 
@@ -66,6 +71,7 @@ powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\
 - **Rollback:** copies back only the files saved there; the database is restored only with an explicit `-RestoreDb` (a safety copy `trading.db.bak-pre-rollback-<timestamp>` is made first).
 - **After every deploy** restart running MCP processes or the front end (Python modules are cached per process). The scheduler is not re-registered, no collector is started, and there is no schema migration.
 - **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched; if it is missing, only a warning is printed.
+- **Desktop GUI:** the manifest groups `gui*` copy the package `gui\` and `requirements-gui.txt` to the production root; the GUI environment `.venv-gui` is not copied but created from `requirements-gui.txt` (see [docs/gui.en.md](docs/gui.en.md)).
 
 ## Architecture
 

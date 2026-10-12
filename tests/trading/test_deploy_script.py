@@ -40,19 +40,34 @@ class ManifestTests(unittest.TestCase):
         candidates = set()
         for folder, pattern in (("tools/trading", "*.py"), ("tools/trading/universe", "*.json"), ("mcp-tools", "*.py"), ("scheduler", "*.ps1"), ("tools", "*.py")):
             candidates |= {f"{folder}/{p.name}" for p in (ROOT / folder).glob(pattern)}
+        for folder in ("gui", "gui/services", "gui/viewmodels", "gui/views"):  # the desktop GUI package (without __pycache__)
+            candidates |= {f"{folder}/{p.name}" for p in (ROOT / folder).glob("*.py")}
+        candidates.add("./requirements-gui.txt")
         candidates = {c for c in candidates if not Path(c).name.endswith("_local.json")}
         not_deployed = set(MANIFEST["not_deployed"])
         self.assertEqual(sorted(c for c in candidates if c not in listed and c not in not_deployed), [], "new runtime file: add it to deploy-manifest.json (or to not_deployed)")
         self.assertEqual(sorted(listed & not_deployed), [])
 
     def test_manifest_lists_no_private_data_log_backup_test_or_doc_paths(self) -> None:
-        allowed_targets = {"app", "app/universe", "mcp", "scheduler"}
+        allowed_targets = {"app", "app/universe", "mcp", "scheduler", "gui", "gui/services", "gui/viewmodels", "gui/views", "."}
         for group in MANIFEST["groups"]:
             self.assertIn(group["target"], allowed_targets)
             self.assertFalse(re.search(r"(^|/)(tests|docs|\.git|deploy|data|logs|backup)(/|$)", group["source"]), group["source"])
             for name in group["files"]:
                 self.assertNotRegex(name, r"[\\/*?:]", name)
                 self.assertIsNone(FORBIDDEN_NAME.search(name), name)
+
+    def test_the_gui_groups_deploy_only_the_package_and_its_requirements(self) -> None:
+        names = [g["name"] for g in MANIFEST["groups"]]
+        self.assertEqual(names[:4], ["app", "app-universe", "mcp", "scheduler"])  # the existing runtime groups come first and keep their names
+        self.assertEqual(names[4:], ["gui", "gui-services", "gui-viewmodels", "gui-views", "gui-requirements"])
+        gui = [(g["source"], n) for g in MANIFEST["groups"] if g["name"].startswith("gui") for n in g["files"]]
+        self.assertEqual(len(gui), 3 + 7 + 3 + 6 + 1)
+        self.assertEqual([f for s, f in gui if not f.endswith(".py") and f != "requirements-gui.txt"], [])  # no tests, docs, venv, logs or data
+        self.assertIn((".", "requirements-gui.txt"), gui)
+        self.assertNotIn(".venv-gui", json.dumps(MANIFEST["groups"]))  # the GUI venv is created from requirements-gui.txt, never copied
+        for g in (g for g in MANIFEST["groups"] if g["name"].startswith("gui")):
+            self.assertEqual(g["target"], g["source"], g["name"])  # the GUI package keeps its repo layout in production
 
     def test_the_database_is_not_part_of_the_manifest(self) -> None:
         self.assertFalse([n for _s, n in manifest_files() if n.lower().endswith((".db", ".sqlite", ".sqlite3")) or "trading.db" in n.lower()])
@@ -103,6 +118,7 @@ class DeployScriptBehaviourTests(unittest.TestCase):
             (self.root / sub).mkdir(parents=True)
         for group in MANIFEST["groups"]:  # production starts identical to the repo ...
             for name in group["files"]:
+                (self.root / group["target"]).mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / group["source"] / name, self.root / group["target"] / name)
         self.old_file = self.root / "app" / "opportunity_view.py"  # ... except one older file, one missing file, and private/legacy files
         self.old_file.write_text("# old production version\n", encoding="utf-8")
@@ -187,6 +203,30 @@ class DeployScriptBehaviourTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.db.read_bytes()).hexdigest(), db_before)  # the live database is never modified by a deploy
         # nothing outside the manifest was added
         self.assertFalse((self.root / "tests").exists() or (self.root / "docs").exists() or (self.root / ".git").exists())
+
+    def test_first_gui_deploy_creates_the_gui_folders_and_nothing_else(self) -> None:
+        shutil.rmtree(self.root / "gui")
+        (self.root / "requirements-gui.txt").unlink()
+        (self.root / ".venv-gui").mkdir()
+        (self.root / ".venv-gui" / "marker.txt").write_text("venv stays untouched", encoding="utf-8")
+        runtime_before = {k: v for k, v in snapshot(self.root).items() if k.startswith(("app/", "mcp/", "scheduler/", "data/", ".venv-gui/"))}
+        result = self.run_script("-Action", "Deploy")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("DEPLOY OK", result.stdout)
+        for group in (g for g in MANIFEST["groups"] if g["name"].startswith("gui")):
+            for name in group["files"]:
+                self.assertEqual((self.root / group["target"] / name).read_bytes(), (ROOT / group["source"] / name).read_bytes(), name)
+        gui_files = sorted(p.relative_to(self.root).as_posix() for p in (self.root / "gui").rglob("*") if p.is_file())
+        self.assertEqual(len(gui_files), 3 + 7 + 3 + 6)  # exactly the listed package files, no tests, docs or caches
+        self.assertTrue((self.root / "requirements-gui.txt").is_file())
+        self.assertEqual((self.root / ".venv-gui" / "marker.txt").read_text(encoding="utf-8"), "venv stays untouched")
+        # the already identical runtime files, the database and the private file are not rewritten
+        runtime_after = {k: v for k, v in snapshot(self.root).items() if k in runtime_before and not k.endswith(("opportunity_view.py", "strategy_suggestion.py"))}
+        self.assertEqual({k: v for k, v in runtime_before.items() if k in runtime_after}, runtime_after)
+        record = json.loads(next((self.root / "backup").glob("deploy-*")).joinpath("backup-manifest.json").read_text(encoding="utf-8-sig"))
+        gui_rels = [f["rel"] for f in record["files"] if f["rel"].startswith(("gui", "requirements-gui"))]
+        self.assertEqual(len(gui_rels), 3 + 7 + 3 + 6 + 1)
+        self.assertIn("requirements-gui.txt", gui_rels)  # plain name at the production root, not ".\\requirements-gui.txt"
 
     def test_second_deploy_finds_nothing_to_do(self) -> None:
         self.assertEqual(self.run_script("-Action", "Deploy").returncode, 0)

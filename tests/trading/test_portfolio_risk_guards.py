@@ -479,13 +479,13 @@ class OrchestratorGuardTests(unittest.TestCase):
     def exposures(self, value):
         return replace(entry_tests.context(total=100_000.0, swing=20_000.0, cash=30_000.0), exposures=(exposure(1, "AAA", value),))
 
-    def run_with(self, value):
+    def run_with(self, value, as_of=None):
         decisions = {1: DecisionResult(Action.HOLD, 0.8, reasons=("HOLD_TEST",))}
         with patch("trading_orchestrator.build_portfolio_context", return_value=self.exposures(value)), \
              patch("trading_orchestrator.build_analysis_snapshot", side_effect=lambda security_id, **_: self.snapshots[security_id]), \
              patch("trading_orchestrator.decide", side_effect=lambda snapshot, *_: decisions[snapshot.security_id]), \
              patch("trading_orchestrator.evaluate_swing_candidates", return_value=[self.promotion]):
-            return run_trading_orchestrator(self.conn)
+            return run_trading_orchestrator(self.conn, as_of=as_of)
 
     def test_orchestrator_blocks_by_sector_and_stays_a_simulation(self) -> None:
         small = self.run_with(5_000.0).portfolio_action_plan

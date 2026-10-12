@@ -87,7 +87,7 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertNotRegex(raw, r"(?i)[a-z]:\\|/users/|file://|git\+|^-e ")
 
     def test_requirements_match_the_third_party_imports_of_the_code(self) -> None:
-        local = {p.stem for p in ROOT.rglob("*.py") if ".git" not in p.parts} | {p.stem.replace("-", "_") for p in ROOT.rglob("*.py")}
+        local = {p.stem for p in ROOT.rglob("*.py") if ".git" not in p.parts} | {p.stem.replace("-", "_") for p in ROOT.rglob("*.py")} | {"gui"}  # gui/ is this repository's desktop GUI package
         imported = set()
         for root in ("tools", "mcp-tools", "deploy", "scheduler", "tests"):
             for path in (ROOT / root).rglob("*.py"):
@@ -95,7 +95,8 @@ class WorkflowHardeningTests(unittest.TestCase):
                     names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module] if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module else []
                     imported.update(n.split(".")[0] for n in names)
         third_party = {n for n in imported if n not in sys.stdlib_module_names and n not in local and n != "tools"}
-        self.assertEqual(third_party, {"mcp", "pydantic", "pypdf"})  # a new import needs a requirements.txt entry (and vice versa)
+        # a new import needs a requirements entry (and vice versa); PySide6 belongs to requirements-gui.txt (package PySide6-Essentials)
+        self.assertEqual(third_party, {"mcp", "pydantic", "pypdf", "PySide6"})
 
 
 if __name__ == "__main__":

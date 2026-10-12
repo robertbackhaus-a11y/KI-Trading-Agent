@@ -1,0 +1,5 @@
+# Direct dependencies of the desktop GUI (gui/), installed into its own virtual environment (never into the runtime venv).
+# Exact pins are the tested versions. PySide6-Essentials brings its own Qt libraries and shiboken6; the PySide6 meta package is
+# deliberately not used because it also pulls WebEngine and the Addons (about 450 MB more).
+PySide6-Essentials==6.11.2  # Qt for Python: QtCore, QtGui, QtWidgets (gui/)
+mcp==2.3.0                  # official MCP SDK client (gui/services/mcp_client.py); same pin as requirements.txt

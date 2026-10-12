@@ -92,6 +92,61 @@
       "files": [
         "Manage-TradingTasks.ps1"
       ]
+    },
+    {
+      "name": "gui",
+      "source": "gui",
+      "target": "gui",
+      "files": [
+        "__init__.py",
+        "__main__.py",
+        "app.py"
+      ]
+    },
+    {
+      "name": "gui-services",
+      "source": "gui/services",
+      "target": "gui/services",
+      "files": [
+        "__init__.py",
+        "background.py",
+        "mcp_client.py",
+        "ollama_status.py",
+        "settings.py",
+        "task_service.py",
+        "tool_policy.py"
+      ]
+    },
+    {
+      "name": "gui-viewmodels",
+      "source": "gui/viewmodels",
+      "target": "gui/viewmodels",
+      "files": [
+        "__init__.py",
+        "portfolio.py",
+        "tasks.py"
+      ]
+    },
+    {
+      "name": "gui-views",
+      "source": "gui/views",
+      "target": "gui/views",
+      "files": [
+        "__init__.py",
+        "_common.py",
+        "dashboard.py",
+        "diagnostics.py",
+        "planner.py",
+        "tasks.py"
+      ]
+    },
+    {
+      "name": "gui-requirements",
+      "source": ".",
+      "target": ".",
+      "files": [
+        "requirements-gui.txt"
+      ]
     }
   ],
   "protected": [

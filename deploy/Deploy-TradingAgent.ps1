@@ -47,7 +47,7 @@ $helpers = Join-Path $scriptDir 'deploy_helpers.py'
 if (-not $Manifest) { $Manifest = Join-Path $scriptDir 'deploy-manifest.json' }
 if (-not $Python) { $Python = Join-Path $Root '.venv\Scripts\python.exe' }
 $dbPath = Join-Path $Root 'data\trading.db'
-$allowedTargets = @('app', 'app/universe', 'mcp', 'scheduler')
+$allowedTargets = @('app', 'app/universe', 'mcp', 'scheduler', 'gui', 'gui/services', 'gui/viewmodels', 'gui/views', '.')  # 'gui*' = the desktop GUI package, '.' = requirements-gui.txt at the production root (the GUI venv itself is never copied)
 $forbiddenName = '(\.(db|sqlite3?|csv|xlsx?|log|bak|pem|key|env)$)|(^\.env)|latest\.json|_local\.|secret|credential|backup'
 
 $script:errors = New-Object System.Collections.ArrayList
@@ -56,7 +56,7 @@ function Add-Err([string]$m) { [void]$script:errors.Add($m); Write-Host "  ERROR
 function Add-Warn([string]$m) { [void]$script:warnings.Add($m); Write-Host "  WARN   $m" }
 function Write-Ok([string]$m) { Write-Host "  ok     $m" }
 function Get-Sha([string]$p) { (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash }
-function Get-RelText([string]$t, [string]$f) { ($t + '\' + $f).Replace('/', '\') }
+function Get-RelText([string]$t, [string]$f) { if ($t -eq '.') { $f } else { ($t + '\' + $f).Replace('/', '\') } }
 
 function Invoke-Helper {
     param([string[]]$HelperArgs)
@@ -279,7 +279,11 @@ function Invoke-Deploy {
     Write-Ok "hashes before deploy recorded for $($hashesBefore.Count) existing files (backup-manifest.json lists those being replaced)"
 
     Write-Host "[copy]"
-    foreach ($e in $changes) { Copy-Item -LiteralPath $e.Source -Destination $e.Target -Force; Write-Host ("  copied {0,-7} {1}" -f $e.State, $e.Rel) }
+    foreach ($e in $changes) {
+        $dir = Split-Path -Parent $e.Target
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }  # a new target folder (first GUI deploy); only folders of manifest targets are ever created
+        Copy-Item -LiteralPath $e.Source -Destination $e.Target -Force; Write-Host ("  copied {0,-7} {1}" -f $e.State, $e.Rel)
+    }
 
     $ok = Test-Deployed $c.Entries $c.Manifest
     foreach ($p in $c.Manifest.protected) { if (-not (Test-Path -LiteralPath (Join-Path $Root $p))) { Add-Warn "protected file is missing in production (not created from the repo): $p" } }
