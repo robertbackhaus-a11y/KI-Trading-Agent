@@ -613,7 +613,7 @@ class ReaderTests(unittest.TestCase):
         detail = self.call(symbol="ALFA", detail=True, limit=3)
         for block in ("rendered_de", "counts", "source_counts", "collection", "notes", "methodology", "freshness", "filter"):
             self.assertIn(block, detail)
-        self.assertEqual(sorted(detail["events"][0]), sorted(ir.EVENT_FIELDS))
+        self.assertTrue(set(ir.EVENT_FIELDS) <= set(detail["events"][0]) <= set(ir.EVENT_FIELDS) | set(ir.OPTIONAL_EVENT_FIELDS))  # + matching diagnostics
         self.assertEqual(detail["freshness"]["max_age_hours"], 24)
         self.assertIn("kein neuer Lauf", detail["rendered_de"])
 
@@ -724,7 +724,7 @@ class ReaderTests(unittest.TestCase):
         self.assertTrue(self.SLIM_EVENT_KEYS <= set(compact))
         self.assertNotIn("source_url", compact)
         detail = self.call(limit=3, detail=True)
-        self.assertEqual(sorted(detail["events"][0]), sorted(ir.EVENT_FIELDS))
+        self.assertTrue(set(ir.EVENT_FIELDS) <= set(detail["events"][0]) <= set(ir.EVENT_FIELDS) | set(ir.OPTIONAL_EVENT_FIELDS))  # + matching diagnostics
         self.assertIn("methodology", detail)
         self.assertNotIn("methodology", self.call(limit=3))
 

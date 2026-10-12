@@ -994,13 +994,14 @@ class Tools:
         view_module = self._load_runtime_trading_module("opportunity_view")
         discovery_module = self._load_runtime_trading_module("discovery_report")
         intelligence_module = self._load_runtime_trading_module("intelligence_report")
-        engine, engine_error, symbol_map = None, None, {}
+        engine, engine_error, symbol_map, alias_index = None, None, {}, None
         try:
             orchestrator = self._load_runtime_trading_module("trading_orchestrator")
             conn = self._readonly_import_connection(self.valves.database_path)
             try:
                 engine = orchestrator.run_trading_orchestrator(conn).primitive()
                 symbol_map = view_module.load_symbol_map(conn)
+                alias_index = view_module.load_alias_index(conn)
             finally:
                 conn.close()
         except Exception as exc:
@@ -1009,7 +1010,7 @@ class Tools:
         intelligence, intelligence_reason, _ = intelligence_module.read_latest_report(self._market_intelligence_report_directory())
         view = view_module.build_opportunity_view(
             engine=engine, symbol_map=symbol_map, discovery=discovery, discovery_reason=discovery_reason,
-            mi=intelligence, mi_reason=intelligence_reason, engine_error=engine_error,
+            mi=intelligence, mi_reason=intelligence_reason, engine_error=engine_error, alias_index=alias_index,
         )
         if view["metadata"]["status"] == "UNAVAILABLE":
             return view_module.unavailable({"engine": engine_error, "discovery": discovery_reason, "market_intelligence": intelligence_reason})

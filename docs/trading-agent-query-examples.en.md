@@ -130,14 +130,15 @@ Market intelligence only classifies news: category, importance, affected symbols
 | 4 | “Were there any interest rate decisions?” | `get_market_intelligence(category="MONETARY_POLICY")` |
 | 5 | “What is new in the semiconductor sector?” | `get_market_intelligence(sector="SEMICONDUCTORS")` |
 | 6 | “Is there any company news for my watchlist?” | `get_market_intelligence(scope="WATCHLIST")` |
-| 7 | “How fresh is the news report?” | `get_market_intelligence()` (`REPORT_STALE`) |
+| 7 | “Is there news for a security if I only know its ISIN?” | `get_market_intelligence(symbol="DE0007164600")` |
+| 8 | “How fresh is the news report?” | `get_market_intelligence()` (`REPORT_STALE`) |
 
 **Notes:**
 
 - `scope`: `ALL` (default), `PORTFOLIO`, `WATCHLIST`, `DISCOVERY`, `MACRO`. `importance`: `HIGH`, `MEDIUM`, `LOW`.
 - Categories: `MACRO`, `MONETARY_POLICY`, `INFLATION`, `LABOR_MARKET`, `ECONOMIC_GROWTH`, `GEOPOLITICS`, `ENERGY`, `SECTOR`, `COMPANY`, `EARNINGS`, `GUIDANCE`, `REGULATORY`, `M_AND_A`.
 - Impact is `UNKNOWN` unless a primary source states an adverse fact; a direction is never read from a headline. Only primary sources or headlines that name the company explicitly can be HIGH (a bare ticker does not count).
-- Sources: official feeds (ECB, Fed, BLS, BEA, Destatis, EIA), SEC filings and Yahoo headlines. Stock-pick articles are LOW at most.
+- Sources: official feeds (ECB, Fed, BLS, BEA, Destatis, EIA), SEC filings, Yahoo headlines and company releases from the PR Newswire RSS feed. Stock-pick articles are LOW at most. The same item from several sources appears only once.
 - The tool only reads the last finished report (no web, no scan, no database). Without a report: `UNAVAILABLE` (`NO_MARKET_INTELLIGENCE_REPORT`); after 24 hours `REPORT_STALE`. In the reference setup the collector runs daily at 08:15 and 17:45.
 - Compact is the default (`limit` 20, at most 50). `detail=true` returns the raw format with at most 25 events and only on explicit request. For `symbol` the base symbol also matches (SAP finds SAP.DE).
 
@@ -181,7 +182,7 @@ There is no dedicated query for a single stock; it is requested through the `sym
 **Notes:**
 
 - `get_opportunity_view(symbol=...)` shows not only candidates but also held positions of that name, with action and news context.
-- Symbols use Yahoo notation (for example SAP.DE). The news query also accepts the base symbol.
+- A security can be queried by its public symbol, its Yahoo notation (for example SAP.DE), another alias or its ISIN; all of them lead to the same security and the same news.
 - `sql_execute` is unrestricted SQL access. Use it only for deliberate read queries; there are dedicated tools for everything else.
 
 ## 8. Comparing Stocks

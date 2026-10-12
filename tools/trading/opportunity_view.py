@@ -23,6 +23,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 import discovery_report as dr
 import intelligence_report as ir
 from market_intelligence import MACRO_CATEGORIES, company_mentioned
+from security_aliases import TEXT_MATCHES, AliasIndex, split_symbol, symbol_key
 from strategy_config import DataQualityConfig, MarketIntelligenceConfig
 
 SCHEMA_VERSION = 1
@@ -67,6 +68,11 @@ def load_symbol_map(conn: Any) -> dict[int, str]:
     return {int(row[0]): str(row[1]) for row in rows}
 
 
+def load_alias_index(conn: Any) -> AliasIndex:
+    """The Security-Master alias index (read-only SELECTs): one ``security_id``, all of its symbols, ISIN and WKN."""
+    return AliasIndex.from_connection(conn)
+
+
 # ---------------------------------------------------------------- news context (attached, never scored)
 def index_events(mi_report: Optional[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
     """Yahoo symbol -> events of the market-intelligence report that name it (``affected_symbols``)."""
@@ -77,7 +83,16 @@ def index_events(mi_report: Optional[Mapping[str, Any]]) -> dict[str, list[Mappi
     return index
 
 
-def event_link(event: Mapping[str, Any], yahoo_symbol: str, name: str) -> str:
+def index_events_by_id(mi_report: Optional[Mapping[str, Any]]) -> dict[int, list[Mapping[str, Any]]]:
+    """``security_id`` -> events that were resolved to that security (reports written before the identity model have no ids: empty)."""
+    index: dict[int, list[Mapping[str, Any]]] = {}
+    for event in (mi_report or {}).get("events", []):
+        for security_id in event.get("security_ids") or []:
+            index.setdefault(int(security_id), []).append(event)
+    return index
+
+
+def event_link(event: Mapping[str, Any], yahoo_symbol: str, name: str, security_id: Optional[int] = None) -> str:
     """How strongly an event is tied to *this* company.
 
     DIRECT: a SEC filing of the company, or a headline that names the company (legal-name phrase or a distinctive word of
@@ -85,6 +100,8 @@ def event_link(event: Mapping[str, Any], yahoo_symbol: str, name: str) -> str:
     only through its sector.  LOOSE: the provider attached the headline to the symbol without the headline naming it."""
     if event.get("source_type") == "SEC_FILING":
         return "DIRECT"
+    if security_id is not None and any(m.get("security_id") == security_id and m.get("matched_by") in TEXT_MATCHES for m in event.get("matches") or []):
+        return "DIRECT"  # the release itself names the company explicitly (ISIN, "EXCHANGE: TICKER" or full name)
     headline = str(event.get("headline") or "")
     if company_mentioned(headline, yahoo_symbol, {"name": name}, allow_ticker=False):
         return "DIRECT"
@@ -109,7 +126,8 @@ def _event_row(event: Mapping[str, Any], link: str, detail: bool) -> dict[str, A
     return row
 
 
-def news_context(yahoo_symbol: Optional[str], name: str, index: Optional[Mapping[str, Sequence[Mapping[str, Any]]]], *, detail: bool = False) -> dict[str, Any]:
+def news_context(yahoo_symbol: Optional[str], name: str, index: Optional[Mapping[str, Sequence[Mapping[str, Any]]]], *, detail: bool = False,
+                 security_id: Optional[int] = None, id_index: Optional[Mapping[int, Sequence[Mapping[str, Any]]]] = None) -> dict[str, Any]:
     """Pure classification of the news around one symbol.  ``index is None`` means: no valid report -> NEWS_UNAVAILABLE.
 
     NEWS_HIGH_ATTENTION: at least one DIRECT HIGH event.  NEWS_ATTENTION: a DIRECT MEDIUM event, or a HIGH event that is
@@ -117,7 +135,9 @@ def news_context(yahoo_symbol: Optional[str], name: str, index: Optional[Mapping
     empty = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
     if index is None:
         return {"status": "NEWS_UNAVAILABLE", "status_reasons": ["NO_VALID_MARKET_INTELLIGENCE_REPORT"], "counts": dict(empty), "direct_counts": dict(empty), "events": []}
-    linked = [(event, event_link(event, yahoo_symbol, name)) for event in index.get(yahoo_symbol or "", [])]
+    # the same security under another symbol form finds the same events: by security_id and by symbol, each event once
+    candidates = {event["event_id"]: event for event in [*index.get(yahoo_symbol or "", []), *((id_index or {}).get(int(security_id), []) if security_id is not None else [])]}
+    linked = [(event, event_link(event, yahoo_symbol, name, security_id)) for _, event in sorted(candidates.items())]
     counts, direct = dict(empty), dict(empty)
     for event, link in linked:
         counts[event["importance"]] += 1
@@ -216,8 +236,12 @@ def build_opportunity_view(
     engine_error: Optional[str] = None,
     discovery_max_age_days: Optional[int] = None,
     mi_max_age_hours: Optional[int] = None,
+    alias_index: Optional[AliasIndex] = None,
 ) -> dict[str, Any]:
-    """Pure join of already computed results.  Inputs are never modified."""
+    """Pure join of already computed results.  Inputs are never modified.
+
+    ``alias_index`` (Security-Master view) makes the join alias consistent: the same security is found under its canonical symbol, its Yahoo
+    symbol, another source alias or its ISIN, and its news are attached by ``security_id`` as well as by symbol."""
     now = now or datetime.now(timezone.utc)
     discovery_age = DataQualityConfig().market_data_max_age_days if discovery_max_age_days is None else discovery_max_age_days
     discovery_freshness = dr._freshness(discovery["metadata"], now, discovery_age) if discovery is not None else None
@@ -237,6 +261,7 @@ def build_opportunity_view(
             warnings.append({"code": f"{label}_REPORT_STALE", "message": f"report evaluation {state['evaluation_as_of']}, generated {state['generated_at']}"})
 
     index = index_events(mi) if mi is not None else None
+    id_index = index_events_by_id(mi) if mi is not None else None
     plan = (engine or {}).get("portfolio_action_plan") or {}
     promotions = {int(p["security_id"]): p for p in (engine or {}).get("promotion_results") or [] if p.get("security_id") is not None}
     entries = {int(c["security_id"]): c for c in plan.get("entry_candidates") or [] if c.get("security_id") is not None}
@@ -249,9 +274,12 @@ def build_opportunity_view(
     capital = _capital(plan)
     rows: list[dict[str, Any]] = []
     seen_yahoo: set[str] = set()
+    seen_ids: set[int] = set()
 
-    def finish(row: dict[str, Any], yahoo: Optional[str]) -> None:
-        row["market_intelligence_summary"] = news_context(yahoo, row["name"], index, detail=True)
+    def finish(row: dict[str, Any], yahoo: Optional[str], news_id: Optional[int] = None) -> None:
+        news_id = row.get("security_id") if row.get("security_id") is not None else news_id
+        row["market_intelligence_summary"] = news_context(yahoo, row["name"], index, detail=True, security_id=news_id, id_index=id_index)
+        row["aliases"] = _row_aliases(alias_index, news_id, row["symbol"], yahoo)
         rows.append(row)
 
     # A) watchlist / PROMOTE candidates of the engine (entry candidates are the planner's PROMOTE set)
@@ -260,6 +288,7 @@ def build_opportunity_view(
         symbol = str((entry or promotion)["symbol"])
         yahoo = symbol_map.get(security_id, symbol)
         seen_yahoo.add(yahoo)
+        seen_ids.add(security_id)
         disc = discovery_by_symbol.get(yahoo)
         entry_status = (entry or {}).get("entry_status")
         sizing = (planned.get(security_id) or {})
@@ -291,6 +320,11 @@ def build_opportunity_view(
             continue
         yahoo = str(result["symbol"])
         security_id = known_by_yahoo.get(yahoo)
+        resolved = alias_index.resolve(source="Yahoo Finance", source_symbol=yahoo) if alias_index is not None else None
+        if security_id is None and resolved is not None and resolved.security_id in seen_ids | held_ids | set(promotions) | set(entries):
+            security_id = resolved.security_id  # the discovery lists the security under another symbol form than the engine uses
+        if security_id is not None and security_id in seen_ids:
+            continue  # already a row of the watchlist block
         known = security_id is not None
         promotion = promotions.get(security_id) if known else None
         row = {
@@ -307,10 +341,10 @@ def build_opportunity_view(
         }
         if known:
             warnings.append({"code": "DISCOVERY_SYMBOL_ALREADY_KNOWN", "message": f"{yahoo} is already in the portfolio/watchlist; the discovery report is older than that change"})
-        finish(row, yahoo)
+        finish(row, yahoo, resolved.security_id if resolved is not None else None)
 
     rows.sort(key=_sort_key)
-    positions = [_position_row(p, symbol_map, index) for p in (engine or {}).get("existing_position_results") or []]
+    positions = [_position_row(p, symbol_map, index, id_index, alias_index) for p in (engine or {}).get("existing_position_results") or []]
     high_attention = _high_attention(rows, positions)
     watchlist_symbols = [r["symbol"] for r in rows if r["entry_status"] is not None or r["promotion_status"] is not None]
     news_counts = {status: sum(r["market_intelligence_summary"]["status"] == status for r in rows) for status in NEWS_STATUSES}
@@ -411,13 +445,24 @@ def fit_code(fit: Optional[Mapping[str, Any]]) -> str:
     return "COMMITTED_BY_PLANNED_ENTRIES" if fit["fits_one_share_after_actions"] else "DOES_NOT_FIT"
 
 
-def _position_row(position: Mapping[str, Any], symbol_map: Mapping[int, str], index: Optional[Mapping[str, Sequence[Mapping[str, Any]]]]) -> dict[str, Any]:
+def _row_aliases(alias_index: Optional[AliasIndex], security_id: Optional[int], symbol: Any, yahoo: Any) -> list[str]:
+    """Upper-case names a symbol query may use for this row: its symbols (with and without listing suffix), and - with the Security Master - all aliases, ISIN, WKN."""
+    names = {str(s).upper() for s in (symbol, yahoo) if s}
+    names |= {split_symbol(s)[0] for s in (symbol, yahoo) if s} | {symbol_key(s) for s in (symbol, yahoo) if s}
+    if alias_index is not None and security_id is not None:
+        names |= set(alias_index.aliases_of(security_id))
+    return sorted(names)
+
+
+def _position_row(position: Mapping[str, Any], symbol_map: Mapping[int, str], index: Optional[Mapping[str, Sequence[Mapping[str, Any]]]],
+                  id_index: Optional[Mapping[int, Sequence[Mapping[str, Any]]]] = None, alias_index: Optional[AliasIndex] = None) -> dict[str, Any]:
     security_id = position.get("security_id")
     symbol = str(position.get("symbol"))
     yahoo = symbol_map.get(security_id, symbol) if security_id is not None else symbol
-    news = news_context(yahoo, str(position.get("name") or ""), index, detail=True)
+    news = news_context(yahoo, str(position.get("name") or ""), index, detail=True, security_id=security_id, id_index=id_index)
     return {"symbol": symbol, "yahoo_symbol": yahoo, "security_id": security_id, "name": position.get("name"), "strategy": position.get("strategy"),
-            "action": (position.get("decision") or {}).get("action"), "priority": position.get("priority"), "market_intelligence_summary": news}
+            "action": (position.get("decision") or {}).get("action"), "priority": position.get("priority"), "market_intelligence_summary": news,
+            "aliases": _row_aliases(alias_index, security_id, symbol, yahoo)}
 
 
 def _high_attention(rows: Sequence[Mapping[str, Any]], positions: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -444,7 +489,8 @@ DETAIL_EXTRA_FIELDS = ("yahoo_symbol", "security_id", "watchlist_priority", "pla
 
 def _symbol_wanted(row: Mapping[str, Any], wanted: Sequence[str]) -> bool:
     names = {str(row["symbol"]).upper(), str(row.get("yahoo_symbol") or "").upper(), str(row.get("yahoo_symbol") or "").upper().split(".")[0], str(row["symbol"]).upper().split(".")[0]}
-    return bool(names & set(wanted))
+    names |= set(row.get("aliases") or ())  # canonical symbol, source aliases, ISIN, WKN of the same security
+    return bool(names & {symbol_key(w) if "." in w or "-" in w else w for w in wanted} | names & set(wanted))
 
 
 def _news_wanted(summary: Mapping[str, Any], wanted: str) -> bool:

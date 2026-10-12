@@ -130,14 +130,15 @@ Market Intelligence ordnet Nachrichten nur ein: Kategorie, Wichtigkeit, betroffe
 | 4 | „Gab es Zinsentscheidungen?“ | `get_market_intelligence(category="MONETARY_POLICY")` |
 | 5 | „Was gibt es Neues im Halbleitersektor?“ | `get_market_intelligence(sector="SEMICONDUCTORS")` |
 | 6 | „Gibt es Nachrichten zu Unternehmen auf meiner Watchlist?“ | `get_market_intelligence(scope="WATCHLIST")` |
-| 7 | „Wie frisch ist der News-Report?“ | `get_market_intelligence()` (`REPORT_STALE`) |
+| 7 | „Gibt es Neuigkeiten zu einem Wertpapier, wenn ich nur die ISIN kenne?“ | `get_market_intelligence(symbol="DE0007164600")` |
+| 8 | „Wie frisch ist der News-Report?“ | `get_market_intelligence()` (`REPORT_STALE`) |
 
 **Hinweise:**
 
 - `scope`: `ALL` (Standard), `PORTFOLIO`, `WATCHLIST`, `DISCOVERY`, `MACRO`. `importance`: `HIGH`, `MEDIUM`, `LOW`.
 - Kategorien: `MACRO`, `MONETARY_POLICY`, `INFLATION`, `LABOR_MARKET`, `ECONOMIC_GROWTH`, `GEOPOLITICS`, `ENERGY`, `SECTOR`, `COMPANY`, `EARNINGS`, `GUIDANCE`, `REGULATORY`, `M_AND_A`.
 - Der Impact ist `UNKNOWN`, solange keine Primärquelle eine belastende Tatsache nennt; eine Richtung wird nie aus einer Schlagzeile gelesen. HIGH vergeben nur Primärquellen oder Schlagzeilen, die das Unternehmen mit Namen nennen (ein bloßer Ticker zählt nicht).
-- Quellen: offizielle Feeds (EZB, Fed, BLS, BEA, Destatis, EIA), SEC-Meldungen und Yahoo-Schlagzeilen. Stock-Pick-Artikel gelten höchstens als LOW.
+- Quellen: offizielle Feeds (EZB, Fed, BLS, BEA, Destatis, EIA), SEC-Meldungen, Yahoo-Schlagzeilen und Unternehmensmeldungen aus dem RSS-Feed von PR Newswire. Stock-Pick-Artikel gelten höchstens als LOW. Dieselbe Meldung aus mehreren Quellen erscheint nur einmal.
 - Das Tool liest nur den letzten fertigen Report (kein Web, kein Scan, keine Datenbank). Ohne Report: `UNAVAILABLE` (`NO_MARKET_INTELLIGENCE_REPORT`); nach 24 Stunden `REPORT_STALE`. Im Referenz-Setup läuft der Collector täglich um 08:15 und 17:45.
 - Kompakt ist der Standard (`limit` 20, höchstens 50). `detail=true` liefert das Rohformat mit höchstens 25 Ereignissen und nur auf ausdrücklichen Wunsch. Bei `symbol` passt auch das Basissymbol (SAP findet SAP.DE).
 
@@ -181,7 +182,7 @@ Für einen einzelnen Titel gibt es keine eigene Abfrage; er wird über den Filte
 **Hinweise:**
 
 - `get_opportunity_view(symbol=...)` zeigt neben Kandidaten auch die so benannten Depotpositionen mit Aktion und News-Kontext.
-- Symbole werden in Yahoo-Schreibweise angegeben (zum Beispiel SAP.DE). Die News-Abfrage akzeptiert auch das Basissymbol.
+- Ein Wertpapier lässt sich über sein öffentliches Symbol, die Yahoo-Schreibweise (zum Beispiel SAP.DE), einen anderen Alias oder die ISIN abfragen; alle führen zum selben Wertpapier und zu denselben Meldungen.
 - `sql_execute` ist ein uneingeschränkter SQL-Zugang. Er gehört nur für bewusste lesende Abfragen genutzt; für alles andere gibt es gezielte Tools.
 
 ## 8. Aktien vergleichen

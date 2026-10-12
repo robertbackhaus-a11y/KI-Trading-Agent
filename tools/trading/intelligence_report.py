@@ -22,6 +22,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from discovery_report import ReportError, _atomic_write  # noqa: F401  (ReportError is re-exported)
 from market_intelligence import CATEGORIES, IMPACTS, IMPORTANCES, MACRO_CATEGORIES, SOURCE_TYPES
+from security_aliases import AliasIndex
 from strategy_config import MarketIntelligenceConfig
 
 SCHEMA_VERSION = 1
@@ -34,6 +35,8 @@ EVENT_FIELDS = (
     "affected_sectors", "affected_regions", "portfolio_region_exposure", "importance", "impact", "impact_basis", "confidence",
     "reason_codes", "fetched_at",
 )
+# Added with the security-identity model; optional so that reports written before it stay valid.  Detail answers only (the slim answer never shows them).
+OPTIONAL_EVENT_FIELDS = ("source_event_id", "security_ids", "matches", "duplicate_sources")
 COMPACT_FIELDS = ("published_at", "importance", "category", "headline", "source", "impact", "affected_symbols", "affected_sectors", "affected_regions")
 METADATA_KEYS = (
     "schema_version", "generated_at", "evaluation_as_of", "source_counts", "event_count", "high_count", "medium_count", "low_count",
@@ -53,7 +56,7 @@ def _digest(events: Sequence[Any]) -> str:
 
 def build_report(result: Mapping[str, Any], *, generated_at: datetime, collection: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
     """Project a market-intelligence result onto the report schema."""
-    events = [{key: event.get(key) for key in EVENT_FIELDS} for event in result["events"]]
+    events = [{**{key: event.get(key) for key in EVENT_FIELDS}, **{key: event[key] for key in OPTIONAL_EVENT_FIELDS if event.get(key)}} for event in result["events"]]
     metadata = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at.astimezone(timezone.utc).isoformat(),
@@ -78,7 +81,10 @@ def build_report(result: Mapping[str, Any], *, generated_at: datetime, collectio
         "signals_changed": False,
         "warnings": list(result.get("warnings") or []),
     }
-    return {"schema_version": SCHEMA_VERSION, "metadata": metadata, "events": events}
+    report = {"schema_version": SCHEMA_VERSION, "metadata": metadata, "events": events}
+    if result.get("aliases"):
+        report["aliases"] = dict(result["aliases"])  # security_id -> key, aliases, ISIN, WKN of the securities in the events: lets the DB-free reader resolve any alias
+    return report
 
 
 def validate_report(report: Any) -> list[str]:
@@ -111,6 +117,12 @@ def validate_report(report: Any) -> list[str]:
             problems.append(f"events[{index}] has an invalid source_type {event['source_type']!r}")
         if len(str(event.get("summary") or "")) > 240 or "full_text" in event or "body" in event:
             problems.append(f"events[{index}] contains an article text")
+        if not isinstance(event.get("security_ids", []), list) or not all(isinstance(i, int) for i in event.get("security_ids", [])):
+            problems.append(f"events[{index}] has invalid security_ids")
+        if not isinstance(event.get("matches", []), list) or not all(isinstance(m, dict) and {"security_id", "matched_by", "matched_alias"} <= set(m) for m in event.get("matches", [])):
+            problems.append(f"events[{index}] has invalid matches")
+        if not isinstance(event.get("duplicate_sources", []), list):
+            problems.append(f"events[{index}] has invalid duplicate_sources")
     if problems:
         return problems
     if metadata["event_count"] != len(events):
@@ -171,7 +183,10 @@ def _freshness(metadata: Mapping[str, Any], now: datetime, max_age_hours: int) -
     }
 
 
-def _symbol_matches(event: Mapping[str, Any], wanted: str) -> bool:
+def _symbol_matches(event: Mapping[str, Any], wanted: str, wanted_ids: frozenset = frozenset()) -> bool:
+    """Same security: by ``security_id`` (any alias, ISIN or WKN the report's alias table resolves) or, for reports without ids, by the symbol text."""
+    if wanted_ids and wanted_ids & set(event.get("security_ids") or ()):
+        return True
     symbols = [s.upper() for s in event["affected_symbols"]]
     return wanted in symbols or any(s.split(".")[0] == wanted for s in symbols)
 
@@ -209,6 +224,7 @@ def query_report(
     wanted_symbol = symbol.strip().upper() if symbol and symbol.strip() else None
     wanted_sector = sector.strip().upper() if sector and sector.strip() else None
     metadata = report["metadata"]
+    wanted_ids = frozenset(AliasIndex.from_table(report.get("aliases") or {}).security_ids_for_query(wanted_symbol)) if wanted_symbol else frozenset()
     matching = []
     for event in report["events"]:
         if wanted_scope == "PORTFOLIO" and not event["affected_portfolio_symbols"]:
@@ -223,7 +239,7 @@ def query_report(
             continue
         if wanted_importance and event["importance"] != wanted_importance:
             continue
-        if wanted_symbol and not _symbol_matches(event, wanted_symbol):
+        if wanted_symbol and not _symbol_matches(event, wanted_symbol, wanted_ids):
             continue
         if wanted_sector and wanted_sector not in event["affected_sectors"]:
             continue
@@ -238,7 +254,7 @@ def query_report(
     rows = []
     for event in matching[:applied]:
         if detail:
-            rows.append({key: event[key] for key in EVENT_FIELDS})
+            rows.append({**{key: event[key] for key in EVENT_FIELDS}, **{key: event[key] for key in OPTIONAL_EVENT_FIELDS if key in event}})  # + matching diagnostics
         else:
             row = {key: event[key] for key in COMPACT_FIELDS}
             if len(row["affected_symbols"]) > MAX_SYMBOLS_COMPACT:

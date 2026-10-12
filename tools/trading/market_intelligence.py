@@ -2,8 +2,8 @@
 
 Flow::
 
-    NEWS (official feeds, SEC filings, Yahoo headlines) -> NORMALIZE -> CLASSIFY -> RELEVANCE
-        -> PORTFOLIO / WATCHLIST / DISCOVERY MAPPING
+    SOURCE (official feeds, SEC filings, Yahoo headlines, company-wire RSS) -> NORMALIZED EVENT -> SECURITY/ALIAS RESOLUTION
+        -> DEDUPLICATION -> CLASSIFY -> RELEVANCE -> PORTFOLIO / WATCHLIST / DISCOVERY MAPPING
 
 ``NEWS != SIGNAL``: nothing here changes SELL/TRIM/HOLD, PROMOTE, ENTRY_READY, the ranking or
 any sizing, and nothing creates an order.  The output is context and warnings only.
@@ -15,8 +15,10 @@ Everything is rule based and reproducible:
   because a surprise against a consensus cannot be assessed without consensus data.
 * **Impact** is ``UNKNOWN`` unless the *structure* of a primary source states an adverse
   fact (SEC delisting notice, cybersecurity incident); it is never read out of a headline.
-* **Mapping** by exact symbol, by an explicitly sector-scoped event (static sector map) and,
-  for macro events, by the region of the held symbols.
+* **Mapping** by security (``security_id``; the symbol is only one of its aliases, see ``security_aliases``), by an explicitly
+  sector-scoped event (static sector map) and, for macro events, by the region of the held symbols.
+* **Deduplication** across sources, deterministic: same event id, then same normalized URL, then same normalized headline within
+  ``DEDUPE_WINDOW_HOURS`` (6 hours for short headlines); the sources of the merged copies stay in ``duplicate_sources``.
 
 Network access lives in the CLI; this module only parses and classifies what it is given.
 """
@@ -28,10 +30,20 @@ import re
 import sqlite3
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
+from html import unescape
 from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
+from security_aliases import (
+    NAME_GENERIC as _NAME_GENERIC,
+    NAME_NOISE as _NAME_NOISE,
+    SECURITY_ID,
+    TEXT_MATCHES,
+    AliasIndex,
+    Match,
+    SecurityAlias,
+)
 from strategy_config import MarketIntelligenceConfig
 
 MACRO = "MACRO"
@@ -73,6 +85,12 @@ FEEDS: dict[str, dict[str, Any]] = {
 }
 YAHOO_NEWS = "YAHOO_NEWS"
 SEC_FILINGS = "SEC_FILINGS"
+# Same headline on two sources within this window is one event (the wire release and the copy a news site publishes shortly after).
+DEDUPE_WINDOW_HOURS = 48
+_MIN_HEADLINE_KEY = 20  # shorter normalized headlines are too generic to identify one article
+_SHORT_HEADLINE_KEY = 40  # ... and a short one (a recurring column title) is only the same article within a few hours
+_SHORT_HEADLINE_WINDOW_HOURS = 6
+_NEWS_FEED_KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,31}$")
 
 # Yahoo symbol suffix -> region of the listing (for macro region exposure); no suffix = US listing
 _SUFFIX_REGION = {"DE": "DE", "F": "DE", "AS": "NL", "PA": "FR", "MI": "IT", "MC": "ES", "VI": "AT", "L": "GB", "AX": "AU", "KS": "KR", "SW": "CH", "CO": "DK", "ST": "SE"}
@@ -179,9 +197,6 @@ def _clean(text: Optional[str], limit: int) -> Optional[str]:
     return plain[:limit] if plain else None
 
 
-_NAME_NOISE = {"inc", "corp", "corporation", "holdings", "holding", "ltd", "limited", "plc", "ag", "se", "nv", "n", "v", "co", "company", "group", "the", "class", "adr", "a", "b", "c", "sa", "spa", "incorporated"}
-# words that occur in many company names and therefore do not identify one company on their own
-_NAME_GENERIC = {"advanced", "applied", "general", "micro", "materials", "technology", "technologies", "systems", "therapeutics", "pharma", "pharmaceuticals", "biosciences", "bio", "networks", "international", "global", "energy", "semiconductor", "manufacturing", "devices", "american", "united", "first", "national", "digital", "capital", "financial"}
 
 
 def company_mentioned(headline: str, symbol: str, info: Mapping[str, Any], *, allow_ticker: bool = True) -> bool:
@@ -213,7 +228,17 @@ def load_sector_map(payload: Mapping[str, Any]) -> dict[str, str]:
 
 # --------------------------------------------------------------------------- feeds
 def parse_feed(payload: bytes) -> list[dict[str, Any]]:
-    """RSS 2.0 / Atom bytes -> ``[{"title", "link", "published_at", "summary"}]`` (no network)."""
+    """RSS 2.0 / Atom bytes -> ``[{"title", "link", "published_at", "summary", "guid", "lead"}]`` (no network).
+
+    ``guid`` is the source's own item id (RSS ``guid`` / Atom ``id``) when present; ``lead`` is a longer plain-text start of the
+    description used only to identify companies (it is never stored in a report)."""
+    return parse_feed_detailed(payload)[0]
+
+
+def parse_feed_detailed(payload: bytes) -> tuple[list[dict[str, Any]], int]:
+    """Like :func:`parse_feed` plus the number of entries that were skipped because title, link or date was missing.
+
+    A payload that is not well-formed XML raises ``xml.etree.ElementTree.ParseError`` (a feed-level failure for the caller)."""
     root = ET.fromstring(payload)
     atom = "{http://www.w3.org/2005/Atom}"
     dc = "{http://purl.org/dc/elements/1.1/}"
@@ -226,13 +251,39 @@ def parse_feed(payload: bytes) -> list[dict[str, Any]]:
         return ""
 
     items = []
+    skipped = 0
     for item in root.findall(".//item") + root.findall(f".//{atom}entry"):
         title = text(item, "title", f"{atom}title")
         link = text(item, "link", f"{atom}link")
         published = _to_utc_iso(text(item, "pubDate", f"{atom}updated", f"{atom}published", f"{dc}date"))
         if title and link and published:
-            items.append({"title": title, "link": link, "published_at": published, "summary": _clean(text(item, "description", f"{atom}summary"), 200)})
-    return items
+            description = text(item, "description", f"{atom}summary")
+            items.append({"title": title, "link": link, "published_at": published, "summary": _clean(description, 200),
+                          "guid": text(item, "guid", f"{atom}id") or None, "lead": _clean(description, 600)})
+        else:
+            skipped += 1
+    return items, skipped
+
+
+def load_news_feeds(payload: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Company-wire RSS feed configuration (``universe/news_feeds_v1.json``) -> ``{KEY: {url, label, publisher, source}}`` of the enabled feeds.
+
+    Only https URLs, unique upper-case keys; anything else is a configuration error (the collector then ignores the file and says so)."""
+    if payload.get("version") != 1:
+        raise ValueError("news feed configuration: unsupported version")
+    feeds: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
+    for entry in payload.get("feeds") or []:
+        key = str(entry.get("key") or "")
+        if not _NEWS_FEED_KEY.match(key) or key in seen:
+            raise ValueError(f"news feed configuration: invalid or duplicate key {key!r}")
+        seen.add(key)
+        url, publisher, source = str(entry.get("url") or ""), str(entry.get("publisher") or "").strip(), str(entry.get("source") or "")
+        if not url.startswith("https://") or not publisher or not _NEWS_FEED_KEY.match(source):
+            raise ValueError(f"news feed configuration: {key} needs an https url, a publisher and an upper-case source name")
+        if entry.get("enabled", True):
+            feeds[key] = {"url": url, "label": str(entry.get("label") or key), "publisher": publisher, "source": source}
+    return feeds
 
 
 def classify_feed_item(source: str, title: str, link: str) -> tuple[str, str, list[str], list[str]]:
@@ -304,8 +355,11 @@ def headline_sectors(title: str) -> list[str]:
 # --------------------------------------------------------------------------- event construction
 def _event(*, source: str, source_type: str, canonical: str, source_url: Optional[str], published_at: str, category: str, headline: str,
            summary: Optional[str], symbols: Sequence[str], explicit_sectors: Sequence[str], regions: Sequence[str], importance: str,
-           impact: str, impact_basis: str, confidence: str, reasons: Sequence[str], fetched_at: str) -> dict[str, Any]:
+           impact: str, impact_basis: str, confidence: str, reasons: Sequence[str], fetched_at: str,
+           source_event_id: Optional[str] = None, matches: Sequence[Match] = ()) -> dict[str, Any]:
+    real = [m for m in matches if m.security_id >= 0]
     return {
+        "source_event_id": source_event_id, "security_ids": sorted({m.security_id for m in real}), "matches": [m.primitive() for m in matches],
         "event_id": event_id(source_type, canonical), "published_at": published_at, "event_date": published_at[:10], "source": source,
         "source_type": source_type, "source_url": source_url, "category": category, "headline": headline, "summary": summary,
         "affected_symbols": sorted(set(symbols)), "explicit_sectors": sorted(set(explicit_sectors)), "affected_regions": sorted(set(regions)),
@@ -329,29 +383,77 @@ def feed_events(source: str, items: Sequence[Mapping[str, Any]], *, fetched_at: 
     return events
 
 
-def news_events(items: Sequence[Mapping[str, Any]], *, fetched_at: str) -> list[dict[str, Any]]:
-    """Yahoo headlines (cached DB rows or a fresh fetch); ``items`` carry ``symbol`` (Yahoo), ``title``, ``url``, ``published_at``, ``publisher``."""
+def _classify_news(title: str, publisher: Optional[str]) -> tuple[str, str, str, list[str], list[str]]:
+    """Headline-keyword classification of a news item; a company press-release wire is exempt from the secondary-source cap.
+
+    The importance always comes from the same keyword table: a wire does not raise an item, it only is not capped, and an unclassified
+    release stays LOW.  Returns ``(category, importance, confidence, reasons, sectors)``."""
+    category, importance, confidence, reasons = classify_headline(title)
+    if publisher in COMPANY_WIRES:
+        confidence = MEDIUM
+        reasons = [*reasons, "COMPANY_PRESS_RELEASE"]
+    elif importance == HIGH:
+        importance = MEDIUM
+        reasons = [*reasons, "SECONDARY_SOURCE_CAPPED_AT_MEDIUM"]
+    sectors = headline_sectors(title)
+    if category == ENERGY and "ENERGY" not in sectors:
+        sectors = [*sectors, "ENERGY"]
+    return category, importance, confidence, reasons, sectors
+
+
+def news_events(items: Sequence[Mapping[str, Any]], *, fetched_at: str, alias_index: Optional[AliasIndex] = None) -> list[dict[str, Any]]:
+    """Yahoo headlines (cached DB rows or a fresh fetch); ``items`` carry ``symbol`` (Yahoo), ``title``, ``url``, ``published_at``, ``publisher``
+    and, for cached rows, the ``security_id`` the provider attached them to (structured metadata; otherwise the Yahoo symbol is resolved as a source identifier)."""
     events = []
     for item in items:
         published = _to_utc_iso(item.get("published_at"))
         if not published or not item.get("title") or not item.get("url"):
             continue
-        category, importance, confidence, reasons = classify_headline(item["title"])
-        if item.get("publisher") in COMPANY_WIRES:
-            confidence = MEDIUM
-            reasons = [*reasons, "COMPANY_PRESS_RELEASE"]
-        elif importance == HIGH:
-            importance = MEDIUM
-            reasons = [*reasons, "SECONDARY_SOURCE_CAPPED_AT_MEDIUM"]
-        sectors = headline_sectors(item["title"])
-        if category == ENERGY and "ENERGY" not in sectors:
-            sectors = [*sectors, "ENERGY"]
+        category, importance, confidence, reasons, sectors = _classify_news(item["title"], item.get("publisher"))
+        matches: list[Match] = []
+        if item.get("security_id") is not None:
+            matches = [Match(int(item["security_id"]), SECURITY_ID, str(item.get("symbol") or item["security_id"]))]
+        elif alias_index is not None and item.get("symbol"):
+            resolved = alias_index.resolve(source="Yahoo Finance", source_symbol=item["symbol"])
+            matches = [resolved] if resolved else []
         events.append(_event(
             source=YAHOO_NEWS, source_type="NEWS", canonical=canonical_url(item["url"]), source_url=item["url"], published_at=published, category=category,
             headline=item["title"], summary=None, symbols=[item["symbol"]] if item.get("symbol") else [], explicit_sectors=sectors, regions=[],
             importance=importance, impact=UNKNOWN, impact_basis="NOT_READ_FROM_HEADLINE", confidence=confidence,
-            reasons=[*reasons, *([f"PUBLISHER:{item['publisher']}"] if item.get("publisher") else [])], fetched_at=fetched_at))
+            reasons=[*reasons, *([f"PUBLISHER:{item['publisher']}"] if item.get("publisher") else [])], fetched_at=fetched_at, matches=matches))
     return events
+
+
+def rss_news_events(
+    feed_key: str, spec: Mapping[str, Any], items: Sequence[Mapping[str, Any]], *, fetched_at: str, alias_index: AliasIndex,
+    relevant_keys: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], int]:
+    """Company-wire RSS items -> events in the same model as every other news source -> ``(events, items without a relevant security)``.
+
+    A wire carries no ticker metadata, so a release is attributed to a security only by explicit identification in its headline or lead
+    (ISIN, ``EXCHANGE: TICKER``, full company name; see ``AliasIndex.resolve_text``).  Items that identify no portfolio / watchlist / discovery
+    security are not events (a wire carries thousands of unrelated releases)."""
+    events: list[dict[str, Any]] = []
+    unrelated = 0
+    for item in items:
+        published = _to_utc_iso(item.get("published_at"))
+        if not published or not item.get("title") or not item.get("link"):
+            continue
+        text = f"{item['title']} {item.get('lead') or item.get('summary') or ''}"
+        matches = [m for m in alias_index.resolve_text(text) if (alias_index.key_for(m.security_id) in relevant_keys)]
+        if not matches:
+            unrelated += 1
+            continue
+        category, importance, confidence, reasons, sectors = _classify_news(item["title"], spec["publisher"])
+        event = _event(
+            source=spec["source"], source_type="NEWS", canonical=canonical_url(item["link"]), source_url=item["link"], published_at=published, category=category,
+            headline=item["title"], summary=item.get("summary"), symbols=[alias_index.key_for(m.security_id) for m in matches], explicit_sectors=sectors, regions=[],
+            importance=importance, impact=UNKNOWN, impact_basis="NOT_READ_FROM_HEADLINE", confidence=confidence,
+            reasons=[*reasons, f"PUBLISHER:{spec['publisher']}", *(f"RSS_MATCH_{m.matched_by}" for m in matches)], fetched_at=fetched_at,
+            source_event_id=item.get("guid"), matches=matches)
+        event["_feed"] = feed_key
+        events.append(event)
+    return events, unrelated
 
 
 def sec_events(rows: Sequence[Mapping[str, Any]], *, fetched_at: str) -> list[dict[str, Any]]:
@@ -368,27 +470,105 @@ def sec_events(rows: Sequence[Mapping[str, Any]], *, fetched_at: str) -> list[di
             source=SEC_FILINGS, source_type="SEC_FILING", canonical=canonical, source_url=None, published_at=f"{row['event_date']}T00:00:00+00:00",
             category=category, headline=row.get("title") or slug, summary=_clean(row.get("notes"), 160), symbols=[row["symbol"]], explicit_sectors=[], regions=[],
             importance=importance, impact=impact, impact_basis="STRUCTURE_OF_PRIMARY_FILING" if impact != UNKNOWN else "NOT_ASSESSABLE", confidence=HIGH if slug in SEC_EVENT_RULES else MEDIUM,
-            reasons=[reason], fetched_at=fetched_at))
+            reasons=[reason], fetched_at=fetched_at,
+            matches=[Match(int(row["security_id"]), SECURITY_ID, str(row["symbol"]))] if row.get("security_id") is not None else []))
     return events
 
 
-def merge_duplicates(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Same ``event_id`` (source type + canonical URL/accession) -> one event.
+def url_key(url: str) -> str:
+    """Host (without ``www.``/``m.``/``amp.``) + path, lower case, no query or fragment: the same article under tracking-parameter variants."""
+    parsed = urlparse(url.strip())
+    return f"{re.sub(r'^(?:www|m|amp)[.]', '', parsed.netloc.lower())}{parsed.path.rstrip('/').lower()}"
 
-    Symbols, sectors and reasons are united, the earliest publication time wins and the more
-    important classification (e.g. the monetary-policy feed over the generic press feed) is kept."""
-    merged: dict[str, dict[str, Any]] = {}
-    for event in sorted(events, key=lambda e: (importance_rank(e["importance"]), e["source"], e["published_at"])):
-        current = merged.get(event["event_id"])
-        if current is None:
-            merged[event["event_id"]] = {**event}
+
+def headline_key(headline: str) -> str:
+    """Normalized headline for cross-source comparison: no HTML entities, no ticker parentheses, no trailing ``- Publisher``, only letters and digits."""
+    text = unescape(headline).lower()
+    text = re.sub(r"\(\s*(?:[a-z ]+:\s*)?[a-z0-9.\-]{1,8}\s*\)", " ", text)
+    stripped = re.sub(r"\s+[-\u2013\u2014|]\s+[^-\u2013\u2014|]{2,30}$", "", text)
+    if len(stripped) >= _MIN_HEADLINE_KEY:
+        text = stripped
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _source_priority(event: Mapping[str, Any]) -> int:
+    """Which copy represents a merged event: official feed, then SEC filing, then a company wire, then any other news site."""
+    if event["source_type"] == "OFFICIAL_FEED":
+        return 0
+    if event["source_type"] == "SEC_FILING":
+        return 1
+    return 2 if "COMPANY_PRESS_RELEASE" in event["reason_codes"] else 3
+
+
+def _hours_apart(a: str, b: str) -> float:
+    return abs(datetime.fromisoformat(a).timestamp() - datetime.fromisoformat(b).timestamp()) / 3600.0
+
+
+def _absorb(rep: dict[str, Any], other: Mapping[str, Any], stats: Optional[dict[str, dict[str, int]]]) -> None:
+    """Fold a duplicate into the representative event: symbols, sectors, reasons, security matches united, earliest time, sources remembered."""
+    rep["affected_symbols"] = sorted(set(rep["affected_symbols"]) | set(other["affected_symbols"]))
+    rep["explicit_sectors"] = sorted(set(rep["explicit_sectors"]) | set(other["explicit_sectors"]))
+    rep["reason_codes"] = list(dict.fromkeys([*rep["reason_codes"], *other["reason_codes"]]))
+    rep["security_ids"] = sorted(set(rep.get("security_ids") or []) | set(other.get("security_ids") or []))
+    known = {(m["security_id"], m["matched_by"], m["matched_alias"]) for m in rep.get("matches") or []}
+    rep["matches"] = [*(rep.get("matches") or []), *(m for m in other.get("matches") or [] if (m["security_id"], m["matched_by"], m["matched_alias"]) not in known)]
+    rep["published_at"] = min(rep["published_at"], other["published_at"])
+    rep["event_date"] = rep["published_at"][:10]
+    if other["source"] != rep["source"] or other.get("source_url") != rep.get("source_url"):
+        copy = {"source": other["source"], "source_url": other.get("source_url"), "event_id": other["event_id"]}
+        if copy not in rep.setdefault("duplicate_sources", []):
+            rep["duplicate_sources"].append(copy)
+    if stats is not None and other.get("_feed"):
+        stats.setdefault(other["_feed"], {}).setdefault("deduplicated", 0)
+        stats[other["_feed"]]["deduplicated"] += 1
+
+
+def merge_duplicates(events: Iterable[dict[str, Any]], *, stats: Optional[dict[str, dict[str, int]]] = None) -> list[dict[str, Any]]:
+    """One event per real-world message, deterministic (no embeddings, no LLM).  Order of the comparisons:
+
+    1. the source's own event id (``source`` + ``source_event_id``), or the same ``event_id`` (source type + canonical URL / accession)
+    2. the same normalized URL (news only)
+    3. the same normalized headline within ``DEDUPE_WINDOW_HOURS`` - within 6 hours if the headline is short (a recurring column title) - (news only), and
+       only if the two copies do not belong to different securities
+
+    Symbols, sectors, reasons and security matches are united, the earliest publication time wins, the more important classification
+    (e.g. the monetary-policy feed over the generic press feed; a wire over a secondary copy of equal importance) represents the event and
+    the other sources stay in ``duplicate_sources``."""
+    ordered = sorted(events, key=lambda e: (importance_rank(e["importance"]), _source_priority(e), e["source"], e["published_at"], e["event_id"]))
+    reps: list[dict[str, Any]] = []
+    by_event_id: dict[str, dict[str, Any]] = {}
+    by_source_id: dict[tuple[str, str], dict[str, Any]] = {}
+    by_url: dict[str, dict[str, Any]] = {}
+    by_headline: dict[str, list[dict[str, Any]]] = {}
+    for event in ordered:
+        news = event["source_type"] == "NEWS"
+        rep = by_event_id.get(event["event_id"])
+        if rep is None and event.get("source_event_id"):
+            rep = by_source_id.get((event["source"], event["source_event_id"]))
+        if rep is None and news and event.get("source_url"):
+            rep = by_url.get(url_key(event["source_url"]))
+        key = headline_key(event["headline"]) if news else ""
+        if rep is None and news and len(key) >= _MIN_HEADLINE_KEY:
+            for candidate in by_headline.get(key, []):
+                disjoint = candidate["affected_symbols"] and event["affected_symbols"] and not set(candidate["affected_symbols"]) & set(event["affected_symbols"])
+                window = DEDUPE_WINDOW_HOURS if len(key) >= _SHORT_HEADLINE_KEY else _SHORT_HEADLINE_WINDOW_HOURS
+                if not disjoint and _hours_apart(candidate["published_at"], event["published_at"]) <= window:
+                    rep = candidate
+                    break
+        if rep is not None:
+            _absorb(rep, event, stats)
+            by_event_id.setdefault(event["event_id"], rep)
             continue
-        current["affected_symbols"] = sorted(set(current["affected_symbols"]) | set(event["affected_symbols"]))
-        current["explicit_sectors"] = sorted(set(current["explicit_sectors"]) | set(event["explicit_sectors"]))
-        current["reason_codes"] = list(dict.fromkeys([*current["reason_codes"], *event["reason_codes"]]))
-        current["published_at"] = min(current["published_at"], event["published_at"])
-        current["event_date"] = current["published_at"][:10]
-    return list(merged.values())
+        rep = {**event}
+        reps.append(rep)
+        by_event_id[event["event_id"]] = rep
+        if event.get("source_event_id"):
+            by_source_id[(event["source"], event["source_event_id"])] = rep
+        if news and event.get("source_url"):
+            by_url.setdefault(url_key(event["source_url"]), rep)
+        if news and len(key) >= _MIN_HEADLINE_KEY:
+            by_headline.setdefault(key, []).append(rep)
+    return reps
 
 
 # --------------------------------------------------------------------------- mapping
@@ -412,7 +592,11 @@ def map_event(event: dict[str, Any], *, portfolio: Mapping[str, Any], watchlist:
     affected_watchlist = sorted(s for s in symbols if s in watchlist)
     affected_discovery = sorted(s for s in symbols if s in discovery)
     importance = out["importance"]
-    if out["source_type"] == "NEWS" and out["affected_symbols"]:
+    # an explicit identification in the text (ISIN, "EXCHANGE: TICKER", full company name) is as strong as a headline that names the company
+    explicitly_identified = any(m.get("matched_by") in TEXT_MATCHES for m in event.get("matches") or [])
+    if out["source_type"] == "NEWS" and out["affected_symbols"] and explicitly_identified:
+        reasons.append("HEADLINE_NAMES_COMPANY")
+    elif out["source_type"] == "NEWS" and out["affected_symbols"]:
         known = {**discovery, **watchlist, **portfolio}
         linked = [s for s in event["affected_symbols"] if s in known]
         if any(company_mentioned(out["headline"], s, known[s], allow_ticker=False) for s in linked):
@@ -428,7 +612,14 @@ def map_event(event: dict[str, Any], *, portfolio: Mapping[str, Any], watchlist:
             reasons.append("SYMBOL_LINK_NOT_CONFIRMED_BY_HEADLINE_CAPPED_AT_MEDIUM")
     held_regions = sorted({region for symbol in portfolio for region in symbol_regions(symbol)})
     exposure = sorted(set(out["affected_regions"]) & set(held_regions))
+    security_ids = set(out.get("security_ids") or [])
+    for symbol in event["affected_symbols"]:
+        for universe in (portfolio, watchlist):
+            known_id = (universe.get(symbol) or {}).get("security_id")
+            if known_id is not None:
+                security_ids.add(int(known_id))
     out.update(
+        security_ids=sorted(security_ids),
         affected_symbols=sorted(symbols), affected_sectors=sorted(sectors), importance=importance, reason_codes=list(dict.fromkeys(reasons)),
         affected_portfolio_symbols=affected_portfolio, affected_watchlist_symbols=affected_watchlist, affected_discovery_symbols=affected_discovery,
         portfolio_region_exposure=exposure,
@@ -456,17 +647,41 @@ def build_market_intelligence(
     discovery: Mapping[str, Any],
     sector_map: Mapping[str, str],
     config: Optional[MarketIntelligenceConfig] = None,
+    rss_items: Optional[Mapping[str, Sequence[Mapping[str, Any]]]] = None,
+    news_feeds: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    alias_index: Optional[AliasIndex] = None,
 ) -> dict[str, Any]:
-    """Pure: classify and map everything that was handed in; the ``fetched_at`` stamp is passed in, no clock is read."""
+    """Pure: classify and map everything that was handed in; the ``fetched_at`` stamp is passed in, no clock is read.
+
+    ``rss_items`` (company-wire feeds, ``{feed key: parsed items}`` with their specs in ``news_feeds``) run through the same pipeline as every other
+    source; ``alias_index`` is the Security-Master view that resolves symbols, ISINs and names to a ``security_id``."""
     cfg = config or MarketIntelligenceConfig()
     since = (date.fromisoformat(evaluation_as_of) - timedelta(days=cfg.lookback_days)).isoformat()
+    base_index = alias_index or AliasIndex(())
     events: list[dict[str, Any]] = []
     for source, items in feed_items.items():
         events += feed_events(source, items, fetched_at=fetched_at)
-    events += news_events(news_items, fetched_at=fetched_at)
+    events += news_events(news_items, fetched_at=fetched_at, alias_index=base_index)
     events += sec_events(sec_rows, fetched_at=fetched_at)
+    feed_stats: dict[str, dict[str, int]] = {}
+    if rss_items:
+        # discovery candidates are not in the Security Master: they take part in the matching as entries with negative ids
+        pseudo = [SecurityAlias(-(n + 1), symbol, (symbol,), None, None, str(info.get("name") or ""), (("YAHOO", symbol),)) for n, (symbol, info) in enumerate(sorted(discovery.items()))
+                  if base_index.resolve(symbol=symbol) is None]
+        index = base_index.extended(pseudo)
+        relevant = {**discovery, **watchlist, **portfolio}
+        for key, items in rss_items.items():
+            rss, unrelated = rss_news_events(key, (news_feeds or {})[key], items, fetched_at=fetched_at, alias_index=index, relevant_keys=relevant)
+            events += rss
+            feed_stats[key] = {"fetched": len(items), "unrelated": unrelated, "accepted": 0, "deduplicated": 0}
     events = [e for e in events if since <= e["event_date"] <= evaluation_as_of]
-    mapped = [map_event(e, portfolio=portfolio, watchlist=watchlist, discovery=discovery, sector_map=sector_map) for e in merge_duplicates(events)]
+    for event in events:
+        if event.get("_feed"):
+            feed_stats[event["_feed"]]["accepted"] += 1
+    merged = merge_duplicates(events, stats=feed_stats)
+    for event in merged:
+        event.pop("_feed", None)
+    mapped = [map_event(e, portfolio=portfolio, watchlist=watchlist, discovery=discovery, sector_map=sector_map) for e in merged]
     mapped.sort(key=_sort_key)
     source_counts: dict[str, int] = {}
     for event in mapped:
@@ -494,27 +709,27 @@ def build_market_intelligence(
             "category": "fixed rules per source (official feed type, SEC form item, explicit headline keywords for secondary news)",
             "importance": "fixed table; scheduled macro releases are MEDIUM because a surprise cannot be assessed without consensus data; HIGH needs a primary source, a company press-release wire, or a headline-keyword class whose headline names the linked company; keyword-only secondary headlines are capped at MEDIUM; GEOPOLITICS is at most MEDIUM because no primary geopolitics source exists",
             "impact": "UNKNOWN unless the structure of a primary source states an adverse fact (SEC delisting notice, cybersecurity incident, non-reliance); never read from a headline; POSITIVE/MIXED/NEUTRAL are not produced in v1",
-            "mapping": "exact symbol; explicitly sector-scoped events reach the symbols of that sector (static sector map); macro events carry the regions of the held symbols (portfolio_region_exposure)",
+            "mapping": "by security (security_id); a symbol is only one alias of it; explicitly sector-scoped events reach the symbols of that sector (static sector map); macro events carry the regions of the held symbols (portfolio_region_exposure)",
+            "security_identity": "security_id first (structured provider metadata), then source identifier, ISIN, WKN, exact alias; a company-wire release is attributed only by an explicit ISIN, 'EXCHANGE: TICKER' or full company name, never by a bare ticker word",
+            "deduplication": "same source event id / event id, then same normalized URL, then same normalized headline within 48 h (not for different securities); deterministic, the other sources stay in duplicate_sources",
             "confidence": "HIGH structured primary filing, MEDIUM official feed with a title rule, LOW keyword on a secondary headline",
             "not_used": ["Eurostat dataset-update feed (not news)", "commodity prices (no source)", "LLM text"],
             "signal_changes": "none: news never changes SELL/TRIM/HOLD, PROMOTE, ENTRY_READY, ranking or sizing",
         },
         "lookback_since": since,
+        "news_feed_stats": dict(sorted(feed_stats.items())),
+        "aliases": base_index.report_table(i for e in mapped for i in e["security_ids"]),
     }
 
 
 # --------------------------------------------------------------------------- read-only database context
 def load_db_context(conn: sqlite3.Connection, *, since: str, until: str) -> dict[str, Any]:
     """Portfolio / watchlist membership and the cached company news / SEC events of the window (production DB: read only)."""
-    yahoo = conn.execute("SELECT id FROM data_sources WHERE name = 'Yahoo Finance'").fetchone()
-    yahoo_symbol: dict[int, str] = {}
-    if yahoo is not None:
-        for row in conn.execute("SELECT security_id, symbol FROM source_symbols WHERE source_id = ? AND symbol IS NOT NULL", (yahoo[0],)):
-            yahoo_symbol[int(row[0])] = str(row[1])
+    index = AliasIndex.from_connection(conn)
     securities = {int(r["id"]): r for r in conn.execute("SELECT id, symbol, name, asset_type FROM security")}
 
     def key(security_id: int) -> Optional[str]:
-        return yahoo_symbol.get(security_id) or (securities[security_id]["symbol"] if security_id in securities else None)
+        return index.key_for(security_id)  # the Yahoo symbol of the security, else its public symbol
 
     portfolio: dict[str, dict[str, Any]] = {}
     watchlist: dict[str, dict[str, Any]] = {}
@@ -530,12 +745,12 @@ def load_db_context(conn: sqlite3.Connection, *, since: str, until: str) -> dict
     for row in conn.execute("SELECT security_id, published_at, title, url, publisher FROM news WHERE substr(published_at, 1, 10) >= ? AND substr(published_at, 1, 10) <= ?", (since, until)):
         symbol = key(int(row["security_id"]))
         if symbol:
-            news.append({"symbol": symbol, "published_at": row["published_at"], "title": row["title"], "url": row["url"], "publisher": row["publisher"]})
+            news.append({"symbol": symbol, "security_id": int(row["security_id"]), "published_at": row["published_at"], "title": row["title"], "url": row["url"], "publisher": row["publisher"]})
     sec = []
     for row in conn.execute("SELECT security_id, event_type, event_date, title, notes FROM events WHERE event_date >= ? AND event_date <= ?", (since, until)):
         symbol = key(int(row["security_id"]))
         if symbol:
-            sec.append({"symbol": symbol, "event_type": row["event_type"], "event_date": row["event_date"], "title": row["title"], "notes": row["notes"]})
+            sec.append({"symbol": symbol, "security_id": int(row["security_id"]), "event_type": row["event_type"], "event_date": row["event_date"], "title": row["title"], "notes": row["notes"]})
     news.sort(key=lambda r: (r["published_at"], r["symbol"], r["url"]))
     sec.sort(key=lambda r: (r["event_date"], r["symbol"], r["event_type"], r["title"] or ""))
-    return {"portfolio": portfolio, "watchlist": watchlist, "news": news, "sec_events": sec}
+    return {"portfolio": portfolio, "watchlist": watchlist, "news": news, "sec_events": sec, "alias_index": index}

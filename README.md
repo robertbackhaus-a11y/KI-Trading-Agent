@@ -203,7 +203,12 @@ python tools\trading\Collect-TradingMarketIntelligence.py [--top N] [--json] [--
 - **Sources:** official feeds without an API key — ECB (press releases, statistics), Fed (monetary policy, press releases), BLS (CPI,
   employment), BEA, Destatis, EIA (Today in Energy, press releases); SEC 8-K events and cached Yahoo headlines from the
   database (read only); fresh Yahoo headlines for `DISCOVERY_READY` candidates of the discovery report. Eurostat is not
-  connected in v1; `COMMODITIES` is not implemented.
+  connected in v1; `COMMODITIES` is not implemented. Company releases come from the public PR Newswire RSS feeds listed in
+  `tools/trading/universe/news_feeds_v1.json` (switch off with `--no-news-feeds`); GlobeNewswire is not integrated because it blocks all non-browser requests.
+- **Security identity and duplicates:** a security is its `security_id`; its symbols, ISIN and WKN are aliases, so the news query and the
+  opportunity view find the same security and the same news under any of them. A wire release is attributed to a security only by an ISIN, an
+  exchange-qualified ticker such as `(NASDAQ: ABCD)` or the full company name, never by a bare ticker word. The same item from several sources
+  is one event; the other sources are listed in the detail answer (`duplicate_sources`).
 - **Categories:** MACRO, MONETARY_POLICY, INFLATION, LABOR_MARKET, ECONOMIC_GROWTH, GEOPOLITICS, ENERGY, SECTOR, COMPANY, EARNINGS,
   GUIDANCE, REGULATORY, M_AND_A. Fixed rule tables per source and headline keywords; `event_id` is a stable hash
   of source type and canonical URL/accession (duplicates are merged).
@@ -225,7 +230,7 @@ python tools\trading\Collect-TradingMarketIntelligence.py [--top N] [--json] [--
   DIRECT/SHARED/SECTOR/LOOSE, otherwise the affected symbols/sectors/regions). No `rendered_de`, no source statistics, no run log,
   no methodology. `detail=true` (at most 25) returns everything. The answer stays below the MCP limit of 40,000 characters (otherwise
   `RESPONSE_TRIMMED_TO_SIZE_BUDGET`). In the reference setup the report is produced daily at 08:15 and 17:45 by the Windows task `Trading-Market-Intelligence` (not by the MCP tool).
-- **Known limits:** Yahoo sometimes attaches headlines to symbols loosely (ticker homonyms, market wrap-ups); keyword classification has
+- **Known limits:** the public PR Newswire feeds list only the newest 20 releases per feed (about one to two hours), so with two runs per day the RSS source is a sample, not a complete wire. Yahoo sometimes attaches headlines to symbols loosely (ticker homonyms, market wrap-ups); keyword classification has
   `confidence: LOW`; impact is mostly `UNKNOWN`.
 
 ## Unified opportunity view

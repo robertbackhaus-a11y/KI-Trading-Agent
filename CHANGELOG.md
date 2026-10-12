@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Security alias resolution for market intelligence and the opportunity view (`security_aliases.py`): one `security_id` per security, symbols/ISIN/WKN as aliases; a news query by public symbol, Yahoo symbol, other alias or ISIN returns the same security and the same events
+- Company-wire RSS source adapter on the existing market-intelligence pipeline (PR Newswire feeds, configurable in `universe/news_feeds_v1.json`), with per-feed health in the report and isolation of broken feeds
+- Deterministic cross-source deduplication of news (event id, URL, normalized headline within a time window); merged sources are listed as `duplicate_sources` in detail answers
+- Matching diagnostics in detail answers (`security_ids`, `matches`, `source_event_id`)
+
+### Changed
+- Free-text attribution of wire releases requires an explicit identification (ISIN, exchange-qualified ticker or full company name); a bare ticker word never matches
+- Market-intelligence events and reports remain readable by earlier versions (new fields are optional)
+
 ## [0.3.0] - 2026-10-09
 
 ### Added

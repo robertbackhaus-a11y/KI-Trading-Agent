@@ -53,6 +53,7 @@
         "parqet_import.py",
         "portfolio_action_planner.py",
         "portfolio_context.py",
+        "security_aliases.py",
         "strategy_config.py",
         "strategy_suggestion.py",
         "swing_lifecycle.py",
@@ -67,6 +68,7 @@
       "source": "tools/trading/universe",
       "target": "app/universe",
       "files": [
+        "news_feeds_v1.json",
         "sector_map_v1.json",
         "swing_large_cap_v1.json"
       ]

@@ -17,8 +17,8 @@ EN = (DOCS / "trading-agent-query-examples.en.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 CODE_SPAN = re.compile(r"`([^`]+)`")
 # Examples may only use these neutral tickers and generic uppercase words; any other ticker-like word in an example question fails the test.
-ALLOWED_UPPERCASE = {"AAPL", "NVDA", "GOOGL", "SAP", "BUY", "SELL", "TRIM", "HOLD", "ADD", "WATCH", "HIGH", "READY", "MCP"}
-NEUTRAL_SYMBOLS = {"AAPL", "NVDA", "GOOGL", "SAP.DE"}
+ALLOWED_UPPERCASE = {"AAPL", "NVDA", "GOOGL", "SAP", "BUY", "SELL", "TRIM", "HOLD", "ADD", "WATCH", "HIGH", "READY", "MCP", "ISIN"}
+NEUTRAL_SYMBOLS = {"AAPL", "NVDA", "GOOGL", "SAP.DE", "DE0007164600"}  # + the public ISIN of the neutral example company SAP
 
 
 def tool_names() -> list[str]:
