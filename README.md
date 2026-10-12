@@ -38,6 +38,7 @@ The tests use only the standard library's `unittest` (plus the runtime packages 
 The optional desktop GUI (`gui/`, development status, read-only cockpit with a chat to a local Ollama model that can only call READ tools) has its own environment and its own pinned
 `requirements-gui.txt` (`PySide6-Essentials` and `mcp`); the runtime environment above does not change. See
 [docs/gui.en.md](docs/gui.en.md) (German: [docs/gui.de.md](docs/gui.de.md)).
+On the production machine it starts from the desktop shortcut "KI TA" (target `pythonw.exe -m gui` of the GUI environment).
 
 ## Documentation
 

@@ -119,3 +119,13 @@ C:\tools\trading\.venv-gui\Scripts\pythonw.exe -m gui
 ```
 
 Der erste Befehl startet die GUI mit Konsole, damit Fehler sichtbar bleiben, der zweite ohne Konsolenfenster. Es gibt keine Desktop-Verknüpfung, keinen Installer und keinen Autostart.
+
+## 13. Desktop-Start
+
+Die Desktop-Verknüpfung KI TA startet die GUI direkt, ohne Batch-Datei und ohne Skript dazwischen. Der Chat ist produktiv verfügbar und nur lesend.
+
+- Ziel: `C:\tools\trading\.venv-gui\Scripts\pythonw.exe` mit dem Argument `-m gui`, sodass kein Konsolenfenster erscheint.
+- Arbeitsverzeichnis: `C:\tools\trading`.
+- Icon: `C:\tools\ki\ki-ta-icon.ico`, neben dem Icon der vorhandenen KI-Start- und Stopp-Verknüpfungen. Es folgt deren Look (türkiser Kreis, weiße fette Schrift) und zeigt KI und TA in zwei Zeilen, sodass es sich klar unterscheidet. Es ist ein Multi-Resolution-Icon (16 bis 256 Pixel, 32 Bit mit Transparenz).
+- Die GUI startet oder stoppt Ollama nie; sie spricht nur mit einer laufenden Instanz, also Ollama wie gewohnt vorher starten.
+- Der Chat speichert keinen Verlauf auf der Platte, und Stop bricht nur die aktuelle Anfrage ab.

@@ -119,3 +119,13 @@ C:\tools\trading\.venv-gui\Scripts\pythonw.exe -m gui
 ```
 
 The first command starts the GUI with a console so that errors stay visible, the second one without a console window. There is no desktop shortcut, no installer and no autostart.
+
+## 13. Desktop launcher
+
+The desktop shortcut KI TA starts the GUI directly, with no batch file and no script in between. The chat is available in production and is read-only.
+
+- Target: `C:\tools\trading\.venv-gui\Scripts\pythonw.exe` with the argument `-m gui`, so no console window appears.
+- Working directory: `C:\tools\trading`.
+- Icon: `C:\tools\ki\ki-ta-icon.ico`, next to the icon of the existing KI start and stop shortcuts. It follows their look (teal circle, white bold lettering) and shows KI and TA on two lines, so it is easy to tell apart. It is a multi-resolution icon (16 to 256 pixels, 32 bit with transparency).
+- The GUI never starts or stops Ollama; it only talks to a running instance, so start Ollama first as usual.
+- The chat keeps no history on disk, and Stop cancels only the current request.
