@@ -53,6 +53,7 @@
         "parqet_import.py",
         "portfolio_action_planner.py",
         "portfolio_context.py",
+        "portfolio_risk.py",
         "security_aliases.py",
         "strategy_config.py",
         "strategy_suggestion.py",

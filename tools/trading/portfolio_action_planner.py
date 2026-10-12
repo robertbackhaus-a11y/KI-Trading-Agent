@@ -53,6 +53,7 @@ from decision_engine import _confidence
 from entry_sizing import _weight_cap_value, evaluate_entry_recommendation, internal_external_split
 from orchestrator_presentation import _fmt_eur, _fmt_pct, _fmt_quantity
 from portfolio_context import derive_allocation_guardrails
+from portfolio_risk import RiskBook, RiskInputs
 from strategy_config import StrategyConfig, TaxConfig
 
 
@@ -285,6 +286,7 @@ def _existing_actions(
     tax: Optional[TaxConfig] = None,
     external_funding: bool = False,
     reserve: Optional[float] = None,
+    book: Optional[RiskBook] = None,
 ) -> tuple[list[dict[str, Any]], Optional[_State], dict[str, Any], float]:
     """Summarise actionable positions and fold them into the capital state.
 
@@ -292,10 +294,13 @@ def _existing_actions(
     quantity) -- net of the conservative tax estimate when cost bases were
     supplied, gross otherwise. ADD and initial-entry BUY recommendations are
     existing purchases: they consume cash and Swing capacity before any new entry.
+    With a risk ``book`` they pass the sector and correlation guards one after the
+    other (record order, against the state after every accepted earlier purchase); a
+    blocked purchase is not folded into the state and carries ``plan_block_reason``.
     """
     items: list[dict[str, Any]] = []
     sales: list[dict[str, Any]] = []
-    purchases: list[float] = []
+    purchases: list[tuple[dict[str, Any], int, float]] = []
     for record in records:
         decision = record.get("decision") or {}
         action = decision.get("action")
@@ -327,8 +332,9 @@ def _existing_actions(
                 warnings.append(f"PURCHASE_VALUE_UNAVAILABLE:{symbol}")
                 items.append({**base, "quantity": quantity, "price_eur": price, "estimated_purchase_eur": None})
                 continue
-            purchases.append(value)
-            items.append({**base, "quantity": quantity, "price_eur": price, "estimated_purchase_eur": value})
+            item = {**base, "quantity": quantity, "price_eur": price, "estimated_purchase_eur": value}
+            purchases.append((item, int(record["security_id"]), value))
+            items.append(item)
     tax_summary = _estimate_taxes(sales, cost_basis, tax or TaxConfig())
     for sale in sales:
         item = sale["item"]
@@ -344,11 +350,22 @@ def _existing_actions(
                 "tax_estimate_quality": sale["quality"],
             })
     items.sort(key=lambda item: (str(item.get("priority") or "P9"), int(item.get("security_id") or 0)))
-    purchases_total = sum(purchases)
+    purchases_total = sum(value for _item, _sid, value in purchases)
     if state is not None:
         for sale in sales:
             state = state.after_sale(sale["strategy"], sale["gross"], sale["net"])
-        for value in purchases:
+            if book is not None:
+                book.sell(int(sale["security_id"]), sale["gross"])
+        purchases_total = 0.0
+        for item, security_id, value in purchases:
+            if book is not None:
+                assessment = book.assess(security_id, value, state.total)
+                item["risk"] = assessment
+                if assessment["blocked_by"]:
+                    item["plan_block_reason"] = assessment["blocked_by"]
+                    continue
+                book.buy(security_id, value)
+            purchases_total += value
             if external_funding and state.cash is not None and reserve is not None:
                 internal, _external = internal_external_split(cash=state.cash, reserve=reserve, purchase=value)
                 state = state.after_purchase(value, cash_used=internal)
@@ -498,7 +515,7 @@ def _methodology(tax: Optional[TaxConfig] = None, *, net_basis: bool = False) ->
         "rank_tie_breaks": ["watchlist_priority (higher first)", "security_id (lower first)"],
         "wait_for_trigger_score_threshold": BUY_SCORE_THRESHOLD,
         "sizing": "entry_sizing.evaluate_entry_recommendation against the simulated capital state (swing maximum, cash reserve, per-security weight limits, whole-share floor)",
-        "external_funding": "metadata.external_funding_available (default false). When true only the cash/reserve shortage is lifted: Swing maximum, weight limits, position/campaign blocks, data quality and candidate status stay binding; the externally funded part is planned, never booked.",
+        "external_funding": "metadata.external_funding_available (default false). When true only the cash/reserve shortage is lifted: Swing maximum, weight limits, sector and correlation guards, position/campaign blocks, data quality and candidate status stay binding; the externally funded part is planned, never booked.",
         "proceeds_basis": "net_conservative" if net_basis else "gross",
         "taxes_modelled": net_basis,
         "fees_modelled": False,
@@ -576,18 +593,32 @@ def build_portfolio_action_plan(
     candidate_snapshots: Optional[Mapping[int, AnalysisSnapshot]] = None,
     config: Optional[StrategyConfig] = None,
     position_cost_basis: Optional[Mapping[int, Mapping[str, Any]]] = None,
+    risk_inputs: Optional[RiskInputs] = None,
 ) -> dict[str, Any]:
     """Build the deterministic ``portfolio_action_plan``. Inputs are never mutated.
 
     ``position_cost_basis`` maps ``security_id -> {"avg_cost", "currency"}``. When
     given, SELL/TRIM proceeds are planned net of the conservative tax estimate;
     when ``None`` no tax estimate is requested and proceeds stay gross.
+
+    ``risk_inputs`` (sectors and daily closes, see :mod:`portfolio_risk`) switches on the
+    sector and correlation guards for ADD/BUY and new entries; without it only the
+    per-security limits apply.  External funding never lifts these guards.
     """
     cfg = config or StrategyConfig()
     candidate_snapshots = candidate_snapshots or {}
     external = bool(portfolio.external_funding_available)  # lifts only the cash/reserve shortage; every other guard stays binding
-    warnings: list[str] = ["CONCENTRATION_SINGLE_SECURITY_LIMITS_ONLY"]
+    guards_active = risk_inputs is not None and risk_inputs.sector_map_available
+    warnings: list[str] = [] if guards_active else ["CONCENTRATION_SINGLE_SECURITY_LIMITS_ONLY"]
+    if risk_inputs is not None and not risk_inputs.sector_map_available:
+        warnings.append("RISK_SECTOR_MAP_UNAVAILABLE")
     initial = _initial_state(portfolio)
+    book: Optional[RiskBook] = None
+    if guards_active:
+        exposures = {int(e.security_id): float(e.market_value_eur) for e in portfolio.exposures if e.market_value_eur is not None}
+        if len(exposures) < sum(1 for e in portfolio.exposures if e.quantity is not None and float(e.quantity) > 0):
+            warnings.append("RISK_EXPOSURE_VALUE_INCOMPLETE")
+        book = RiskBook(risk_inputs, cfg.risk, exposures=exposures, max_age_days=cfg.data_quality.market_data_max_age_days)
     if initial is None:
         warnings.append("PORTFOLIO_STATE_UNAVAILABLE")
     if initial is not None and initial.cash is None:
@@ -598,7 +629,7 @@ def build_portfolio_action_plan(
     # A. existing actions   B. post-action capital
     actions, post_state, tax_estimate, purchases_total = _existing_actions(
         [*existing_position_results, *entry_candidate_results], initial, warnings, cost_basis=position_cost_basis, tax=cfg.tax,
-        external_funding=external, reserve=cfg.sizing.minimum_cash_reserve,
+        external_funding=external, reserve=cfg.sizing.minimum_cash_reserve, book=book,
     )
     proceeds_total = tax_estimate["gross_proceeds_total_eur"]
     net_basis = tax_estimate["tax_estimate_quality"] != "not_estimated"
@@ -690,6 +721,14 @@ def build_portfolio_action_plan(
                 defer(candidate, _DEFERRAL_REASON.get(raw, raw))
             continue
         sizing = _sizing_view(rec)
+        if book is not None:
+            # sector / correlation guard against the state after every earlier planned purchase; external funding does not matter here
+            assessment = book.assess(sid, sizing["proposed_capital_eur"], running.total)
+            candidate["risk"] = assessment
+            if assessment["blocked_by"]:
+                defer(candidate, assessment["blocked_by"])
+                continue
+            book.buy(sid, sizing["proposed_capital_eur"])
         running = running.after_purchase(sizing["proposed_capital_eur"], cash_used=rec.internal_capital_eur)
         planned.append({
             "rank": candidate["rank"],
@@ -707,6 +746,13 @@ def build_portfolio_action_plan(
             "entry_score": candidate["entry_score"],
             "reason": "ENTRY_READY",
         })
+
+    if book is not None:
+        unknown = book.sector_unknown | {sid for sid in book.positions if book.sector(sid) is None}
+        if unknown:
+            warnings.append(f"RISK_SECTOR_UNKNOWN:{len(unknown)}")
+        if book.correlation_unavailable:
+            warnings.append(f"RISK_CORRELATION_UNAVAILABLE:{len(book.correlation_unavailable)}")
 
     # G. final simulated state
     final_state = None
@@ -747,6 +793,21 @@ def build_portfolio_action_plan(
         "methodology": _methodology(cfg.tax, net_basis=net_basis),
         "warnings": warnings,
     }
+    plan["methodology"]["risk_guards"] = (
+        {
+            "active": True,
+            "sector": f"weight of the sector after the purchase <= {cfg.risk.max_sector_weight * 100:g} % of the invested value (BLOCKED_BY_SECTOR_CONCENTRATION); unknown sector = not assessed",
+            "correlation": (
+                f"cluster = candidate + holdings with return correlation >= {cfg.risk.correlation_threshold:g} (last {cfg.risk.correlation_window_days} common daily returns, "
+                f"at least {cfg.risk.correlation_min_common_days}); cluster weight after the purchase <= {cfg.risk.max_sector_weight * 100:g} % (BLOCKED_BY_CORRELATION); "
+                "pairs without enough common days are left out and counted, never treated as 0.0"
+            ),
+            "scope": "ADD and BUY of the position engine and new entries, evaluated in order against the state after every earlier planned purchase; no re-ranking",
+            "external_funding": "never lifts these guards",
+        }
+        if guards_active
+        else {"active": False}
+    )
     plan["rendered_de"] = render_plan_de(plan)
     return plan
 
@@ -787,6 +848,8 @@ def render_plan_de(plan: Mapping[str, Any]) -> str:
             detail = f"ca. {_fmt_eur(item.get('estimated_proceeds_eur'))} brutto"
         else:
             detail = f"ca. {_fmt_eur(item.get('estimated_purchase_eur'))}"
+            if item.get("plan_block_reason"):
+                detail += f", im Plan blockiert: {item['plan_block_reason']}"
         lines.append(f"   {item['symbol']}: {item['action']}{_fmt_quantity(item.get('quantity'))} ({detail})")
         shown = True
     if not shown:

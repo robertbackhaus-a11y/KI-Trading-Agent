@@ -12,6 +12,7 @@ from analysis_engine import build_analysis_snapshot, build_portfolio_context
 from decision_engine import decide
 from orchestrator_presentation import build_presentation_summary, format_orchestrator_summary
 from portfolio_action_planner import build_portfolio_action_plan, unavailable_plan
+from portfolio_risk import load_risk_inputs
 from strategy_config import StrategyConfig
 from swing_promotion import evaluate_swing_candidates
 
@@ -298,7 +299,14 @@ def run_trading_orchestrator(
                 )
             except Exception:
                 continue
+        try:  # sector / correlation guards read sectors and stored daily closes only; any failure means "no guards", never a failed plan
+            risk_ids = {int(r["security_id"]) for r in [*existing, *entry_results, *promotion_results] if r.get("security_id") is not None}
+            risk_ids |= {int(e.security_id) for e in portfolio.exposures}
+            risk_inputs = load_risk_inputs(conn, risk_ids, as_of=evaluation_as_of)
+        except Exception:  # noqa: BLE001
+            risk_inputs = None
         portfolio_action_plan = build_portfolio_action_plan(
+            risk_inputs=risk_inputs,
             portfolio=portfolio,
             existing_position_results=existing,
             entry_candidate_results=entry_results,

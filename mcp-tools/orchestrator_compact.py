@@ -31,7 +31,7 @@ OMITTED_FOR_CONTEXT = (
 )
 ACTION_TAX_FIELDS = (
     "price_eur", "gross_proceeds_eur", "estimated_realized_gain_eur", "estimated_tax_eur_conservative",
-    "estimated_net_proceeds_eur_conservative", "estimated_purchase_eur",
+    "estimated_net_proceeds_eur_conservative", "estimated_purchase_eur", "plan_block_reason",
 )
 FUNDING_FIELDS = (
     "external_funding_available", "cash_available_eur", "cash_reserve_min_eur", "internal_deployable_capital_eur", "deployable_capital_eur",

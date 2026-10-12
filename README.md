@@ -155,8 +155,12 @@ SELL/TRIM → POST-ACTION CAPITAL → ENTRY PLAN
   existing data-quality value of the decision engine); ties: higher watchlist priority, then lower `security_id`.
 - **Sizing/allocation:** existing entry logic (Swing maximum 40 %, cash reserve, maximum position weight, whole
   shares rounded down), sequentially by rank; stops at the Swing maximum, the cash reserve or exhausted capital.
-- **Not modelled:** fees, FIFO lots, loss pot/allowance, sector concentration (no sector data for held positions — only
-  the single-position limits apply).
+- **Sector and correlation guards** (`portfolio_risk.py`): a purchase (ADD/BUY of the position engine and new entries) is deferred when the
+  weight of its sector (static sector map) or of its correlation cluster (holdings and earlier planned entries with a return correlation of at least 0.70
+  over the stored daily closes) would exceed 30 % of the invested value afterwards — reason codes `BLOCKED_BY_SECTOR_CONCENTRATION` /
+  `BLOCKED_BY_CORRELATION`. The ranking is not changed, external funding does not lift these guards, and missing sector or price data never
+  blocks (it is reported once as a data-quality warning).
+- **Not modelled:** fees, FIFO lots, loss pot/allowance, industry exposure below sector level, currency effects in the correlation.
 
 ## Watchlist candidate discovery
 

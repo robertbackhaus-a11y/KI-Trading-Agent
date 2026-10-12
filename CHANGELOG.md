@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Sector and correlation guards in the portfolio action planner (`portfolio_risk.py`): a purchase is deferred with `BLOCKED_BY_SECTOR_CONCENTRATION` or `BLOCKED_BY_CORRELATION` when its sector or its correlation cluster would exceed 30 % of the invested value; works for ADD/BUY of the position engine and new entries, sequentially and without re-ranking; external funding does not lift the guards; missing sector or price data never blocks
 - Security alias resolution for market intelligence and the opportunity view (`security_aliases.py`): one `security_id` per security, symbols/ISIN/WKN as aliases; a news query by public symbol, Yahoo symbol, other alias or ISIN returns the same security and the same events
 - Company-wire RSS source adapter on the existing market-intelligence pipeline (PR Newswire feeds, configurable in `universe/news_feeds_v1.json`), with per-feed health in the report and isolation of broken feeds
 - Deterministic cross-source deduplication of news (event id, URL, normalized headline within a time window); merged sources are listed as `duplicate_sources` in detail answers

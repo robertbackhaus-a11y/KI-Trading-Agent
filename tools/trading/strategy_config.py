@@ -153,6 +153,33 @@ class MarketIntelligenceConfig:
 
 
 @dataclass(frozen=True)
+class RiskGuardConfig:
+    """Sector and correlation guards of the Portfolio Action Planner (proposal, derived from existing limits and measured data).
+
+    ``max_sector_weight`` (30 % of the invested value) is three full initial Swing positions
+    (3 x ``SizingPolicyConfig.max_initial_swing_weight`` of 10 %) and 1.5 x the per-security maximum of 20 %.  The same limit
+    applies to a *correlation cluster* (the candidate plus every holding whose daily returns correlate at
+    ``correlation_threshold`` or more), so one limit covers both guards.  ``correlation_threshold`` 0.70 is the usual boundary
+    of a strong correlation; on the measured universe only about 1 % of all pairs reach it.  Correlations use the last
+    ``correlation_window_days`` common daily returns and are only valid with at least ``correlation_min_common_days`` of them
+    (about half a year; the standard error of r = 0.7 is then about 0.05).
+    """
+
+    max_sector_weight: float = 0.30
+    correlation_threshold: float = 0.70
+    correlation_window_days: int = 250
+    correlation_min_common_days: int = 120
+
+    def __post_init__(self) -> None:
+        if not 0.0 < float(self.max_sector_weight) <= 1.0:
+            raise ValueError("max_sector_weight must be within (0, 1]")
+        if not 0.0 < float(self.correlation_threshold) <= 1.0:
+            raise ValueError("correlation_threshold must be within (0, 1]")
+        if int(self.correlation_min_common_days) < 20 or int(self.correlation_window_days) < int(self.correlation_min_common_days):
+            raise ValueError("correlation_min_common_days must be >= 20 and <= correlation_window_days")
+
+
+@dataclass(frozen=True)
 class StrategyConfig:
     """Single entry point for all deterministic strategy parameters."""
 
@@ -165,3 +192,4 @@ class StrategyConfig:
     tax: TaxConfig = field(default_factory=TaxConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     market_intelligence: MarketIntelligenceConfig = field(default_factory=MarketIntelligenceConfig)
+    risk: RiskGuardConfig = field(default_factory=RiskGuardConfig)
