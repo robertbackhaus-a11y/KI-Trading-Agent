@@ -110,10 +110,12 @@
       "files": [
         "__init__.py",
         "background.py",
+        "chat_service.py",
         "mcp_client.py",
-        "ollama_status.py",
+        "ollama_client.py",
         "settings.py",
         "task_service.py",
+        "tool_loop.py",
         "tool_policy.py"
       ]
     },
@@ -123,6 +125,7 @@
       "target": "gui/viewmodels",
       "files": [
         "__init__.py",
+        "chat.py",
         "portfolio.py",
         "tasks.py"
       ]
@@ -134,6 +137,7 @@
       "files": [
         "__init__.py",
         "_common.py",
+        "chat.py",
         "dashboard.py",
         "diagnostics.py",
         "planner.py",

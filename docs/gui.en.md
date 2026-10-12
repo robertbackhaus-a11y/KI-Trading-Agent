@@ -2,13 +2,14 @@
 
 Deutsche Version: [gui.de.md](gui.de.md)
 
-The desktop GUI is a read-only cockpit for the Trading Agent. It shows what the Trading MCP server reports and controls the scheduled tasks. It contains no trading logic, no database access and no order function. Development status: there is no product version yet; the GUI reports `dev`.
+The desktop GUI is a read-only cockpit for the Trading Agent. It shows what the Trading MCP server reports, controls the scheduled tasks and offers a chat with a local language model that can read the same data. It contains no trading logic, no database access and no order function. Development status: there is no product version yet; the GUI reports `dev`.
 
 ## 1. Architecture
 
 ```
 Desktop GUI (PySide6)
   |-- MCP client ----- stdio child process ----- Trading MCP server ----- SQLite
+  |-- Chat ----------- Ollama HTTP API (local)   tool calls go through the MCP client
   |-- Task service --- PowerShell -------------- Windows Task Scheduler
   `-- settings file and log files
 ```
@@ -16,7 +17,7 @@ Desktop GUI (PySide6)
 - Trading data comes only from the READ tools of the Trading MCP server. The view models only format what the tools return and compute nothing.
 - The MCP server runs as a separate child process of the GUI. It is never imported, and it can run next to another client that starts its own server process.
 - The Windows Task Scheduler is used directly and not through MCP, so that no language model can start a task.
-- The chat with the local language model is not part of this version; the diagnostics only show whether Ollama is reachable.
+- The chat talks to the local Ollama server directly; the GUI never starts or stops Ollama.
 
 ## 2. Installation and start
 
@@ -37,7 +38,8 @@ The commands run from the repository root. The defaults point to the production 
 | Dashboard | portfolio, allocation, cash, External Funding, planner status, planned and deferred entries, blockers and warnings | `run_trading_orchestrator` (detail), `database_status` |
 | Planner / Actions | engine actions per position, planned and deferred entries with reason codes, sector and correlation risk, `simulation_only`, `orders_created` | `run_trading_orchestrator` (detail) |
 | Tasks | the six scheduled Trading tasks: state, last and next run, result, Run now, log tail | Windows Task Scheduler, log files |
-| Diagnostics / Settings | MCP and database status, paths, tool classification, Ollama reachability, settings form, MCP restart | `database_status`, settings file |
+| Chat | questions to a local language model that reads through the READ tools; streamed answer, optional thinking, tool status, Stop, New chat | Ollama, MCP tools |
+| Diagnostics / Settings | MCP, database and Ollama status, paths, tool classification, schema hash, last chat error, settings form, MCP restart | `database_status`, settings file |
 
 ## 4. MCP client
 
@@ -51,13 +53,22 @@ The commands run from the repository root. The defaults point to the production 
 
 | Class | Tools | GUI |
 |---|---|---|
-| READ | the 13 read tools, for example `database_status`, `run_trading_orchestrator`, `get_opportunity_view` | allowed; this version calls only `database_status` and `run_trading_orchestrator` |
-| ACTION | `approve_swing_promotion`, `sql_execute` | denied |
+| READ | the 13 read tools, for example `database_status`, `run_trading_orchestrator`, `get_opportunity_view` | allowed; the pages call only `database_status` and `run_trading_orchestrator`, the chat offers all 13 to the model |
+| ACTION | `approve_swing_promotion`, `sql_execute` | denied, and never offered to the model |
 | unknown | every tool that is not in the table | denied (deny by default) |
 
 The table lives in `gui/services/tool_policy.py`; a test requires that every tool of the server is classified. Actions are visibly separate from reads in the user interface and are never hidden behind a read.
 
-## 6. Task control
+## 6. Chat
+
+- The Ollama client uses only the standard library. It streams `/api/chat` (answer text, thinking text, tool calls), and Stop closes the HTTP connection of that one request. The GUI never starts, stops, loads or unloads Ollama or a model, and it sets no context size, so it can share one Ollama instance with other clients.
+- The model and the thinking switch come from the settings `ollama_model` and `think_enabled`; the model is changed only there. Looking at the page asks Ollama only for its version and model names; the model is loaded by the first question.
+- The tool loop is a small own implementation without any framework: question, `/api/chat`, tool calls, check, MCP call, result as a tool message, `/api/chat` again, until the answer. At most 6 tool rounds per question; then the request ends with a notice.
+- Only the READ tools of the MCP discovery are offered, with their name, description and schema unchanged. A call to anything else is answered with `TOOL_NOT_ALLOWED` and never reaches the MCP server. Arguments are validated first (`TOOL_ARGS_INVALID`). The parameter `detail` is removed from the offered schemas and forced to false, so the compact views fit the context. A result over 40,000 characters (`TOOL_RESULT_TOO_LARGE`) or beyond 80,000 characters per question (`TOOL_RESULT_BUDGET`) is not handed to the model.
+- The transcript shows user, assistant, thinking, tool call, tool status and error separately. Tool results are never shown in full: only the tool name, the duration and the size.
+- Only one request runs at a time. The history stays in memory, New chat resets it, and nothing is written to disk; in follow-up questions, older tool results are replaced by a one-line placeholder. The system prompt is short and lives in the code (`SYSTEM_PROMPT`).
+
+## 7. Task control
 
 - Only the six Trading tasks are queried and started: `Trading-MarketData-Backfill`, `Trading-FXRates-Backfill`, `Trading-EventsNews-Backfill`, `Trading-Fundamentals-SEC`, `Trading-Candidate-Discovery` and `Trading-Market-Intelligence`.
 - The state is read with PowerShell as JSON, never as localized text.
@@ -65,37 +76,40 @@ The table lives in `gui/services/tool_policy.py`; a test requires that every too
 - A started task can use the network and write to the database exactly as scheduled; therefore Run now is marked as an action.
 - The log view loads only the end of the log file from the log folder and never changes the file.
 
-## 7. Settings and logging
+## 8. Settings and logging
 
 - The settings file is `%LOCALAPPDATA%\TradingAgentGui\settings.json`. A missing file means defaults; a broken file or an invalid value falls back to the default with a warning. There are no secrets.
 - Settings: `ollama_base_url`, `ollama_model`, `mcp_python_path`, `mcp_server_path`, `trading_db_path`, `trading_logs_dir`, `default_detail_mode`, `think_enabled`, `refresh_interval_s` and `window_geometry`.
-- The GUI log is `%LOCALAPPDATA%\TradingAgentGui\gui.log` (rotating). It records start and stop, MCP connect and disconnect, tool name, duration and result size, errors and task starts. It never records tool results, portfolio values or prompts.
+- The GUI log is `%LOCALAPPDATA%\TradingAgentGui\gui.log` (rotating). It records start and stop, MCP connect and disconnect, tool name, duration and result size, Ollama requests (model, duration, tool rounds, abort, errors), and task starts. It never records questions, answers, tool results or portfolio values.
 - The stderr output of the MCP server is written to `%LOCALAPPDATA%\TradingAgentGui\mcp-stderr.log`.
 
-## 8. Threading
+## 9. Threading
 
 - The GUI thread never blocks. MCP calls run in the asyncio thread; the result is delivered by a queued signal to a callback in the GUI thread.
 - PowerShell, log reading and the Ollama check run in a thread pool (`QThreadPool`).
+- The Ollama stream and the tool loop run in their own worker thread; a tool call is handed to the MCP thread and the worker waits for it, so the client session is only used by its own thread.
 - There is no `qasync` and no `QtAsyncio`.
 
-## 9. Tests
+## 10. Tests
 
 ```
 .venv-gui\Scripts\python.exe -m unittest discover -s tests/gui -p "test_*.py"
 ```
 
-- The Qt tests run offscreen (`QT_QPA_PLATFORM=offscreen`). Without PySide6 they are skipped; the tests of the policy, the settings, the view models and the task service run in any environment.
+- The Qt tests run offscreen (`QT_QPA_PLATFORM=offscreen`). Without PySide6 they are skipped; the tests of the policy, the settings, the view models, the task service, the Ollama client and the tool loop run in any environment.
 - The MCP client is tested against a small fake stdio server that uses the same SDK: start, discovery, call, timeout, restart, crash and shutdown.
+- The Ollama client and the chat are tested against a scripted fake Ollama HTTP server: streaming, thinking, tool calls, rounds, limits, errors, Stop and the follow-up request, with synthetic data only.
 - The view models are tested with results of the real orchestrator and planner on synthetic data.
 
-## 10. Known limits
+## 11. Known limits
 
-- Read-only: there is no chat, no import, no campaigns page, no order function and no strategy change in this version.
+- Read-only: there is no import, no campaigns page, no order function and no strategy change in this version; the chat cannot call any action tool.
+- The chat sees the compact views only; drill-down results (`detail`) are not available to the model.
 - The detailed orchestrator result is not versioned like the compact view; the view models read it defensively and show a dash for anything that is missing.
 - Run now needs PowerShell; without it the page shows the error and nothing is started.
 - The refresh is manual plus a moderate interval; the status bar shows the last successful refresh.
 
-## 11. Deployment
+## 12. Deployment
 
 The GUI is deployed with the same script as the runtime. The manifest has the groups `gui`, `gui-services`, `gui-viewmodels`, `gui-views` and `gui-requirements`; they copy the package to `gui\` of the production root and `requirements-gui.txt` to the production root. Tests, documentation and the environment are never copied. The environment `.venv-gui` is created in the production root from `requirements-gui.txt` (the deploy does not create it); the runtime environment stays untouched.
 

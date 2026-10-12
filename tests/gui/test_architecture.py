@@ -32,8 +32,9 @@ class ArchitectureTests(unittest.TestCase):
     def test_the_package_is_small_and_has_the_planned_layout(self) -> None:
         names = {str(p.relative_to(GUI)).replace("\\", "/") for p in files()}
         self.assertEqual(names - {"__init__.py", "services/__init__.py", "viewmodels/__init__.py", "views/__init__.py"}, {
-            "__main__.py", "app.py", "services/background.py", "services/mcp_client.py", "services/ollama_status.py", "services/settings.py", "services/task_service.py",
-            "services/tool_policy.py", "viewmodels/portfolio.py", "viewmodels/tasks.py", "views/_common.py", "views/dashboard.py", "views/diagnostics.py", "views/planner.py", "views/tasks.py",
+            "__main__.py", "app.py", "services/background.py", "services/chat_service.py", "services/mcp_client.py", "services/ollama_client.py", "services/settings.py",
+            "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/portfolio.py", "viewmodels/tasks.py",
+            "views/_common.py", "views/chat.py", "views/dashboard.py", "views/diagnostics.py", "views/planner.py", "views/tasks.py",
         })
         self.assertFalse((GUI / "controllers").exists())
         self.assertFalse((GUI / "widgets").exists())
@@ -76,12 +77,12 @@ class ArchitectureTests(unittest.TestCase):
         self.assertEqual(called, {"database_status", "run_trading_orchestrator"})
         self.assertTrue(all(is_read(n) for n in called))
 
-    def test_the_mcp_server_is_never_imported_and_no_tool_loop_exists(self) -> None:
+    def test_the_mcp_server_is_never_imported_and_the_chat_endpoint_has_one_owner(self) -> None:
         for path in files():
             text = path.read_text(encoding="utf-8")
             self.assertNotRegex(text, r"(?m)^\s*(from|import)\s+(server|trading_sqlite|orchestrator_compact)\b", path.name)
-            self.assertNotRegex(text, r"/api/chat", path.name)  # no chat / tool loop in Phase 1
-        self.assertFalse((GUI / "services" / "ollama_client.py").exists())
+            if path.name != "ollama_client.py":
+                self.assertNotRegex(text, r"[\"']/api/chat", path.name)  # the chat endpoint is spoken by exactly one module
 
     def test_task_service_is_free_of_qt_and_of_task_definition_changes(self) -> None:
         path = GUI / "services" / "task_service.py"
@@ -98,6 +99,33 @@ class ArchitectureTests(unittest.TestCase):
             self.assertIsNone(re.search(r"(?i)\b(api[_-]?key|secret|password)\s*[:=]\s*['\"][^'\"]+", text), path.name)
             self.assertNotRegex(text, r"C:\\Users\\", path.name)
             self.assertNotRegex(text, r"\b[A-Z]{2}[A-Z0-9]{9}\d\b", path.name)  # no ISINs
+
+
+    def test_the_chat_modules_are_layered_and_never_persist_anything(self) -> None:
+        loop, client, service = GUI / "services" / "tool_loop.py", GUI / "services" / "ollama_client.py", GUI / "services" / "chat_service.py"
+        for path in (loop, client):
+            self.assertNotIn("PySide6", imports(path), path.name)  # testable without Qt
+        self.assertFalse({"mcp", "mcp_types", "anyio", "asyncio", "subprocess", "sqlite3"} & imports(loop))
+        for path in (loop, client, service, GUI / "viewmodels" / "chat.py", GUI / "views" / "chat.py"):
+            text = path.read_text(encoding="utf-8")
+            code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+            for forbidden in ("open(", "write_text", "write_bytes", "json.dump(", "pickle", "shelve", "sqlite3", "QSettings"):
+                self.assertNotIn(forbidden, code, f"{path.name} must not persist chat data ({forbidden})")
+
+    def test_the_loop_only_reaches_mcp_through_the_injected_call_and_offers_read_tools_only(self) -> None:
+        text = (GUI / "services" / "tool_loop.py").read_text(encoding="utf-8")
+        self.assertIn("tool_policy.is_read(name)", text)  # the offering is filtered by the policy
+        self.assertIn("if name not in self.schemas", text)  # a call to anything that was not offered is refused before the MCP call
+        tree_names = {n.id for n in ast.walk(ast.parse(text)) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(ast.parse(text)) if isinstance(n, ast.Attribute)}
+        self.assertFalse({"call_sync", "McpService", "ClientSession"} & tree_names)
+        service = (GUI / "services" / "chat_service.py").read_text(encoding="utf-8")
+        self.assertIn("call_sync", service)
+        used = {n.id for n in ast.walk(ast.parse(service)) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(ast.parse(service)) if isinstance(n, ast.Attribute)}
+        self.assertFalse({"ClientSession", "_core", "_submit"} & used)  # the ClientSession stays in the MCP thread
+
+    def test_no_agent_framework_and_no_ollama_package(self) -> None:
+        for path in files():
+            self.assertEqual(imports(path) & {"langchain", "langchain_core", "crewai", "autogen", "llama_index", "ollama", "openai", "litellm"}, set(), path.name)
 
 
 if __name__ == "__main__":

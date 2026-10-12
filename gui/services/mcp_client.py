@@ -15,6 +15,7 @@ paths are absolute (a relative ``TRADING_DB_PATH`` breaks the server's read-only
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import ntpath
 import os
@@ -414,9 +415,43 @@ class McpService(QObject):
         future.add_done_callback(finished)
         return request_id
 
-    def _run_callback(self, callback: Optional[Callable[[McpResult], None]], res: McpResult) -> None:
-        # GUI thread.  Name, duration and size only -- never the content.
+    def call_sync(self, name: str, arguments: Optional[dict[str, Any]] = None, timeout: float = 60.0, cancelled: Optional[Callable[[], bool]] = None) -> McpResult:
+        """Blocking variant for worker threads (never call it from the GUI thread).  Same read-only policy as :meth:`call`.
+
+        The ``ClientSession`` is still used only inside the asyncio thread: the call is submitted there and this thread waits for the result.
+        ``cancelled`` is polled; when it turns true the pending call is cancelled and a ``CANCELLED`` result is returned.
+        """
+        if not self.allow_actions and not tool_policy.is_read(name):
+            self.log.warning("Tool %s abgelehnt (%s)", name, tool_policy.classify(name))
+            return McpResult(name, False, error=f"{name} ist in dieser GUI-Version nicht erlaubt", kind="DENIED")
+        if self._thread is None:
+            return McpResult(name, False, error="MCP-Dienst ist nicht gestartet", kind="NOT_CONNECTED")
+        started = time.monotonic()
+        future = self._submit(self._core.call(name, arguments, timeout))
+        res: Optional[McpResult] = None
+        while res is None:
+            done, _ = concurrent.futures.wait([future], timeout=0.1)
+            if done:
+                try:
+                    res = future.result()
+                except BaseException as exc:  # noqa: BLE001
+                    res = McpResult(name, False, error=describe(exc), kind="TRANSPORT")
+            elif cancelled is not None and cancelled():
+                future.cancel()
+                res = McpResult(name, False, error="abgebrochen", kind="CANCELLED", seconds=round(time.monotonic() - started, 3))
+            elif time.monotonic() - started > timeout + 15:
+                future.cancel()
+                res = McpResult(name, False, error=f"Zeitüberschreitung nach {timeout:g} s", kind="TIMEOUT", seconds=round(time.monotonic() - started, 3))
+        self._log_result(res)
+        return res
+
+    def _log_result(self, res: McpResult) -> None:
+        # Name, duration and size only -- never the content.
         self.log.info("Tool %s: %s in %.2f s, %d Zeichen%s", res.name, "ok" if res.ok else res.kind, res.seconds, res.chars, f" – {res.error}" if res.error else "")
+
+    def _run_callback(self, callback: Optional[Callable[[McpResult], None]], res: McpResult) -> None:
+        # GUI thread.
+        self._log_result(res)
         if callback is not None:
             try:
                 callback(res)

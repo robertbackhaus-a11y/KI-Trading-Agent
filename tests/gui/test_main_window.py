@@ -57,7 +57,7 @@ class MainWindowTests(unittest.TestCase):
         self.mcp = mc.McpService(self.settings, self.tmp / "mcp-stderr.log", extra_env={"FAKE_PID_FILE": str(self.pid_file), "FAKE_ORCH_FILE": str(self.tmp / "orch.json")}, ping_interval=2)
         self.backend, self.runner = FakeBackend(), AsyncRunner()
         self.window = MainWindow(self.settings, self.mcp, self.backend, self.runner, ["Einstellung x ungültig"], save_fn=lambda s: self.saved.append(s),
-                                 ollama_fn=lambda url: __import__("gui.services.ollama_status", fromlist=["x"]).OllamaStatus(True, "0.35.0", ["m1", "m2"]))
+                                 ollama_fn=lambda url: __import__("gui.services.ollama_client", fromlist=["x"]).OllamaStatus(True, "0.35.0", ["m1", "m2"]))
         self.addCleanup(self.cleanup)
 
     def cleanup(self) -> None:
@@ -71,15 +71,16 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(pump(40, lambda: self.window._orch is not None), "dashboard data did not arrive")
 
     # R
-    def test_r_the_window_builds_with_four_pages_and_a_status_bar(self) -> None:
+    def test_r_the_window_builds_with_five_pages_including_the_chat_and_a_status_bar(self) -> None:
         w = self.window
         w.show()
-        self.assertEqual(w.sidebar.count(), 4)
-        self.assertEqual([w.sidebar.item(i).text() for i in range(4)], list(PAGES))
-        self.assertEqual(w.stack.count(), 4)
+        self.assertEqual(w.sidebar.count(), 5)
+        self.assertEqual([w.sidebar.item(i).text() for i in range(5)], list(PAGES))
+        self.assertEqual(PAGES[3], "Chat")
+        self.assertEqual(w.stack.count(), 5)
         self.assertEqual((w.lbl_mcp.text(), w.lbl_tools.text(), w.lbl_db.text(), w.lbl_refresh.text()), ("MCP: getrennt", "Tools: —", "DB: —", "Letzter Refresh: —"))
         self.assertIn("Desktop GUI (dev)", w.windowTitle())
-        for row in range(4):
+        for row in range(5):
             w.sidebar.setCurrentRow(row)
             self.assertEqual(w.stack.currentIndex(), row)
         pixmap = w.grab()
@@ -159,7 +160,7 @@ class MainWindowTests(unittest.TestCase):
     def test_diagnostics_shows_paths_tools_and_ollama(self) -> None:
         self.start()
         w = self.window
-        w.sidebar.setCurrentRow(3)
+        w.sidebar.setCurrentRow(4)
         pump(1)
         info = " ".join(label.text() for label in w.diagnostics.findChildren(type(w.lbl_mcp)))
         for expected in (str(FAKE_SERVER), sys.executable, str(self.tmp / "trading.db"), "dev", "settings.json", "gui.log", "mcp-stderr.log"):

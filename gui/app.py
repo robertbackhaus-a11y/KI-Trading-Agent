@@ -8,6 +8,7 @@ never runs in the GUI thread: the MCP client lives in its own QThread with an as
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from datetime import datetime
 from typing import Optional
 
@@ -16,27 +17,33 @@ from PySide6.QtWidgets import QApplication, QLabel, QListWidget, QMainWindow, QS
 
 from .services import settings as settings_mod
 from .services.background import AsyncRunner
+from .services.chat_service import ChatService
 from .services.mcp_client import CONNECTED, ERROR, McpResult, McpService
-from .services.ollama_status import check_ollama
+from .services.ollama_client import check_ollama
 from .services.settings import GUI_VERSION, Settings, get_logger
 from .services.task_service import TaskBackend
+from .services.tool_loop import offered_tools, schema_hash
 from .services.tool_policy import classify
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.tasks import build_task_rows
+from .views.chat import ChatView
 from .views.dashboard import DashboardView
 from .views.diagnostics import DiagnosticsView
 from .views.planner import PlannerView
 from .views.tasks import TasksView
 
-PAGES = ("Dashboard", "Planner / Actions", "Tasks", "Diagnostics / Settings")
+PAGES = ("Dashboard", "Planner / Actions", "Tasks", "Chat", "Diagnostics / Settings")
+CHAT_PAGE, DIAGNOSTICS_PAGE = 3, 4
 STATE_TEXT = {"CONNECTED": "verbunden", "CONNECTING": "verbindet …", "DISCONNECTED": "getrennt", "ERROR": "Fehler"}
 
 
 class MainWindow(QMainWindow):
     def __init__(self, settings: Settings, mcp: McpService, backend: TaskBackend, runner: AsyncRunner, warnings: Optional[list[str]] = None,
-                 save_fn=settings_mod.save_settings, ollama_fn=check_ollama) -> None:
+                 save_fn=settings_mod.save_settings, ollama_fn=check_ollama, chat: Optional[ChatService] = None) -> None:
         super().__init__()
         self.settings, self.mcp, self.backend, self.runner = settings, mcp, backend, runner
+        self.chat_service = chat or ChatService(lambda: self.settings, mcp)
+        self._ollama = None  # last OllamaStatus (reachability only; no model is ever loaded by checking)
         self.warnings = list(warnings or [])
         self._save_fn, self._ollama_fn = save_fn, ollama_fn
         self.log = get_logger()
@@ -59,8 +66,9 @@ class MainWindow(QMainWindow):
         self.sidebar.addItems(PAGES)
         self.stack = QStackedWidget()
         self.dashboard, self.planner, self.tasks = DashboardView(), PlannerView(), TasksView()
+        self.chat = ChatView(settings.ollama_model, settings.think_enabled)
         self.diagnostics = DiagnosticsView(settings)
-        for page in (self.dashboard, self.planner, self.tasks, self.diagnostics):
+        for page in (self.dashboard, self.planner, self.tasks, self.chat, self.diagnostics):
             self.stack.addWidget(page)
         layout.addWidget(self.sidebar)
         layout.addWidget(self.stack, 1)
@@ -82,6 +90,13 @@ class MainWindow(QMainWindow):
         self.diagnostics.restart_requested.connect(self.restart_mcp)
         self.diagnostics.ollama_check_requested.connect(self.check_ollama)
         self.diagnostics.save_requested.connect(self.save_settings)
+        self.chat.send_requested.connect(self.send_chat)
+        self.chat.stop_requested.connect(self.chat_service.cancel)
+        self.chat.new_chat_requested.connect(self.new_chat)
+        self.chat.think_toggled.connect(self.set_think)
+        self.chat_service.event.connect(self.chat.handle_event)
+        self.chat_service.event.connect(lambda ev: self.refresh_diagnostics() if ev.kind in ("error", "done") else None)
+        self.chat_service.busy_changed.connect(self.chat.set_busy)
         self.mcp.state_changed.connect(self._on_mcp_state)
         self.mcp.tools_changed.connect(self._on_tools)
         self.timer = QTimer(self)
@@ -230,6 +245,18 @@ class MainWindow(QMainWindow):
             ("Ollama-URL", s.ollama_base_url),
             ("Ollama-Modell", s.ollama_model),
         ]
+        catalog = self.mcp.tools
+        offered = len(offered_tools(catalog)[0])
+        ollama = self._ollama
+        rows += [
+            ("Ollama erreichbar", DASH if ollama is None else ("Ja" if ollama.reachable else "Nein" + (f" ({ollama.error})" if ollama.error else ""))),
+            ("Ollama-Version", DASH if ollama is None or not ollama.reachable else ollama.version or DASH),
+            ("Gewähltes Modell vorhanden", DASH if ollama is None or not ollama.reachable else ("Ja" if ollama.has_model(s.ollama_model) else "Nein")),
+            ("MCP-Tools (READ, dem Chat angeboten)", f"{offered}"),
+            ("MCP-Tools (ACTION oder unbekannt, gesperrt)", f"{len(catalog) - offered}"),
+            ("Tool-Schema-Hash", schema_hash(catalog) if catalog else DASH),
+            ("Letzter Chat-Fehler", self.chat_service.last_error or "keiner"),
+        ]
         self.diagnostics.show_info(rows, self.warnings)
         self.diagnostics.show_tools([[name, classify(name)] for name in sorted(self.mcp.tools)])
 
@@ -242,13 +269,30 @@ class MainWindow(QMainWindow):
         self.diagnostics.show_ollama("prüfe …", None)
 
         def done(ok: bool, value) -> None:
+            self._ollama = value if ok else None
             if ok and value.reachable:
                 models = ", ".join(value.models) or "keine Modelle"
                 self.diagnostics.show_ollama(f"erreichbar, Version {value.version}; Modelle: {models}", True)
+                present = value.has_model(self.settings.ollama_model)
+                self.chat.set_ollama("erreichbar" + ("" if present else f", Modell {self.settings.ollama_model} fehlt"), present)
             else:
                 self.diagnostics.show_ollama("nicht erreichbar" + (f": {value.error}" if ok else f": {value}"), False)
+                self.chat.set_ollama("nicht erreichbar", False)
+            self.refresh_diagnostics()
 
         self.runner.submit(lambda: self._ollama_fn(url), done)
+
+    # -- chat -------------------------------------------------------------------------------------
+    def send_chat(self, text: str) -> None:
+        self.chat.add_user(text)
+        self.chat_service.send(text)
+
+    def new_chat(self) -> None:
+        if self.chat_service.reset():
+            self.chat.clear()
+
+    def set_think(self, value: bool) -> None:
+        self.save_settings(replace(self.settings, think_enabled=value))
 
     def save_settings(self, new: Settings) -> None:
         try:
@@ -259,6 +303,9 @@ class MainWindow(QMainWindow):
             return
         self.settings = new
         self.diagnostics.set_settings(new)
+        self.diagnostics.think.setChecked(new.think_enabled)
+        self.chat.set_model(new.ollama_model)
+        self.chat.set_think(new.think_enabled)
         self.backend.logs_dir = new.trading_logs_dir
         self.timer.start(new.refresh_interval_s * 1000)
         self.log.info("Einstellungen gespeichert")
@@ -271,8 +318,11 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(row)
         if row == 2 and (self._tasks_at is None or (datetime.now() - self._tasks_at).total_seconds() > 30):
             self.refresh_tasks()
-        elif row == 3:
+        elif row == CHAT_PAGE:
+            self.check_ollama()  # two GET requests (version, model names); no model is loaded by looking
+        elif row == DIAGNOSTICS_PAGE:
             self.refresh_diagnostics()
+            self.check_ollama()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
         try:
@@ -281,6 +331,7 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001 - never block closing
             self.log.warning("Fenstergeometrie nicht gespeichert")
         self.timer.stop()
+        self.chat_service.shutdown()
         self.mcp.shutdown()
         self.runner.wait(5000)
         super().closeEvent(event)
