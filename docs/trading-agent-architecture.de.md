@@ -134,6 +134,7 @@ Alle `Migrate-*`-Skripte verlangen `metadata.schema_version == "2.0"` und sind e
 | `Migrate-TradingStrategyAssignments.py` | `strategy_assignment` + 2 No-Overlap-Trigger | `strategy_assignment_schema_version` |
 | `Migrate-TradingCandidatePromotions.py` | `candidate_promotion` | `candidate_promotion_schema_version` |
 | `Migrate-TradingFXRates.py` | `fx_rates`, erstellt die Views `v_active_positions`/`v_portfolio_market` neu | `fx_rates_schema_version` |
+| `Migrate-TradingDropSecuritySector.py` | entfernt die ungenutzte Spalte `security.sector` (Standard ist der Trockenlauf, `--write` mit Sicherungskopie; erstellt die View `v_watchlist` ohne sie neu; alle übrigen `security`-Spalten, die IDs und jede andere Tabelle bleiben unverändert; die alten Werte werden nirgends übernommen) | `security_sector_removed` |
 | `Migrate-TradingSwingLifecycle.py` | `swing_campaign`, `swing_campaign_event` + 4 Trigger (verlangt zuvor `strategy_assignment_schema_version == "1"`) | `swing_campaign_schema_version` |
 | `Migrate-TradingCapitalState.py` | `portfolio_capital_state` | `portfolio_capital_state_schema_version` |
 | `Migrate-TradingCorporateActions.py` | `corporate_action` | `corporate_action_schema_version` |

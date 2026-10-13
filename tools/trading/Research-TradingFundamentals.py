@@ -100,7 +100,7 @@ def connect():
 def get_security(conn, security_id):
     row = conn.execute(
         """
-        SELECT id, name, symbol, isin, wkn, exchange, currency, country, sector, industry
+        SELECT id, name, symbol, isin, wkn, exchange, currency, country, industry
         FROM security WHERE id = ?
         """,
         (security_id,),
@@ -156,7 +156,6 @@ consult regulatory filings) -- do not guess or estimate any number.
 - exchange: {exchange}
 - currency: {currency}
 - country: {country}
-- sector: {sector}
 - industry: {industry}
 
 # Target coverage
@@ -324,7 +323,6 @@ def build_prompt(security, existing, years):
         exchange=security["exchange"] or "unknown",
         currency=security["currency"],
         country=security["country"] or "unknown",
-        sector=security["sector"] or "unknown",
         industry=security["industry"] or "unknown",
         years=years,
         existing_summary=format_existing(existing),

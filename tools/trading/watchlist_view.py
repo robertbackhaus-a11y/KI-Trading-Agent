@@ -31,7 +31,7 @@ def load_rows(conn: Any, today: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT w.security_id, w.status, w.priority, w.added_at, w.updated_at,
-               s.symbol, s.name, s.isin, s.wkn, s.exchange, s.currency, s.sector,
+               s.symbol, s.name, s.isin, s.wkn, s.exchange, s.currency,
                EXISTS (SELECT 1 FROM positions p WHERE p.security_id = w.security_id AND p.shares > 0),
                w.entry_reason, w.thesis, w.target_entry, w.notes
         FROM watchlist w LEFT JOIN security s ON s.id = w.security_id
@@ -48,8 +48,8 @@ def load_rows(conn: Any, today: str) -> list[dict[str, Any]]:
         kinds = strategies.get(int(r[0]), [])
         out.append({
             "security_id": int(r[0]), "status": r[1], "priority": r[2], "added_at": r[3], "updated_at": r[4], "symbol": r[5], "name": r[6] or "", "isin": r[7],
-            "wkn": r[8], "exchange": r[9], "currency": r[10], "sector": r[11], "held": bool(r[12]),
-            "entry_reason": r[13], "thesis": r[14], "target_entry": r[15], "notes": r[16],
+            "wkn": r[8], "exchange": r[9], "currency": r[10], "held": bool(r[11]),
+            "entry_reason": r[12], "thesis": r[13], "target_entry": r[14], "notes": r[15],
             "strategy": kinds[0] if len(kinds) == 1 else None,  # the engine's rule: exactly one active assignment, otherwise unknown
         })
     return out
@@ -112,7 +112,7 @@ def build_watchlist(
             "promotion": (promotion or {}).get("recommendation"), "news_status": news["status"], "added_at": row.get("added_at"),
             "annotated": True if any(row.get(k) not in (None, "") for k in NOTE_FIELDS) else None,  # notes would be lost by a removal
             # detail only
-            "wkn": row.get("wkn"), "yahoo_symbol": yahoo, "exchange": row.get("exchange"), "currency": row.get("currency"), "sector": row.get("sector"),
+            "wkn": row.get("wkn"), "yahoo_symbol": yahoo, "exchange": row.get("exchange"), "currency": row.get("currency"),
             "updated_at": row.get("updated_at"), **{k: row.get(k) for k in NOTE_FIELDS}, "data_points": points, "current_price": (analytics or {}).get("current_price"),
             "assessment_reasons": list((decision or {}).get("decision_reasons") or []), "portfolio_constraints": list((decision or {}).get("portfolio_constraints") or []),
             "entry_rank": (entry or {}).get("rank"), "entry_score": (entry or {}).get("entry_score"), "news": {"counts": news["counts"], "events": news["events"][:2]},

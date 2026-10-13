@@ -28,6 +28,7 @@
         "Migrate-TradingCandidatePromotions.py",
         "Migrate-TradingCapitalState.py",
         "Migrate-TradingCorporateActions.py",
+        "Migrate-TradingDropSecuritySector.py",
         "Migrate-TradingFXRates.py",
         "Migrate-TradingStrategyAssignments.py",
         "Migrate-TradingSwingLifecycle.py",

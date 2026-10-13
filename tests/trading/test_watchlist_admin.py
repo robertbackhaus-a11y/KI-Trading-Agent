@@ -440,6 +440,7 @@ class ReadTests(WatchlistDbCase):
         row = self.run_tool("get_watchlist", symbol="GGG", detail=True)["rows"][0]
         for key in ("wkn", "yahoo_symbol", "data_points", "assessment_reasons", "aliases", "news", "updated_at"):
             self.assertIn(key, row)
+        self.assertNotIn("sector", row)  # the column security.sector is gone
         compact = self.run_tool("get_watchlist", symbol="GGG")["rows"][0]
         self.assertNotIn("aliases", compact)
 

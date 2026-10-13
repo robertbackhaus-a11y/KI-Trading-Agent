@@ -95,7 +95,7 @@ class CreateTests(OnboardingCase):
         row = self.security("NEWCO")
         self.assertEqual((row["id"], row["name"], row["asset_type"], row["active"]), (result["security_id"], "Newco Systems Inc", "stock", 1))
         self.assertEqual(row["id"], 123457)  # the AUTOINCREMENT id, never asked from the caller
-        for column in ("isin", "wkn", "exchange", "currency", "country", "sector", "industry"):
+        for column in ("isin", "wkn", "exchange", "currency", "country", "industry"):
             self.assertIsNone(row[column], column)  # nothing is guessed
         self.assertEqual((self.rows("source_symbols"), self.rows("watchlist")), (1, 2))
         self.untouched(before)
@@ -115,7 +115,7 @@ class CreateTests(OnboardingCase):
     def test_h_there_is_no_sector_and_none_is_assigned(self) -> None:
         self.assertNotIn("sector", self.tools_schema())
         self.onboard(dry_run=False, **ALL_FIELDS)
-        self.assertIsNone(self.security("NEWCO")["sector"])
+        self.assertNotIn("sector", self.security("NEWCO").keys())  # the column no longer exists; the sector comes from the sector map only
 
     def tools_schema(self) -> set[str]:
         import inspect

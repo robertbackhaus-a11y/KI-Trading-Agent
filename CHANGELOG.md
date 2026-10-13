@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Removed
+- The unused column `security.sector` (free text of a former import; nothing read or wrote it, the sector of the risk guards and of the news mapping comes from the sector map). New and reset databases no longer have it, the view `v_watchlist` no longer selects it, `get_watchlist` detail rows and the research prompt no longer carry it, and the new migration `Migrate-TradingDropSecuritySector.py` removes it from an existing database (dry run by default, backup copy, ids and all other fields unchanged; the old values are not copied into any sector map). `security.industry` stays. Run the migration after deploying; the sector map files are not touched.
+
 ### Changed
 - Desktop GUI: the separate "change priority" dialog and button were removed; the priority is edited inline in the table (pending until the apply button saves it), so there is a single path for it. The MCP action `set_watchlist_priority` is unchanged.
 

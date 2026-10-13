@@ -63,7 +63,6 @@ CREATE TABLE IF NOT EXISTS security (
 
     asset_type  TEXT NOT NULL DEFAULT 'stock',
 
-    sector      TEXT,
     industry    TEXT,
 
     active      INTEGER NOT NULL DEFAULT 1,
@@ -709,7 +708,6 @@ SELECT
     s.exchange,
     s.currency,
     s.country,
-    s.sector,
     s.industry,
 
     w.status,
