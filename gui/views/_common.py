@@ -11,6 +11,11 @@ from PySide6.QtWidgets import QAbstractItemView, QFormLayout, QHeaderView, QLabe
 LEVEL_COLORS = {"blocker": "#c0392b", "warning": "#b9770e", "info": "#5d6d7e"}
 
 
+def tooltip_of(text: str) -> str:
+    """The tooltip of a presented reason code (see ``viewmodels.reason_codes``), else the text itself."""
+    return getattr(text, "tip", "") or text
+
+
 def make_table(headers: list[str]) -> QTableWidget:
     table = QTableWidget(0, len(headers))
     table.setHorizontalHeaderLabels(headers)
@@ -31,7 +36,7 @@ def fill_table(table: QTableWidget, headers: list[str], rows: list[list[str]], l
         level = levels[r] if levels and r < len(levels) else ""
         for c, text in enumerate(row):
             item = QTableWidgetItem(text)
-            item.setToolTip(text)
+            item.setToolTip(tooltip_of(text))
             if level in LEVEL_COLORS:
                 item.setForeground(QBrush(QColor(LEVEL_COLORS[level])))
             table.setItem(r, c, item)
@@ -44,5 +49,6 @@ def set_form_rows(form: QFormLayout, rows: list[tuple[str, str]]) -> None:
     for label, value in rows:
         text = QLabel(value)
         text.setWordWrap(True)
+        text.setToolTip(getattr(value, "tip", ""))
         text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         form.addRow(label + ":", text)

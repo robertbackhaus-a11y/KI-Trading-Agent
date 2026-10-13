@@ -7,7 +7,7 @@ from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QFormLayout, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from ..viewmodels.portfolio import DASH, DashboardVM
-from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows
+from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows, tooltip_of
 
 
 class DashboardView(QWidget):
@@ -75,6 +75,7 @@ class DashboardView(QWidget):
         self.issues.clear()
         for level, text in vm.issues:
             item = QListWidgetItem(text)
+            item.setToolTip(tooltip_of(text))
             if level in LEVEL_COLORS:
                 item.setForeground(QBrush(QColor(LEVEL_COLORS[level])))
             self.issues.addItem(item)

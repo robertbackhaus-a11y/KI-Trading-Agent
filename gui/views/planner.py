@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QListWidget, QPushButton, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QTabWidget, QVBoxLayout, QWidget
 
 from ..viewmodels.portfolio import DASH, PlannerVM
-from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows
+from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows, tooltip_of
 
 
 class PlannerView(QWidget):
@@ -34,7 +34,7 @@ class PlannerView(QWidget):
         outer.addWidget(self.counts)
         self.tabs = QTabWidget()
         self.tables = {key: make_table(["x"]) for key in ("positions", "planned", "deferred", "candidates")}
-        for key, caption in (("positions", "Positionen / Aktionen"), ("planned", "Geplante Entries"), ("deferred", "Zurückgestellt"), ("candidates", "Kandidaten & Risiko")):
+        for key, caption in (("positions", "Positionen / Aktionen"), ("planned", "Geplante Entries"), ("deferred", "Zurückgestellt"), ("candidates", "Kandidaten && Risiko")):
             self.tabs.addTab(self.tables[key], caption)
         self.notes = QListWidget()
         self.tabs.addTab(self.notes, "Hinweise")
@@ -58,4 +58,7 @@ class PlannerView(QWidget):
         self.tabs.setTabText(1, f"Geplante Entries ({len(vm.planned.rows)})")
         self.tabs.setTabText(2, f"Zurückgestellt ({len(vm.deferred.rows)})")
         self.notes.clear()
-        self.notes.addItems(vm.notes or ["keine"])
+        for note in vm.notes or ["keine"]:
+            item = QListWidgetItem(note)
+            item.setToolTip(tooltip_of(note))
+            self.notes.addItem(item)

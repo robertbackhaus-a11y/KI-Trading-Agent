@@ -62,7 +62,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(names[:4], ["app", "app-universe", "mcp", "scheduler"])  # the existing runtime groups come first and keep their names
         self.assertEqual(names[4:], ["gui", "gui-services", "gui-viewmodels", "gui-views", "gui-requirements"])
         gui = [(g["source"], n) for g in MANIFEST["groups"] if g["name"].startswith("gui") for n in g["files"]]
-        self.assertEqual(len(gui), 3 + 9 + 4 + 7 + 1)
+        self.assertEqual(len(gui), 3 + 9 + 5 + 7 + 1)
         self.assertEqual([f for s, f in gui if not f.endswith(".py") and f != "requirements-gui.txt"], [])  # no tests, docs, venv, logs or data
         self.assertIn((".", "requirements-gui.txt"), gui)
         self.assertNotIn(".venv-gui", json.dumps(MANIFEST["groups"]))  # the GUI venv is created from requirements-gui.txt, never copied
@@ -217,7 +217,7 @@ class DeployScriptBehaviourTests(unittest.TestCase):
             for name in group["files"]:
                 self.assertEqual((self.root / group["target"] / name).read_bytes(), (ROOT / group["source"] / name).read_bytes(), name)
         gui_files = sorted(p.relative_to(self.root).as_posix() for p in (self.root / "gui").rglob("*") if p.is_file())
-        self.assertEqual(len(gui_files), 3 + 9 + 4 + 7)  # exactly the listed package files, no tests, docs or caches
+        self.assertEqual(len(gui_files), 3 + 9 + 5 + 7)  # exactly the listed package files, no tests, docs or caches
         self.assertTrue((self.root / "requirements-gui.txt").is_file())
         self.assertEqual((self.root / ".venv-gui" / "marker.txt").read_text(encoding="utf-8"), "venv stays untouched")
         # the already identical runtime files, the database and the private file are not rewritten
@@ -225,7 +225,7 @@ class DeployScriptBehaviourTests(unittest.TestCase):
         self.assertEqual({k: v for k, v in runtime_before.items() if k in runtime_after}, runtime_after)
         record = json.loads(next((self.root / "backup").glob("deploy-*")).joinpath("backup-manifest.json").read_text(encoding="utf-8-sig"))
         gui_rels = [f["rel"] for f in record["files"] if f["rel"].startswith(("gui", "requirements-gui"))]
-        self.assertEqual(len(gui_rels), 3 + 9 + 4 + 7 + 1)
+        self.assertEqual(len(gui_rels), 3 + 9 + 5 + 7 + 1)
         self.assertIn("requirements-gui.txt", gui_rels)  # plain name at the production root, not ".\\requirements-gui.txt"
 
     def test_second_deploy_finds_nothing_to_do(self) -> None:

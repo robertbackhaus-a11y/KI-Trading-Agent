@@ -9,10 +9,12 @@
 - Company-wire RSS source adapter on the existing market-intelligence pipeline (PR Newswire feeds, configurable in `universe/news_feeds_v1.json`), with per-feed health in the report and isolation of broken feeds
 - Deterministic cross-source deduplication of news (event id, URL, normalized headline within a time window); merged sources are listed as `duplicate_sources` in detail answers
 - Matching diagnostics in detail answers (`security_ids`, `matches`, `source_event_id`)
+- Readable reason-code presentation in the desktop GUI (`gui/viewmodels/reason_codes.py`): technical codes are shown as short German texts, and the hover tooltip keeps the explanation and the original code; the backend codes are unchanged
 
 ### Changed
 - Free-text attribution of wire releases requires an explicit identification (ISIN, exchange-qualified ticker or full company name); a bare ticker word never matches
 - Market-intelligence events and reports remain readable by earlier versions (new fields are optional)
+- Desktop GUI: a duplicate or contradictory display of reason codes is cleaned up (a status that equals its reason is shown once; a position that is sold or reduced no longer reads "hold")
 
 ## [0.3.0] - 2026-10-09
 

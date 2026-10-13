@@ -41,6 +41,8 @@ The commands run from the repository root. The defaults point to the production 
 | Chat | questions to a local language model that reads through the READ tools; streamed answer, optional thinking, tool status, Stop, New chat | Ollama, MCP tools |
 | Diagnostics / Settings | MCP, database and Ollama status, paths, tool classification, schema hash, last chat error, settings form, MCP restart | `database_status`, settings file |
 
+Technical reason codes (for example `STOPPED_SWING_MAX_REACHED`) are shown as a short German text; the tooltip holds the explanation and the original code. The backend codes stay unchanged, and an unknown code is shown in a readable form.
+
 ## 4. MCP client
 
 - The official `mcp` SDK starts the server as a stdio child process. The client session belongs to its own QThread with its own asyncio loop.

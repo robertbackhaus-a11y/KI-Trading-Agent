@@ -41,7 +41,7 @@ class DashboardViewModelTests(unittest.TestCase):
         self.assertTrue(pf["Cash"].startswith("30.000 €"))
         self.assertEqual(pf["External Funding verfügbar"], "Nein")
         self.assertEqual(pf["Datenbank"], "OK")
-        self.assertEqual(pl["Planner-Status"], "AVAILABLE")
+        self.assertEqual(pl["Planner-Status"], "Verfügbar")  # the code AVAILABLE, presented (the original stays in the tooltip)
         self.assertEqual(pl["Simulation (simulation_only)"], "Ja")
         self.assertEqual(pl["Orders erzeugt (orders_created)"], "Nein")
         self.assertEqual(pl["Geplante / zurückgestellte Entries"], "1 / 0")
@@ -55,8 +55,8 @@ class DashboardViewModelTests(unittest.TestCase):
     def test_blocked_candidate_is_a_deferred_entry_with_its_reason(self) -> None:
         vm = build_dashboard(BLOCKED, {"ok": True}, NOW)
         self.assertEqual(vm.planned.rows, [])
-        self.assertEqual([r[1:] for r in vm.deferred.rows], [["BBB", "BLOCKED_BY_SECTOR_CONCENTRATION"]])
-        self.assertEqual(vm.deferred.levels, ["blocker"])
+        self.assertEqual([r[1:] for r in vm.deferred.rows], [["BBB", "Sektorlimit erreicht"]])
+        self.assertEqual(vm.deferred.levels, ["blocker"])  # the level still follows the original code
         self.assertEqual(rows(vm.planner)["Geplante / zurückgestellte Entries"], "0 / 1")
 
     def test_external_funding_is_shown_from_the_result(self) -> None:
@@ -72,8 +72,8 @@ class DashboardViewModelTests(unittest.TestCase):
         envelope = copy.deepcopy(OPEN)
         envelope["result"]["global_issues"] = [{"code": "X_BLOCK", "severity": "GLOBAL_BLOCKING"}, {"code": "Y_WARN", "severity": "NON_BLOCKING_WARNING", "symbol": "AAA"}]
         levels = {text: level for level, text in build_dashboard(envelope, None, NOW).issues}
-        self.assertEqual(levels["X_BLOCK"], "blocker")
-        self.assertEqual(levels["Y_WARN (AAA)"], "warning")
+        self.assertEqual(levels["X block"], "blocker")  # unknown codes are shown readable
+        self.assertEqual(levels["Y warn (AAA)"], "warning")
 
     def test_nothing_is_computed_the_values_are_those_of_the_result(self) -> None:
         envelope = copy.deepcopy(OPEN)
@@ -127,16 +127,16 @@ class PlannerViewModelTests(unittest.TestCase):
         self.assertEqual(status, "OK")
         self.assertRegex(sector, r"^TECH: 5,0 % → 14,\d % \(Limit 30 %\)$")
         self.assertRegex(cand[header.index("Stärkste Korrelation")], r"^AAA ρ=-?\d,\d\d \(\d+ Tage\)$")
-        self.assertEqual(cand[header.index("Status")], "ENTRY_READY")
+        self.assertEqual(cand[header.index("Status")], "Einstieg möglich")
 
     def test_blocked_candidate_is_marked_and_explained(self) -> None:
         vm = build_planner(BLOCKED, NOW)
         header = vm.candidates.headers
         cand = next(r for r in vm.candidates.rows if r[1] == "BBB")
-        self.assertEqual(cand[header.index("Sektor-Status")], "BLOCKED")
+        self.assertEqual(cand[header.index("Sektor-Status")], "Blockiert")
         self.assertRegex(cand[header.index("Sektor (aktuell → nach Kauf)")], r"^TECH: 40,0 % → 4\d,\d % \(Limit 30 %\)$")
         self.assertEqual(vm.candidates.levels[vm.candidates.rows.index(cand)], "blocker")
-        self.assertEqual([r[-1] for r in vm.deferred.rows], ["BLOCKED_BY_SECTOR_CONCENTRATION"])
+        self.assertEqual([r[-1] for r in vm.deferred.rows], ["Sektorlimit erreicht"])
         self.assertEqual(vm.deferred.levels, ["blocker"])
         self.assertEqual(vm.planned.rows, [])
 
@@ -145,7 +145,7 @@ class PlannerViewModelTests(unittest.TestCase):
         self.assertEqual(vm.positions.headers[:3], ["Symbol", "Strategie", "Aktion"])
         row = next(r for r in vm.positions.rows if r[0] == "AAA")
         self.assertEqual((row[2], row[1]), ("HOLD", "swing"))
-        self.assertIn("HOLD_TEST", row[6])
+        self.assertIn("Hold test", row[6])  # the synthetic reason is an unknown code: readable fallback
 
     def test_a_blocked_add_shows_its_plan_block(self) -> None:
         envelope = copy.deepcopy(OPEN)
@@ -160,7 +160,7 @@ class PlannerViewModelTests(unittest.TestCase):
         vm = build_planner(envelope, NOW)
         row = next(r for r in vm.positions.rows if r[0] == "AAA")
         self.assertEqual(row[2], "ADD")
-        self.assertEqual(row[7], "BLOCKED_BY_SECTOR_CONCENTRATION")
+        self.assertEqual(row[7], "Sektorlimit erreicht")
         self.assertIn("28,0 % → 31,4 %", row[8])
         self.assertIn("ρ=0,31", row[9])
         self.assertEqual(vm.positions.levels[vm.positions.rows.index(row)], "blocker")

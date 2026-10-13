@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from .reason_codes import Presented, format_reason_code, format_reason_codes, format_status_and_reasons
+
 DASH = "—"
 ACTION_ORDER = ("SELL", "TRIM", "ADD", "BUY", "HOLD")
 
@@ -97,13 +99,18 @@ def _text(value: Any) -> str:
     return DASH if value in (None, "") else str(value)
 
 
+def _decorated(shown: Presented, prefix: str = "", suffix: str = "") -> Presented:
+    """``shown`` with text around it; the tooltip of the code stays."""
+    return Presented(f"{prefix}{shown}{suffix}", shown.tip)
+
+
 def unwrap(envelope: Any) -> tuple[Optional[dict], str]:
     """``(result, error)`` of a ``run_trading_orchestrator`` response envelope."""
     env = _d(envelope)
     if not env:
         return None, "Keine Daten"
     if env.get("ok") is False:
-        return None, str(env.get("message") or env.get("error") or "Orchestrator meldet einen Fehler")
+        return None, str(env.get("message") or (format_reason_code(env["error"]) if env.get("error") else "Orchestrator meldet einen Fehler"))
     result = env.get("result")
     if not isinstance(result, dict):
         return None, "Orchestrator-Antwort ohne Ergebnis"
@@ -141,20 +148,20 @@ def build_dashboard(envelope: Any, db_status: Any = None, refreshed: Optional[da
         ("Long-Term", fmt_pct(ctx.get("long_term_weight_pct")) + target(lt_t)),
         ("Cash", fmt_eur(ctx.get("cash_available")) + (f" (Stand {ctx['capital_state_as_of']})" if ctx.get("capital_state_as_of") else "")),
         ("External Funding verfügbar", fmt_bool(external)),
-        ("Allokations-Hinweise", ", ".join(map(str, _l(ctx.get("allocation_guardrails")))) or DASH),
+        ("Allokations-Hinweise", format_reason_codes(_l(ctx.get("allocation_guardrails")))),
         ("Datenbank", DASH if not db else ("OK" if db.get("ok") else "Fehler")),
     ]
     planned, deferred = _l(plan.get("planned_entries")), _l(plan.get("deferred_entries"))
     summary = _d(result.get("action_summary"))
     vm.simulation_only, vm.orders_created = plan.get("simulation_only"), plan.get("orders_created")
     vm.planner = [
-        ("Planner-Status", _text(plan.get("status"))),
+        ("Planner-Status", format_reason_code(plan.get("status"))),
         ("Simulation (simulation_only)", fmt_bool(vm.simulation_only)),
         ("Orders erzeugt (orders_created)", fmt_bool(vm.orders_created)),
-        ("Globaler Status", _text(result.get("global_status"))),
+        ("Globaler Status", format_reason_code(result.get("global_status"))),
         ("Aktionen der Engine", " · ".join(f"{k} {summary[k]}" for k in ACTION_ORDER + ("PROMOTE",) if isinstance(summary.get(k), int)) or DASH),
         ("Geplante / zurückgestellte Entries", f"{len(planned)} / {len(deferred)}"),
-        ("Begrenzung", _text(capital.get("limiting_guard"))),
+        ("Begrenzung", format_reason_code(capital.get("limiting_guard"))),
         ("Externes Kapital für den Plan", fmt_eur(capital.get("external_funding_required_eur")) if external else "nicht nötig (kein External Funding)"),
     ]
     vm.planned = Table(["Rang", "Symbol", "Stück", "Preis", "Kapital", "Gewicht", "Swing danach", "Extern"], [
@@ -162,14 +169,14 @@ def build_dashboard(envelope: Any, db_status: Any = None, refreshed: Optional[da
          fmt_pct(e.get("expected_weight_pct")), fmt_pct(e.get("resulting_swing_allocation_pct")), fmt_eur(e.get("external_funding_eur"))]
         for e in planned if isinstance(e, dict)
     ])
-    vm.deferred = Table(["Rang", "Symbol", "Grund"], [[_text(e.get("rank")), _text(e.get("symbol")), _text(e.get("reason"))] for e in deferred if isinstance(e, dict)],
+    vm.deferred = Table(["Rang", "Symbol", "Grund"], [[_text(e.get("rank")), _text(e.get("symbol")), format_reason_code(e.get("reason"))] for e in deferred if isinstance(e, dict)],
                         ["blocker" if str(e.get("reason", "")).startswith("BLOCKED_BY_") else "" for e in deferred if isinstance(e, dict)])
     for issue in _l(result.get("global_issues")):
         if isinstance(issue, dict):
             who = f" ({issue['symbol']})" if issue.get("symbol") else ""
-            vm.issues.append((_issue_level(issue.get("severity")), f"{_text(issue.get('code'))}{who}"))
+            vm.issues.append((_issue_level(issue.get("severity")), _decorated(format_reason_code(issue.get("code")), suffix=who)))
     for warning in _l(plan.get("warnings")):
-        vm.issues.append(("info", f"Planner: {warning}"))
+        vm.issues.append(("info", _decorated(format_reason_code(warning), prefix="Planner: ")))
     if not db_status and db_status is not None:
         vm.issues.append(("warning", "database_status ohne Antwort"))
     return vm
@@ -182,12 +189,12 @@ def _risk_cells(risk: Any) -> list[str]:
     if not r:
         return [DASH] * 5
     s, c = _d(r.get("sector")), _d(r.get("correlation"))
-    sector = f"{_text(s.get('sector'))}: {fmt_pct(s.get('current_weight_pct'))} → {fmt_pct(s.get('projected_weight_pct'))} (Limit {fmt_pct(s.get('limit_pct'), 0)})" if s.get("sector") else _text(s.get("status"))
+    sector = f"{_text(s.get('sector'))}: {fmt_pct(s.get('current_weight_pct'))} → {fmt_pct(s.get('projected_weight_pct'))} (Limit {fmt_pct(s.get('limit_pct'), 0)})" if s.get("sector") else format_reason_code(s.get("status"))
     top = _d(c.get("strongest"))
-    corr = f"{_text(top.get('symbol'))} ρ={_de(top['correlation'], 2)} ({top.get('common_days')} Tage)" if _num(top.get("correlation")) is not None else _text(c.get("status"))
+    corr = f"{_text(top.get('symbol'))} ρ={_de(top['correlation'], 2)} ({top.get('common_days')} Tage)" if _num(top.get("correlation")) is not None else format_reason_code(c.get("status"))
     cluster = fmt_pct(c.get("cluster_projected_weight_pct")) if c.get("cluster_projected_weight_pct") is not None else DASH
     members = ", ".join(map(str, _l(c.get("cluster_members")))) or DASH
-    return [_text(s.get("status")), sector, corr, cluster, members]
+    return [format_reason_code(s.get("status")), sector, corr, cluster, members]
 
 
 def build_planner(envelope: Any, refreshed: Optional[datetime] = None) -> PlannerVM:
@@ -199,7 +206,7 @@ def build_planner(envelope: Any, refreshed: Optional[datetime] = None) -> Planne
     vm.available = True
     plan = _d(result.get("portfolio_action_plan"))
     vm.header = [
-        ("Planner-Status", _text(plan.get("status"))),
+        ("Planner-Status", format_reason_code(plan.get("status"))),
         ("Simulation (simulation_only)", fmt_bool(plan.get("simulation_only"))),
         ("Orders erzeugt (orders_created)", fmt_bool(plan.get("orders_created"))),
         ("Bewertungsdatum", _text(result.get("evaluation_as_of"))),
@@ -218,7 +225,7 @@ def build_planner(envelope: Any, refreshed: Optional[datetime] = None) -> Planne
         block = pa.get("plan_block_reason")
         rows.append([
             _text(record.get("symbol")), _text(record.get("strategy")), _text(action), fmt_qty(record.get("position_quantity")), fmt_qty(decision.get("action_quantity")),
-            _text(record.get("priority")), ", ".join(map(str, _l(decision.get("reasons")))) or DASH, _text(block) if block else "",
+            _text(record.get("priority")), format_reason_codes(_l(decision.get("reasons")), action=action), format_reason_code(block) if block else "",
             *(_risk_cells(pa.get("risk"))[1:3] if pa.get("risk") else [DASH, DASH]),
         ])
         levels.append("blocker" if block else ("warning" if action in ("SELL", "TRIM") else ""))
@@ -230,15 +237,15 @@ def build_planner(envelope: Any, refreshed: Optional[datetime] = None) -> Planne
         for e in planned
     ])
     deferred = [e for e in _l(plan.get("deferred_entries")) if isinstance(e, dict)]
-    vm.deferred = Table(["Rang", "Symbol", "Score", "Grund"], [[_text(e.get("rank")), _text(e.get("symbol")), fmt_score(e.get("entry_score")), _text(e.get("reason"))] for e in deferred],
+    vm.deferred = Table(["Rang", "Symbol", "Score", "Grund"], [[_text(e.get("rank")), _text(e.get("symbol")), fmt_score(e.get("entry_score")), format_reason_code(e.get("reason"))] for e in deferred],
                         ["blocker" if str(e.get("reason", "")).startswith("BLOCKED_BY_") else "" for e in deferred])
     cand_rows, cand_levels = [], []
     for c in (x for x in _l(plan.get("entry_candidates")) if isinstance(x, dict)):
         risk = _risk_cells(c.get("risk"))
-        cand_rows.append([_text(c.get("rank")), _text(c.get("symbol")), _text(c.get("entry_status")), fmt_score(c.get("entry_score")),
-                          ", ".join(map(str, _l(c.get("reason_codes")))) or DASH, *risk])
+        status, reasons = format_status_and_reasons(c.get("entry_status"), _l(c.get("reason_codes")))
+        cand_rows.append([_text(c.get("rank")), _text(c.get("symbol")), status, fmt_score(c.get("entry_score")), reasons, *risk])
         blocked = _d(_d(c.get("risk")).get("sector")).get("status") == "BLOCKED" or _d(_d(c.get("risk")).get("correlation")).get("status") == "BLOCKED"
         cand_levels.append("blocker" if blocked else "")
     vm.candidates = Table(["Rang", "Symbol", "Status", "Score", "Codes", "Sektor-Status", "Sektor (aktuell → nach Kauf)", "Stärkste Korrelation", "Cluster nach Kauf", "Cluster"], cand_rows, cand_levels)
-    vm.notes = [str(w) for w in _l(plan.get("warnings"))]
+    vm.notes = [format_reason_code(w) for w in _l(plan.get("warnings"))]
     return vm

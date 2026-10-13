@@ -41,6 +41,8 @@ Die Befehle laufen im Repository-Stammordner. Die Standardwerte zeigen auf die P
 | Chat | Fragen an ein lokales Sprachmodell, das über die READ-Tools liest; gestreamte Antwort, optionales Thinking, Tool-Status, Stop, Neuer Chat | Ollama, MCP-Tools |
 | Diagnostics / Settings | MCP-, Datenbank- und Ollama-Status, Pfade, Tool-Klassifizierung, Schema-Hash, letzter Chat-Fehler, Einstellungsformular, MCP-Neustart | `database_status`, Einstellungsdatei |
 
+Technische Reason Codes (z. B. `STOPPED_SWING_MAX_REACHED`) werden als kurzer deutscher Text angezeigt; der Tooltip enthält die Erklärung und den Originalcode. Die Backend-Codes bleiben unverändert, und ein unbekannter Code wird lesbar aufbereitet angezeigt.
+
 ## 4. MCP-Client
 
 - Das offizielle `mcp`-SDK startet den Server als stdio-Kindprozess. Die Client-Session gehört einem eigenen QThread mit eigenem asyncio-Loop.

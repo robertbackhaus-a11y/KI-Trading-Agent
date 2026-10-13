@@ -127,6 +127,7 @@
         "__init__.py",
         "chat.py",
         "portfolio.py",
+        "reason_codes.py",
         "tasks.py"
       ]
     },

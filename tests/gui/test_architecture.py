@@ -33,7 +33,7 @@ class ArchitectureTests(unittest.TestCase):
         names = {str(p.relative_to(GUI)).replace("\\", "/") for p in files()}
         self.assertEqual(names - {"__init__.py", "services/__init__.py", "viewmodels/__init__.py", "views/__init__.py"}, {
             "__main__.py", "app.py", "services/background.py", "services/chat_service.py", "services/mcp_client.py", "services/ollama_client.py", "services/settings.py",
-            "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/portfolio.py", "viewmodels/tasks.py",
+            "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/portfolio.py", "viewmodels/reason_codes.py", "viewmodels/tasks.py",
             "views/_common.py", "views/chat.py", "views/dashboard.py", "views/diagnostics.py", "views/planner.py", "views/tasks.py",
         })
         self.assertFalse((GUI / "controllers").exists())
