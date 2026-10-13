@@ -29,7 +29,7 @@ from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.tasks import build_task_rows
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
-from .viewmodels.watchlist_edit import describe_strategy, priority_saved, strategy_saved
+from .viewmodels.watchlist_edit import describe_sector, describe_strategy, priority_saved, sector_saved, strategy_saved
 from .views.chat import ChatView
 from .views.dashboard import DashboardView
 from .views.diagnostics import DiagnosticsView
@@ -265,12 +265,14 @@ class MainWindow(QMainWindow):
 
     def apply_watchlist_edit(self, security_id: int, changes: dict) -> None:
         """"Änderung übernehmen" of one row: the strategy first, the priority only if that succeeded; a failure stops the sequence.  The list is reloaded afterwards."""
-        self.log.info("Watchlist-Änderung angefordert: %s", "+".join(k for k in ("strategy", "priority") if k in changes))  # no values in the log
+        self.log.info("Watchlist-Änderung angefordert: %s", "+".join(k for k in ("strategy", "priority", "sector") if k in changes))  # no values in the log
         steps = []
         if "strategy" in changes:
             steps.append(("strategy", "set_security_strategy", {"security_id": int(security_id), "strategy": changes["strategy"]}))
         if "priority" in changes:
             steps.append(("priority", "set_watchlist_priority", {"security_id": int(security_id), "priority": changes["priority"]}))
+        if "sector" in changes:
+            steps.append(("sector", "set_security_sector", {"security_id": int(security_id), "sector": changes["sector"]}))
         saved: set[str] = set()
         lines: list[str] = []
 
@@ -293,6 +295,8 @@ class MainWindow(QMainWindow):
             def done(res: McpResult) -> None:
                 if field == "strategy":
                     ok, message = strategy_saved(res.tool_ok, res.data), describe_strategy(res.tool_ok, res.data, res.message)
+                elif field == "sector":
+                    ok, message = sector_saved(res.tool_ok, res.data), describe_sector(res.tool_ok, res.data, res.message)
                 else:
                     ok, message = priority_saved(res.tool_ok, res.data), describe_action(res.tool_ok, res.data, res.message)
                     if ok:

@@ -199,16 +199,16 @@ class EditWindowTests(unittest.TestCase):
         self.assertFalse(self.view.apply_button.isEnabled())
         self.choose_strategy("CCC", "Swing")
         self.assertEqual(self.cell("CCC", 2), "Swing")
-        self.assertEqual(self.cell("CCC", 14), "Geändert")
+        self.assertEqual(self.cell("CCC", 15), "Geändert")
         self.assertTrue(self.view.table.item(self.row_of("CCC"), 2).font().bold())
         self.assertEqual(self.view.pending(), {3: {"strategy": "swing"}})
         self.select("CCC")
         self.assertTrue(self.view.apply_button.isEnabled())
         self.assertTrue(self.view.discard_button.isEnabled())
-        self.assertEqual(self.cell("BBB", 14), "")  # only the changed row is marked
+        self.assertEqual(self.cell("BBB", 15), "")  # only the changed row is marked
         self.choose_strategy("CCC", "Keine")  # back to the backend value ends the pending change
         self.assertEqual(self.view.pending(), {})
-        self.assertEqual(self.cell("CCC", 14), "")
+        self.assertEqual(self.cell("CCC", 15), "")
 
     def test_discard_resets_the_row_without_a_request(self) -> None:
         self.select("CCC")
@@ -226,7 +226,7 @@ class EditWindowTests(unittest.TestCase):
         self.select("CCC")
         reads = self.reads()
         self.view.apply_button.click()
-        self.assertTrue(pump(15, lambda: self.cell("CCC", 14) == "" and self.reads() > reads and self.cell("CCC", 2) == "Swing"))
+        self.assertTrue(pump(15, lambda: self.cell("CCC", 15) == "" and self.reads() > reads and self.cell("CCC", 2) == "Swing"))
         self.assertEqual(self.writes(), [("set_security_strategy", {"security_id": 3, "strategy": "swing"})])
         self.assertIn("Strategie gespeichert.", self.view.message.text())
         self.assertEqual(self.view.pending(), {})
@@ -237,7 +237,7 @@ class EditWindowTests(unittest.TestCase):
         self.enter_priority("CCC", "20")
         self.select("CCC")
         self.view.apply_button.click()
-        self.assertTrue(pump(15, lambda: self.cell("CCC", 3) == "20" and self.cell("CCC", 14) == ""))
+        self.assertTrue(pump(15, lambda: self.cell("CCC", 3) == "20" and self.cell("CCC", 15) == ""))
         self.assertEqual(self.writes(), [("set_watchlist_priority", {"security_id": 3, "priority": 20})])
         self.assertIn("Priorität gespeichert.", self.view.message.text())
 
@@ -247,7 +247,7 @@ class EditWindowTests(unittest.TestCase):
         self.assertEqual(self.view.pending(), {3: {"priority": None}})
         self.select("CCC")
         self.view.apply_button.click()
-        self.assertTrue(pump(15, lambda: self.cell("CCC", 3) == "—" and self.cell("CCC", 14) == ""))
+        self.assertTrue(pump(15, lambda: self.cell("CCC", 3) == "—" and self.cell("CCC", 15) == ""))
         self.assertEqual(self.writes(), [("set_watchlist_priority", {"security_id": 3, "priority": None})])
 
     def test_a_held_row_keeps_an_editable_priority_but_never_sends_a_strategy_write(self) -> None:
@@ -256,7 +256,7 @@ class EditWindowTests(unittest.TestCase):
         self.assertEqual(self.view.pending(), {1: {"priority": 60}})  # the strategy of a held row cannot even become pending
         self.select("AAA")
         self.view.apply_button.click()
-        self.assertTrue(pump(15, lambda: self.cell("AAA", 3) == "60" and self.cell("AAA", 14) == ""))
+        self.assertTrue(pump(15, lambda: self.cell("AAA", 3) == "60" and self.cell("AAA", 15) == ""))
         self.assertEqual(self.writes(), [("set_watchlist_priority", {"security_id": 1, "priority": 60})])
         self.assertEqual(self.cell("AAA", 2), "Swing")
 
@@ -267,7 +267,7 @@ class EditWindowTests(unittest.TestCase):
         self.choose_strategy("CCC", "Swing")
         self.select("CCC")
         self.view.apply_button.click()
-        self.assertTrue(pump(15, lambda: self.cell("CCC", 2) == "Swing" and self.cell("CCC", 3) == "30" and self.cell("CCC", 14) == ""))
+        self.assertTrue(pump(15, lambda: self.cell("CCC", 2) == "Swing" and self.cell("CCC", 3) == "30" and self.cell("CCC", 15) == ""))
         self.assertEqual([w[0] for w in self.writes()], ["set_security_strategy", "set_watchlist_priority"])
         text = re.sub(r"<[^>]+>", " ", self.view.message.text())
         self.assertIn("Strategie gespeichert.", text)
@@ -281,7 +281,7 @@ class EditWindowTests(unittest.TestCase):
         self.view.apply_button.click()
         self.assertTrue(pump(15, lambda: "aktiven Campaign" in self.view.message.text()))
         self.assertFalse(RAW.search(re.sub(r"<[^>]+>", " ", self.view.message.text())))
-        self.assertTrue(pump(15, lambda: self.cell("BBB", 14) == "Geändert"))  # still pending: nothing was saved
+        self.assertTrue(pump(15, lambda: self.cell("BBB", 15) == "Geändert"))  # still pending: nothing was saved
         self.assertEqual(self.view.pending(), {2: {"strategy": "swing"}})
         self.assertIn("Code: BLOCKED_ACTIVE_CAMPAIGN", self.view.message.toolTip())
 
@@ -295,7 +295,7 @@ class EditWindowTests(unittest.TestCase):
         self.assertTrue(pump(15, lambda: "nicht gespeichert" in self.view.message.text()))
         self.assertEqual([w[0] for w in self.writes()], ["set_security_strategy"])  # the priority was not sent blindly
         self.assertNotIn("gespeichert.", re.sub("nicht gespeichert", "", self.view.message.text()))
-        self.assertTrue(pump(15, lambda: self.cell("CCC", 14) == "Geändert"))
+        self.assertTrue(pump(15, lambda: self.cell("CCC", 15) == "Geändert"))
         self.assertEqual(self.view.pending(), {3: {"strategy": "long_term", "priority": 40}})
 
     def test_a_partial_success_keeps_only_the_failed_part_pending(self) -> None:
@@ -305,7 +305,7 @@ class EditWindowTests(unittest.TestCase):
         self.select("CCC")
         with mock.patch.object(self.window.mcp, "call_action", wraps=self.window.mcp.call_action) as spy:
             self.view.apply_button.click()
-            self.assertTrue(pump(15, lambda: self.cell("CCC", 3) == "41" and self.cell("CCC", 14) == ""))
+            self.assertTrue(pump(15, lambda: self.cell("CCC", 3) == "41" and self.cell("CCC", 15) == ""))
         self.assertEqual([c.args[0] for c in spy.call_args_list], ["set_security_strategy", "set_watchlist_priority"])
 
     # AE
@@ -349,8 +349,8 @@ class EditWindowTests(unittest.TestCase):
         table = self.view.table
         for column, order in ((0, Qt.SortOrder.DescendingOrder), (4, Qt.SortOrder.AscendingOrder), (14, Qt.SortOrder.DescendingOrder), (0, Qt.SortOrder.AscendingOrder)):
             table.sortItems(column, order)
-            self.assertEqual((self.cell("CCC", 2), self.cell("CCC", 14)), ("Swing", "Geändert"))  # the marker travels with its row
-            self.assertEqual(self.cell("AAA", 14), "")
+            self.assertEqual((self.cell("CCC", 2), self.cell("CCC", 15)), ("Swing", "Geändert"))  # the marker travels with its row
+            self.assertEqual(self.cell("AAA", 15), "")
         self.view.search.setText("ccc")
         self.assertEqual([table.item(r, 0).text() for r in range(table.rowCount())], ["CCC"])
         self.view.search.setText("")

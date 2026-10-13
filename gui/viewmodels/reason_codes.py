@@ -179,6 +179,13 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "BLOCKED_HELD_POSITION": ("Gehaltene Position", "Bei einer aktuell gehaltenen Position hängt die Strategie am Campaign-Ablauf und wird hier nicht isoliert geändert."),
     "BLOCKED_ACTIVE_CAMPAIGN": ("Aktive Campaign", "Für das Wertpapier läuft eine offene Swing-Campaign; ihre Strategie wird hier nicht geändert."),
     "ASSIGNMENT_HISTORY_UNCLEAR": ("Historie unklar", "Die Strategiezuordnungen des Wertpapiers sind nicht eindeutig (zum Beispiel mehrere aktive oder zukünftige); es wurde nichts geändert."),
+    # -- sector edit (the answers of set_security_sector) ---------------------------------------------------------------------------
+    "SECTOR_SET": ("Sektor gespeichert", "Die Sektor-Zuordnung wurde in der lokalen Sector-Map gespeichert; die öffentliche Sector-Map blieb unverändert."),
+    "SECTOR_OVERRIDE_REMOVED": ("Lokale Zuordnung entfernt", "Der lokale Eintrag wurde entfernt; es gilt wieder der Wert der öffentlichen Sector-Map, falls es einen gibt."),
+    "INVALID_SECTOR": ("Unbekannter Sektor", "Es sind nur vorhandene Sektor-Gruppen erlaubt; es wurde nichts geschrieben."),
+    "NO_MAP_KEY": ("Kein Schlüssel", "Das Wertpapier hat weder ein Yahoo-Symbol noch ein Symbol und kann daher nicht in der Sector-Map geführt werden."),
+    "SECTOR_MAP_UNAVAILABLE": ("Sector-Map fehlt", "Die öffentliche Sector-Map ist nicht lesbar; es wurde nichts geändert."),
+    "LOCAL_MAP_INVALID": ("Lokale Map ungültig", "Die lokale Sector-Map ist ungültig (zum Beispiel kein gültiges JSON); es wurde nichts geändert."),
     # -- named explicitly for the GUI (not produced by the orchestrator / planner path) -----------------------------------------
     "BLOCKED_BY_EXISTING_POSITION": ("Position bereits vorhanden", "Ein neuer Einstieg wird nicht geplant, weil bereits eine Position in diesem Wertpapier besteht."),
     "STRATEGY_ASSIGNMENT_REQUIRED": ("Strategiezuordnung fehlt", "Für das Wertpapier ist noch nicht festgelegt, ob es als Swing- oder Long-Term-Position geführt werden soll."),

@@ -1071,7 +1071,9 @@ class Tools:
         finally:
             conn.close()
         intelligence, _reason, _ = intelligence_module.read_latest_report(self._market_intelligence_report_directory())
-        view = view_module.build_watchlist(rows=rows, ranking=ranking, decisions=decisions, engine=engine, mi=intelligence, symbol_map=symbol_map, alias_index=alias_index)
+        sector_layers = self._optional(lambda: self._load_runtime_trading_module("sector_assignment").read_layers())  # a missing or broken map only leaves the sectors empty
+        view = view_module.build_watchlist(rows=rows, ranking=ranking, decisions=decisions, engine=engine, mi=intelligence, symbol_map=symbol_map, alias_index=alias_index,
+                                           sector_layers=sector_layers)
         return view_module.query_watchlist(view, status=status, strategy=strategy, symbol=symbol, limit=limit, detail=detail, table=table)
 
     async def get_watchlist(
@@ -1142,6 +1144,31 @@ class Tools:
         Results: PRIORITY_SET, NOT_FOUND, INVALID_IDENTIFIER, INVALID_PRIORITY, ERROR.
         """
         return await self._watchlist_write("set_watchlist_priority", security_id, priority)
+
+    def _set_security_sector_sync(self, security_id, sector) -> dict:
+        assignment = self._load_runtime_trading_module("sector_assignment")
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000;")
+            return assignment.set_security_sector(conn, security_id, sector)
+        finally:
+            conn.close()
+
+    async def set_security_sector(self, security_id: int, sector: str | None) -> dict:
+        """ACTION (writes only the local sector map sector_map_local.json, never the database; for the desktop GUI only): set or remove the local sector entry of ONE security.
+
+        sector must be an EXISTING sector group (of sector_map_v1.json or of the local map) or null: null removes the local entry, so the public sector
+        applies again (or none); a sector equal to the public one also just removes the local entry. A held position or an open campaign does not block it
+        (a classification, not a lifecycle change). Results: SECTOR_SET, SECTOR_OVERRIDE_REMOVED, UNCHANGED, NOT_FOUND, INVALID_IDENTIFIER, INVALID_SECTOR,
+        NO_MAP_KEY, SECTOR_MAP_UNAVAILABLE, LOCAL_MAP_INVALID, ERROR. sector_map_v1.json is never changed; the previous local file is kept as .bak.
+
+        :param security_id: the security_id of the Security Master
+        :param sector: an existing sector group, or null to remove the local entry
+        """
+        try:
+            return await asyncio.to_thread(self._set_security_sector_sync, security_id, sector)
+        except Exception as exc:
+            return {"ok": False, "operation": "set_security_sector", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
     def _set_security_strategy_sync(self, security_id, strategy) -> dict:
         admin = self._load_runtime_trading_module("strategy_admin")

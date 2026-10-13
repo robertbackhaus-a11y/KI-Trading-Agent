@@ -174,7 +174,7 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(tp.is_read("get_watchlist"))
 
     def test_ag_the_new_actions_are_actions(self) -> None:
-        for name in ("add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"):
+        for name in ("add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"):
             self.assertEqual(tp.classify(name), tp.ACTION, name)
             self.assertFalse(tp.is_read(name), name)
             self.assertTrue(tp.is_gui_action(name), name)
@@ -182,7 +182,7 @@ class PolicyTests(unittest.TestCase):
                 tp.require_read(name)
 
     def test_ah_nothing_else_may_be_triggered_by_the_gui(self) -> None:
-        self.assertEqual(tp.GUI_ACTIONS, {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"})
+        self.assertEqual(tp.GUI_ACTIONS, {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"})
         for name in ("sql_execute", "approve_swing_promotion", "brand_new_tool", "get_watchlist", "database_status", "", "ADD_WATCHLIST_CANDIDATE"):
             self.assertFalse(tp.is_gui_action(name), name)
         self.assertEqual(tp.classify("brand_new_tool"), tp.ACTION)

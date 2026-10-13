@@ -84,7 +84,7 @@ class ManifestTests(unittest.TestCase):
         spec.loader.exec_module(module)
         public = [name for name, _f in inspect.getmembers(module.Tools, inspect.isfunction) if not name.startswith("_")]
         self.assertEqual(MANIFEST["expected_tool_count"], len(public))
-        self.assertEqual(MANIFEST["expected_tool_count"], 21)  # the 15 earlier tools, the four watchlist tools, onboard_security and set_security_strategy
+        self.assertEqual(MANIFEST["expected_tool_count"], 22)  # the 15 earlier tools, the four watchlist tools, onboard_security, set_security_strategy and set_security_sector
 
     def test_script_never_registers_tasks_runs_collectors_or_migrates(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")

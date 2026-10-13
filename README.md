@@ -17,7 +17,7 @@ The agent is MCP-based and not tied to a particular front end (any MCP-capable L
 Versioned in this repository: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) and
 `scheduler\Manage-TradingTasks.ps1` (management of the scheduled tasks).
 
-Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 21 tools)
+Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 22 tools)
 → runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
 
 This repository contains code only. The database, backups, audit/candidate JSON files,
@@ -35,7 +35,7 @@ python -m venv .venv
 The tests use only the standard library's `unittest` (plus the runtime packages above):
 `.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"`.
 
-The optional desktop GUI (`gui/`, development status, cockpit with Dashboard, Planner, Watchlist, Tasks and a chat to a local Ollama model that can only call READ tools; the Watchlist page adds, removes and re-prioritizes watchlist entries through three narrow MCP tools, edits strategy and priority inline with an explicit save (not for held positions) and can create one new security in the Security Master from explicitly entered values, after a dry run) has its own environment and its own pinned
+The optional desktop GUI (`gui/`, development status, cockpit with Dashboard, Planner, Watchlist, Tasks and a chat to a local Ollama model that can only call READ tools; the Watchlist page adds, removes and re-prioritizes watchlist entries through three narrow MCP tools, edits strategy, priority and the sector group inline with an explicit save (the strategy not for held positions) and can create one new security in the Security Master from explicitly entered values, after a dry run) has its own environment and its own pinned
 `requirements-gui.txt` (`PySide6-Essentials` and `mcp`); the runtime environment above does not change. See
 [docs/gui.en.md](docs/gui.en.md) (German: [docs/gui.de.md](docs/gui.de.md)).
 On the production machine it starts from the desktop shortcut "KI TA" (target `pythonw.exe -m gui` of the GUI environment).
@@ -47,7 +47,7 @@ This README, the changelog, the contributing guide and the security policy are E
 
 | Topic | English | Deutsch |
 |---|---|---|
-| Queries and examples (21 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
+| Queries and examples (22 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
 | Architecture reference | [trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) | [trading-agent-architecture.de.md](docs/trading-agent-architecture.de.md) |
 | Watchlist candidate decision status | [trading-candidate-decision.en.md](docs/trading-candidate-decision.en.md) | [trading-candidate-decision.de.md](docs/trading-candidate-decision.de.md) |
 | Watchlist strategy suggestion | [trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) | [trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md) |
@@ -71,7 +71,7 @@ powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\
 - **Backups:** replaced files go to `backup\deploy-<timestamp>\` (with `backup-manifest.json`); the database copy is made through the SQLite backup API to `data\trading.db.bak-deploy-<timestamp>`.
 - **Rollback:** copies back only the files saved there; the database is restored only with an explicit `-RestoreDb` (a safety copy `trading.db.bak-pre-rollback-<timestamp>` is made first).
 - **After every deploy** restart running MCP processes or the front end (Python modules are cached per process). The scheduler is not re-registered, no collector is started, and there is no schema migration.
-- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched; if it is missing, only a warning is printed.
+- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched by the deploy (only the GUI action `set_security_sector` writes it); if it is missing, only a warning is printed.
 - **Desktop GUI:** the manifest groups `gui*` copy the package `gui\` and `requirements-gui.txt` to the production root; the GUI environment `.venv-gui` is not copied but created from `requirements-gui.txt` (see [docs/gui.en.md](docs/gui.en.md)).
 
 ## Architecture

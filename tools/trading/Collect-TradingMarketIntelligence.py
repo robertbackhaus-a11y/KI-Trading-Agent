@@ -34,6 +34,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import discovery_report  # noqa: E402
+import sector_assignment  # noqa: E402
 from intelligence_report import build_report, query_report, render_report_de, write_report  # noqa: E402
 from market_intelligence import FEEDS, build_market_intelligence, load_db_context, load_news_feeds, load_sector_map, parse_feed, parse_feed_detailed  # noqa: E402
 from strategy_config import MarketIntelligenceConfig  # noqa: E402
@@ -53,12 +54,8 @@ def read_sector_map(path: Path) -> dict[str, str]:
     """Sector map file plus the optional, not versioned ``sector_map_local.json`` next to it (own portfolio/watchlist symbols)."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     local = path.with_name("sector_map_local.json")
-    if local.is_file():
-        sectors = {sector: list(symbols) for sector, symbols in (payload.get("sectors") or {}).items()}
-        for sector, symbols in (json.loads(local.read_text(encoding="utf-8")).get("sectors") or {}).items():
-            sectors.setdefault(sector, []).extend(symbols)
-        payload = {**payload, "sectors": sectors}
-    return load_sector_map(payload)
+    local_payload = json.loads(local.read_text(encoding="utf-8")) if local.is_file() else None
+    return load_sector_map(sector_assignment.merged_payload(payload, local_payload))  # a local entry overrides the public one
 
 
 def fetch_url(url: str) -> bytes:

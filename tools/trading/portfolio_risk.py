@@ -17,7 +17,6 @@ securities with too few common trading days (or stale or missing prices) is left
 
 from __future__ import annotations
 
-import json
 import math
 import sqlite3
 from dataclasses import dataclass, field
@@ -47,19 +46,10 @@ class RiskInputs:
 
 # --------------------------------------------------------------------------- loading
 def read_sector_map(path: Path = DEFAULT_SECTOR_MAP) -> dict[str, str]:
-    """``{YAHOO_SYMBOL: SECTOR}`` from the versioned map plus the optional, not versioned ``sector_map_local.json`` next to it."""
-    sectors: dict[str, list[str]] = {}
-    for candidate in (path, path.with_name("sector_map_local.json")):
-        if candidate.is_file():
-            for sector, symbols in (json.loads(candidate.read_text(encoding="utf-8")).get("sectors") or {}).items():
-                sectors.setdefault(sector, []).extend(symbols)
-    mapping: dict[str, str] = {}
-    for sector, symbols in sectors.items():
-        for symbol in symbols:
-            if symbol in mapping and mapping[symbol] != sector:
-                raise ValueError(f"symbol {symbol} is in two sectors")
-            mapping[symbol] = sector
-    return mapping
+    """``{YAHOO_SYMBOL: SECTOR}`` from the versioned map plus the optional, not versioned ``sector_map_local.json`` next to it (a local entry overrides the public one)."""
+    import sector_assignment
+
+    return sector_assignment.effective(sector_assignment.read_layers(path))
 
 
 def load_risk_inputs(

@@ -14,7 +14,7 @@ from typing import Any, Optional
 from .portfolio import DASH, fmt_score, fmt_time
 from .reason_codes import Presented, format_reason_code
 
-HEADERS = ["Symbol", "Name", "Strategie", "Priorität", "Rang", "Score", "Status", "Einstufung", "Einstieg", "Daten", "News", "Bestand", "Bewertet am", "ISIN"]
+HEADERS = ["Symbol", "Name", "Strategie", "Priorität", "Rang", "Score", "Status", "Einstufung", "Einstieg", "Daten", "News", "Bestand", "Bewertet am", "ISIN", "Sektor"]
 NUMERIC_COLUMNS = (3, 4, 5)  # priority, rank, score sort by value
 SPIN_MIN, SPIN_MAX = -(2**31), 2**31 - 1  # the range of a Qt number field (32-bit); not a business range: the schema has none
 ALL = "Alle"
@@ -39,6 +39,9 @@ class WatchRow:
     search: str = ""
     level: str = ""  # "", "warning" (needs a look) -- only a colour, never a decision
     strategy_value: Optional[str] = None  # the backend value (swing / long_term / ...), None = no active strategy; the table shows strategy_text of it
+    sector_value: Optional[str] = None  # the effective sector group (sector map: the local entry overrides the public one), None = not assigned
+    sector_source: str = "none"  # "public" (sector_map_v1.json), "local" (sector_map_local.json) or "none"
+    sector_public: Optional[str] = None  # the public value, also when a local entry replaces it
 
 
 @dataclass
@@ -49,6 +52,7 @@ class WatchlistVM:
     rows: list[WatchRow] = field(default_factory=list)
     summary: str = DASH
     notes: list[str] = field(default_factory=list)
+    sector_groups: list[str] = field(default_factory=list)  # the existing sector groups a sector may be chosen from
     truncated: bool = False
 
 
@@ -85,6 +89,13 @@ def _day(value: Any) -> str:
     return DASH if not value else str(value)[:10]
 
 
+def sector_text(value: Optional[str], source: str) -> str:
+    """The sector cell: the group, marked "(lokal)" when it comes from the local map; "—" when not assigned."""
+    if not value:
+        return DASH
+    return f"{value} (lokal)" if source == "local" else value
+
+
 def strategy_text(value: Any) -> str:
     return NO_STRATEGY if not value else STRATEGY_TEXT.get(str(value), str(value).replace("_", " ").capitalize())
 
@@ -111,9 +122,14 @@ def build_row(item: dict) -> WatchRow:
     sort_keys: list[Any] = [c.lower() for c in cells]
     sort_keys[3], sort_keys[4], sort_keys[5] = priority, rank, score
     needs_a_look = item.get("news_status") in ("NEWS_ATTENTION", "NEWS_HIGH_ATTENTION")
+    sector = item.get("sector") if isinstance(item.get("sector"), str) else None
+    source = item.get("sector_source") if item.get("sector_source") in ("public", "local") and sector else "none"
+    public = item.get("sector_public") if isinstance(item.get("sector_public"), str) else None
+    cells.append(sector_text(sector, source))
+    sort_keys.append(None if sector is None else sector.lower())
     return WatchRow(sid, symbol, name, held, bool(item.get("annotated")), priority, str(status), strategy, str(quality), cells, sort_keys,
                     " ".join(str(x) for x in (item.get("symbol"), item.get("name"), item.get("isin")) if x).lower(), "warning" if needs_a_look else "",
-                    item.get("strategy") if isinstance(item.get("strategy"), str) else None)
+                    item.get("strategy") if isinstance(item.get("strategy"), str) else None, sector, source, public)
 
 
 def _notes(payload: dict) -> list[str]:
@@ -142,6 +158,7 @@ def build_watchlist(envelope: Any, refreshed: Optional[datetime] = None) -> Watc
     vm.available = True
     vm.rows = [build_row(item) for item in env["rows"] if isinstance(item, dict)]
     vm.truncated = bool(env.get("truncated"))
+    vm.sector_groups = [g for g in _l(env.get("sector_groups")) if isinstance(g, str)]
     counts = _d(env.get("counts"))
     held = _int(counts.get("held"))
     vm.summary = f"{len(vm.rows)} Einträge" + (f" · davon {held} im Bestand" if held else "")

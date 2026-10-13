@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "description": "Explicit list of the runtime files deployed to the production root. Nothing outside this list is ever copied, overwritten or deleted. Keep it in sync with the repo: tests/trading/test_deploy_manifest.py fails if a runtime file is neither listed here nor in not_deployed.",
-  "expected_tool_count": 21,
+  "expected_tool_count": 22,
   "groups": [
     {
       "name": "app",
@@ -55,6 +55,7 @@
         "portfolio_action_planner.py",
         "portfolio_context.py",
         "portfolio_risk.py",
+        "sector_assignment.py",
         "security_aliases.py",
         "security_onboarding.py",
         "strategy_admin.py",

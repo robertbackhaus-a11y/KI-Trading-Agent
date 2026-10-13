@@ -13,6 +13,7 @@ import json
 from typing import Any, Mapping, Optional, Sequence
 
 import opportunity_view as ov
+import sector_assignment
 from security_aliases import AliasIndex, split_symbol, symbol_key
 
 DEFAULT_LIMIT = 150
@@ -22,7 +23,7 @@ STRATEGY_NONE = "NONE"  # filter value: entries without an active strategy assig
 NO_MARKET_DATA = "MARKET_DATA_MISSING"
 NOTE_FIELDS = ("entry_reason", "thesis", "target_entry", "notes")  # free-text / target fields of a watchlist row
 _TABLE_KEYS = ("security_id", "symbol", "name", "isin", "strategy", "held", "priority", "status", "rank", "score", "quality", "as_of",
-               "assessment", "entry_status", "promotion", "news_status", "annotated", "added_at")  # the desktop GUI's table rows (``table=true``)
+               "assessment", "entry_status", "promotion", "news_status", "annotated", "added_at", "sector", "sector_source", "sector_public")  # the desktop GUI's table rows (``table=true``)
 _COMPACT_KEYS = ("symbol", "name", "strategy", "held", "priority", "status", "rank", "score", "quality", "assessment", "entry_status", "news_status")  # chat / LLM rows
 
 
@@ -68,8 +69,9 @@ def build_watchlist(
     mi: Optional[Mapping[str, Any]],
     symbol_map: Optional[Mapping[int, str]] = None,
     alias_index: Optional[AliasIndex] = None,
+    sector_layers: Optional[sector_assignment.Layers] = None,
 ) -> dict[str, Any]:
-    """Pure join; the inputs are never modified."""
+    """Pure join; the inputs are never modified.  ``sector_layers`` (the two sector-map layers) adds the sector of each entry and where it comes from."""
     warnings: list[dict[str, str]] = []
     if ranking is None:
         warnings.append({"code": "RANKING_UNAVAILABLE", "message": "the analytics ranking could not be computed"})
@@ -110,6 +112,7 @@ def build_watchlist(
             "quality": quality, "as_of": (analytics or {}).get("as_of"),
             "assessment": (decision or {}).get("decision_status"), "entry_status": (entry or {}).get("entry_status"),
             "promotion": (promotion or {}).get("recommendation"), "news_status": news["status"], "added_at": row.get("added_at"),
+            **_sector_fields(sector_layers, (alias_index.key_for(sid) if alias_index is not None else None) or row.get("symbol")),
             "annotated": True if any(row.get(k) not in (None, "") for k in NOTE_FIELDS) else None,  # notes would be lost by a removal
             # detail only
             "wkn": row.get("wkn"), "yahoo_symbol": yahoo, "exchange": row.get("exchange"), "currency": row.get("currency"),
@@ -127,8 +130,17 @@ def build_watchlist(
                    "held": sum(1 for r in result_rows if r["held"])},
         "order": "rank (scored entries first, by the analytics score), then priority (higher first), symbol",
         "rows": result_rows,
+        "sector_groups": list(sector_layers.groups) if sector_layers is not None else [],  # the existing groups a sector may be chosen from
         "warnings": warnings,
     }
+
+
+def _sector_fields(layers: Optional[sector_assignment.Layers], key: Optional[str]) -> dict[str, Any]:
+    """The effective sector of a listing key, where it comes from (public / local / none) and the public value (shown when a local entry overrides it)."""
+    if layers is None:
+        return {"sector": None, "sector_source": None, "sector_public": None}
+    found = sector_assignment.resolve(layers, key)
+    return {"sector": found["sector"], "sector_source": found["source"], "sector_public": found["public"]}
 
 
 def _count(values) -> dict[str, int]:
@@ -210,6 +222,8 @@ def query_watchlist(view: Mapping[str, Any], *, status: Optional[str] = None, st
         "matching": matching, "returned": len(shown), "truncated": matching > len(shown),
         "rows": [dict(r) if detail else (_compact(r, same) if chat else _table(r)) for r in shown], "warnings": list(view["warnings"]),
     }
+    if not chat:
+        response["sector_groups"] = list(view.get("sector_groups") or [])
     while not detail and len(_text(response)) > RESPONSE_CHAR_BUDGET and response["rows"]:  # the oldest rank is kept; the tail is dropped, never half a row
         response["rows"].pop()
         response["returned"], response["truncated"] = len(response["rows"]), True

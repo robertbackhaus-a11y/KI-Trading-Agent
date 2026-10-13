@@ -17,16 +17,17 @@ from PySide6.QtWidgets import (
 
 from ..viewmodels.onboarding import Outcome
 from ..viewmodels.portfolio import DASH
-from ..viewmodels.watchlist import ALL, HEADERS, NUMERIC_COLUMNS, SPIN_MAX, SPIN_MIN, ActionMessage, WatchlistVM, WatchRow, apply_filter, filter_options, strategy_text
-from ..viewmodels.watchlist_edit import PENDING_TEXT, PENDING_TIP, display, prune, strategy_editable
+from ..viewmodels.watchlist import ALL, HEADERS, NUMERIC_COLUMNS, SPIN_MAX, SPIN_MIN, ActionMessage, WatchlistVM, WatchRow, apply_filter, filter_options, sector_text, strategy_text
+from ..viewmodels.watchlist_edit import PENDING_TEXT, PENDING_TIP, display, display_sector, prune, sector_editable, sector_options, sector_tooltip, strategy_editable
 from ._common import LEVEL_COLORS, tooltip_of
 from .onboarding import OnboardSecurityDialog
-from .watchlist_edit import EDIT_ROLE, PriorityDelegate, StrategyDelegate
+from .watchlist_edit import EDIT_ROLE, PriorityDelegate, SectorDelegate, StrategyDelegate
 
 ROW_ID = Qt.ItemDataRole.UserRole + 1
 SORT_KEY = Qt.ItemDataRole.UserRole
 EDIT_COLUMN = len(HEADERS)  # the marker column "Änderung" behind the data columns
 STRATEGY_COLUMN, PRIORITY_COLUMN = 2, 3
+SECTOR_COLUMN = HEADERS.index("Sektor")  # the last data column, behind the ISIN
 
 
 def _color(level: str) -> str:
@@ -162,6 +163,7 @@ class WatchlistView(QWidget):
         self.confirm_discard: Callable[[], bool] = self._ask_discard  # replaceable (tests)
         self._pending: dict[int, dict] = {}  # unsaved changes per security_id; local until "Änderung übernehmen"
         self._applying: set[int] = set()
+        self._groups: list[str] = []  # the existing sector groups (from the last answer)
         self._vm: Optional[WatchlistVM] = None
         self._by_id: dict[int, WatchRow] = {}
         self._action_html = ""  # the outcome of the last action stays visible while the list reloads
@@ -199,6 +201,7 @@ class WatchlistView(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)  # only the two editable columns have an editor
         self.table.setItemDelegateForColumn(STRATEGY_COLUMN, StrategyDelegate(lambda sid, value: self._on_edited(sid, "strategy", value), self.table))
         self.table.setItemDelegateForColumn(PRIORITY_COLUMN, PriorityDelegate(lambda sid, value: self._on_edited(sid, "priority", value), self.table))
+        self.table.setItemDelegateForColumn(SECTOR_COLUMN, SectorDelegate(lambda sid, value: self._on_edited(sid, "sector", value), self.table))
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
@@ -259,6 +262,7 @@ class WatchlistView(QWidget):
         self.message.setText(self._action_html)
         self._vm = vm
         self._by_id = {r.security_id: r for r in vm.rows}
+        self._groups = list(vm.sector_groups)
         self._pending = prune(self._pending, self._by_id)  # a saved value, or a vanished row, ends the pending change; the rest stays
         self.summary.setText(vm.summary)
         self.refreshed.setText("Letzte Aktualisierung: " + vm.refreshed)
@@ -306,6 +310,8 @@ class WatchlistView(QWidget):
                     text = shown_strategy
                 elif c == PRIORITY_COLUMN:
                     text = shown_priority
+                elif c == SECTOR_COLUMN:
+                    text = display_sector(row, edits)
                 item = SortItem(str(text))
                 item.setData(SORT_KEY, row.sort_keys[c])
                 item.setData(ROW_ID, row.security_id)
@@ -319,13 +325,18 @@ class WatchlistView(QWidget):
                     editable = row.security_id not in self._applying
                     item.setData(EDIT_ROLE, {"editable": editable, "current": edits["priority"] if "priority" in edits else row.priority})
                     item.setToolTip("Doppelklick: Priorität eingeben, leer = keine (wird erst mit „Änderung übernehmen“ gespeichert)")
+                elif c == SECTOR_COLUMN:
+                    can_edit_sector, sector_hint = sector_editable(self._groups)
+                    editable = can_edit_sector and row.security_id not in self._applying
+                    item.setData(EDIT_ROLE, {"editable": editable, "current": edits["sector"] if "sector" in edits else row.sector_value, "options": sector_options(row, self._groups)})
+                    item.setToolTip(sector_tooltip(row, "Doppelklick: Sektor wählen (wird erst mit „Änderung übernehmen“ gespeichert)." if can_edit_sector else sector_hint))
                 if not editable:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if c in NUMERIC_COLUMNS:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 if row.level:
                     item.setForeground(QBrush(QColor(_color(row.level))))
-                if (c == STRATEGY_COLUMN and "strategy" in edits) or (c == PRIORITY_COLUMN and "priority" in edits):  # a pending change: bold and in the warning colour
+                if (c == STRATEGY_COLUMN and "strategy" in edits) or (c == PRIORITY_COLUMN and "priority" in edits) or (c == SECTOR_COLUMN and "sector" in edits):  # a pending change: bold and in the warning colour
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
@@ -379,7 +390,7 @@ class WatchlistView(QWidget):
         row = self._by_id.get(security_id)
         if row is None:
             return
-        backend = row.strategy_value if field == "strategy" else row.priority
+        backend = row.strategy_value if field == "strategy" else row.sector_value if field == "sector" else row.priority
         edits = self._pending.setdefault(security_id, {})
         if value == backend:
             edits.pop(field, None)
@@ -431,6 +442,11 @@ class WatchlistView(QWidget):
         if field == "strategy":
             row.strategy_value, row.strategy = value, strategy_text(value)
             row.cells[STRATEGY_COLUMN], row.sort_keys[STRATEGY_COLUMN] = row.strategy, row.strategy.lower()
+        elif field == "sector":
+            row.sector_value = value if value is not None else row.sector_public
+            row.sector_source = "local" if value is not None and value != row.sector_public else ("public" if row.sector_value else "none")
+            row.cells[SECTOR_COLUMN] = sector_text(row.sector_value, row.sector_source)
+            row.sort_keys[SECTOR_COLUMN] = None if row.sector_value is None else row.sector_value.lower()
         else:
             row.priority = value
             row.cells[PRIORITY_COLUMN], row.sort_keys[PRIORITY_COLUMN] = ("—" if value is None else str(value)), value

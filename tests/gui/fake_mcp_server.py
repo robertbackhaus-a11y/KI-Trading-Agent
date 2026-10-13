@@ -103,6 +103,7 @@ async def get_watchlist(status: str | None = None, strategy: str | None = None, 
     env = dict(_template())
     env["counts"] = {"total": len(_rows()), "held": sum(1 for r in _rows() if r.get("held"))}
     env["matching"] = env["returned"] = len(_rows())
+    env.setdefault("sector_groups", SECTOR_GROUPS)
     env["truncated"] = False
     return _text(env)
 
@@ -152,6 +153,31 @@ async def set_watchlist_priority(security_id: int, priority: int | None) -> str:
         return _result("set_watchlist_priority", "NOT_FOUND", security_id=security_id)
     previous, row["priority"] = row.get("priority"), priority
     return _result("set_watchlist_priority", "PRIORITY_SET", security_id=security_id, priority=priority, previous_priority=previous, changed=previous != priority)
+
+
+SECTOR_GROUPS = ["ALPHA", "BETA", "GAMMA"]
+
+
+async def set_security_sector(security_id: int, sector: str | None) -> str:
+    """Action tool (fake): set or remove the local sector entry of one security."""
+    _calls("set_security_sector", {"security_id": security_id, "sector": sector})
+    row = next((r for r in _rows() if r["security_id"] == security_id), None)
+    if row is None:
+        return _result("set_security_sector", "NOT_FOUND", security_id=security_id)
+    if sector is not None and sector not in SECTOR_GROUPS:
+        return _result("set_security_sector", "INVALID_SECTOR", security_id=security_id, valid=SECTOR_GROUPS)
+    if security_id == 3 and sector == "GAMMA":  # a failing write
+        return _result("set_security_sector", "LOCAL_MAP_INVALID", security_id=security_id, detail="invalid JSON")
+    public = row.get("sector_public")
+    wanted_local = None if sector is None or sector == public else sector
+    current_local = row.get("sector") if row.get("sector_source") == "local" else None
+    if wanted_local == current_local:
+        return _result("set_security_sector", "UNCHANGED", security_id=security_id, sector=row.get("sector"), source=row.get("sector_source", "none"))
+    if wanted_local is None:
+        row["sector"], row["sector_source"] = public, ("public" if public else "none")
+    else:
+        row["sector"], row["sector_source"] = wanted_local, "local"
+    return _result("set_security_sector", "SECTOR_SET" if wanted_local else "SECTOR_OVERRIDE_REMOVED", changed=True, security_id=security_id, sector=row["sector"], source=row["sector_source"], public_sector=public)
 
 
 async def set_security_strategy(security_id: int, strategy: str | None) -> str:
@@ -214,7 +240,7 @@ async def onboard_security(symbol: str, name: str, asset_type: str, isin: str | 
     return _result("onboard_security", "CREATED", changed=True, security_id=sid, symbol=key, name=name, provider_symbols=planned["provider_symbols"], watchlist=planned["watchlist"], warnings=[])
 
 
-for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy):
+for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector):
     server.tool(name=fn.__name__, description=fn.__doc__ or fn.__name__, structured_output=False)(fn)
 
 print("fake-mcp ready", file=sys.stderr, flush=True)

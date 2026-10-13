@@ -797,8 +797,8 @@ class ToolSurfaceTests(unittest.TestCase):
 
     def test_nineteen_tools_and_the_thirteen_earlier_ones_are_unchanged(self):
         names = self.public()
-        self.assertEqual(len(names), 21)  # the 15 tools of before, the four watchlist tools, onboard_security and set_security_strategy
-        self.assertEqual(sorted(set(names) - {"get_market_intelligence", "get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"}), sorted([*self.ORIGINAL, "get_candidate_discovery"]))
+        self.assertEqual(len(names), 22)  # the 15 tools of before, the four watchlist tools, onboard_security, set_security_strategy and set_security_sector
+        self.assertEqual(sorted(set(names) - {"get_market_intelligence", "get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"}), sorted([*self.ORIGINAL, "get_candidate_discovery"]))
         self.assertIn("get_market_intelligence", names)
 
     def test_the_new_tool_has_only_read_filters(self):
@@ -832,7 +832,9 @@ class SectorMapAndConfigTests(unittest.TestCase):
             (Path(directory) / "sector_map_local.json").write_text(json.dumps({"sectors": {"ENERGY": ["CCC"], "FUNDS_ETF": ["DDD"]}}), encoding="utf-8")
             self.assertEqual(cli.read_sector_map(base), {"AAA": "ENERGY", "BBB": "SOFTWARE_AI", "CCC": "ENERGY", "DDD": "FUNDS_ETF"})
             (Path(directory) / "sector_map_local.json").write_text(json.dumps({"sectors": {"FUNDS_ETF": ["AAA"]}}), encoding="utf-8")
-            with self.assertRaises(ValueError):
+            self.assertEqual(cli.read_sector_map(base), {"AAA": "FUNDS_ETF", "BBB": "SOFTWARE_AI"})  # a local entry overrides the public one
+            (Path(directory) / "sector_map_local.json").write_text(json.dumps({"sectors": {"FUNDS_ETF": ["AAA"], "ENERGY": ["AAA"]}}), encoding="utf-8")
+            with self.assertRaises(ValueError):  # two sectors inside the local file itself stay an error
                 cli.read_sector_map(base)
 
     def test_a_symbol_in_two_sectors_is_rejected(self):
