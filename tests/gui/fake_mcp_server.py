@@ -1,6 +1,6 @@
 """A small stdio MCP server for the GUI tests (official SDK, same registration style as mcp-tools/server.py).
 
-Tools: database_status, run_trading_orchestrator (returns the JSON file named by FAKE_ORCH_FILE), slow, crash, broken, sql_execute, and the four watchlist tools
+Tools: database_status, run_trading_orchestrator (returns the JSON file named by FAKE_ORCH_FILE), slow, crash, broken, sql_execute, and the five watchlist tools (the four and the security onboarding)
 (FAKE_WATCHLIST_FILE holds the rows, FAKE_CALLS_FILE logs every call).
 FAKE_PID_FILE receives the process id (to test shutdown and restart).  Synthetic data only.
 """
@@ -73,6 +73,7 @@ async def sql_execute(sql: str) -> str:
 # -- watchlist tools (fake): deterministic answers by identifier, every call is logged to FAKE_CALLS_FILE (one JSON object per line) -------------
 _KNOWN = {  # identifier -> (security_id, symbol, name, isin)
     "NEWA": (101, "NEWA", "New Alpha Corp", "TESTISIN-N1"), "NEWB": (102, "NEWB", "New Beta Holdings Inc", "TESTISIN-N2"), "NEWC": (103, "NEWC", "New Charlie Systems Corp", None),
+    "77": (77, "HAVE", "Have Already Corp", None),  # in the Security Master, not on the watchlist (the onboarding finds it)
 }
 _AMBIGUOUS = {"DUP": [(104, "DUP", "Duplicate One Corp"), (105, "DUP", "Duplicate Two Corp")]}
 _state: dict = {}
@@ -153,7 +154,43 @@ async def set_watchlist_priority(security_id: int, priority: int | None) -> str:
     return _result("set_watchlist_priority", "PRIORITY_SET", security_id=security_id, priority=priority, previous_priority=previous, changed=previous != priority)
 
 
-for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority):
+_CREATED: dict[str, int] = {}
+
+
+async def onboard_security(symbol: str, name: str, asset_type: str, isin: str | None = None, wkn: str | None = None, exchange: str | None = None, currency: str | None = None,
+                           country: str | None = None, provider_symbols: dict[str, str] | None = None, add_to_watchlist: bool = False, watchlist_priority: int | None = None,
+                           dry_run: bool = True) -> str:
+    """Action tool (fake): onboard a new security (check or create)."""
+    _calls("onboard_security", {"symbol": symbol, "name": name, "asset_type": asset_type, "isin": isin, "wkn": wkn, "exchange": exchange, "currency": currency, "country": country,
+                                 "provider_symbols": provider_symbols, "add_to_watchlist": add_to_watchlist, "watchlist_priority": watchlist_priority, "dry_run": dry_run})
+    key = symbol.strip().upper()
+    if key == "ERR":
+        return _result("onboard_security", "ERROR", error="OperationalError", message="database is locked")
+    if key == "BADISIN":
+        return _result("onboard_security", "INVALID_INPUT", errors=[{"field": "isin", "reason": "BAD_ISIN_CHECKSUM"}, {"field": "currency", "reason": "BAD_CURRENCY"}])
+    if key == "HAVE":
+        return _result("onboard_security", "ALREADY_EXISTS", existing={"security_id": 77, "symbol": "HAVE", "name": "Have Already Corp", "isin": None, "active": True}, on_watchlist=any(r["security_id"] == 77 for r in _rows()),
+                       conflicts=[{"code": "ALREADY_EXISTS", "field": "symbol", "value": "HAVE", "security_id": 77, "symbol": "HAVE", "name": "Have Already Corp"}], warnings=[])
+    if key == "CLASH":
+        return _result("onboard_security", "SYMBOL_CONFLICT", conflicts=[{"code": "SYMBOL_CONFLICT", "field": "symbol", "value": "CLASH", "match": "EXACT", "security_id": 5, "symbol": "CLASH", "name": "Other Clash Ltd"},
+                                                                         {"code": "ISIN_CONFLICT", "field": "isin", "value": isin, "match": "EXACT", "security_id": 6, "symbol": "SIX", "name": "Six Corp"}], warnings=[])
+    planned = {"security": {"symbol": key, "name": name, "asset_type": asset_type, "isin": isin, "wkn": wkn, "exchange": exchange, "currency": currency, "country": country, "active": True},
+               "provider_symbols": [{"source": s, "symbol": v} for s, v in sorted((provider_symbols or {}).items())],
+               "watchlist": {"status": "WATCH", "priority": watchlist_priority} if add_to_watchlist else None, "sector": None}
+    if key in _CREATED:
+        return _result("onboard_security", "ALREADY_EXISTS", existing={"security_id": _CREATED[key], "symbol": key, "name": name, "isin": isin, "active": True}, on_watchlist=add_to_watchlist,
+                       conflicts=[{"code": "ALREADY_EXISTS", "field": "symbol", "value": key, "security_id": _CREATED[key], "symbol": key, "name": name}], warnings=[])
+    if dry_run:
+        return _result("onboard_security", "READY", conflicts=[], warnings=[], planned=planned)
+    sid = 900 + len(_CREATED)
+    _CREATED[key] = sid
+    if add_to_watchlist:
+        _rows().append({"security_id": sid, "symbol": key, "name": name, "isin": isin, "held": False, "priority": watchlist_priority, "status": "WATCH", "quality": "MARKET_DATA_MISSING",
+                        "news_status": "NEWS_UNAVAILABLE", "added_at": "2026-10-13 09:00:00"})
+    return _result("onboard_security", "CREATED", changed=True, security_id=sid, symbol=key, name=name, provider_symbols=planned["provider_symbols"], watchlist=planned["watchlist"], warnings=[])
+
+
+for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security):
     server.tool(name=fn.__name__, description=fn.__doc__ or fn.__name__, structured_output=False)(fn)
 
 print("fake-mcp ready", file=sys.stderr, flush=True)

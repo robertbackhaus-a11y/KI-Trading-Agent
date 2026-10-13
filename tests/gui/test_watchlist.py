@@ -149,7 +149,7 @@ class ViewModelTests(unittest.TestCase):
         unknown = describe({"result": "SECURITY_NOT_FOUND"})
         self.assertEqual((unknown.level, unknown.done), ("blocker", False))
         self.assertIn("Wertpapier ist noch nicht im Security Master.", unknown.text)
-        self.assertIn("Die Aufnahme eines vollständig neuen Wertpapiers ist ein separater Workflow.", unknown.text)
+        self.assertIn("Über „Neues Wertpapier aufnehmen“ kann es mit eigenen Angaben angelegt werden.", unknown.text)
         ambiguous = describe({"result": "AMBIGUOUS_IDENTIFIER", "candidates": [{"security_id": 4, "symbol": "DUP", "name": "One"}, {"security_id": 5, "symbol": "DUP", "name": "Two"}]})
         self.assertIn("mehrdeutig", ambiguous.text)
         self.assertIn("ID 4", ambiguous.text)
@@ -174,7 +174,7 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(tp.is_read("get_watchlist"))
 
     def test_ag_the_new_actions_are_actions(self) -> None:
-        for name in ("add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"):
+        for name in ("add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"):
             self.assertEqual(tp.classify(name), tp.ACTION, name)
             self.assertFalse(tp.is_read(name), name)
             self.assertTrue(tp.is_gui_action(name), name)
@@ -182,7 +182,7 @@ class PolicyTests(unittest.TestCase):
                 tp.require_read(name)
 
     def test_ah_nothing_else_may_be_triggered_by_the_gui(self) -> None:
-        self.assertEqual(tp.GUI_ACTIONS, {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"})
+        self.assertEqual(tp.GUI_ACTIONS, {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"})
         for name in ("sql_execute", "approve_swing_promotion", "brand_new_tool", "get_watchlist", "database_status", "", "ADD_WATCHLIST_CANDIDATE"):
             self.assertFalse(tp.is_gui_action(name), name)
         self.assertEqual(tp.classify("brand_new_tool"), tp.ACTION)
@@ -367,7 +367,7 @@ class WatchlistWindowTests(unittest.TestCase):
         self.assertTrue(pump(15, lambda: "Security Master" in dialog.result.text()))
         text = dialog.result.text()
         self.assertIn("Wertpapier ist noch nicht im Security Master.", text)
-        self.assertIn("separater Workflow", text)
+        self.assertIn("Neues Wertpapier aufnehmen", text)
         self.assertEqual(self.view.table.rowCount(), 3)
         self.assertEqual(len(self.actions()), 1)  # one attempt, nothing else (no retry, no creation call)
         dialog.cancel.click()

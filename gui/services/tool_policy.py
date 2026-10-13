@@ -3,7 +3,7 @@
 The MCP tools carry no read-only annotations, so the GUI keeps its own table.  A tool that is not listed here is treated as an
 ACTION and denied (deny by default); a test requires every tool of the server to be classified.
 
-Three narrow watchlist ACTIONs (``GUI_ACTIONS``) may be triggered by an explicit button of the Watchlist page, and only through
+Three narrow watchlist ACTIONs and the security onboarding (``GUI_ACTIONS``) may be triggered by an explicit button of the Watchlist page, and only through
 ``McpService.call_action``; they are never offered to the chat and ``call`` / ``call_sync`` still refuse them.  ``sql_execute``,
 ``approve_swing_promotion`` and every unknown tool stay denied.
 """
@@ -36,10 +36,12 @@ POLICY: dict[str, str] = {
     "add_watchlist_candidate": ACTION,
     "remove_watchlist_candidate": ACTION,
     "set_watchlist_priority": ACTION,
+    # action: creates one new security in the Security Master (explicit dialog of the Watchlist page, dry run first); never offered to the chat
+    "onboard_security": ACTION,
 }
 
 # the ACTIONs the GUI itself may call (explicit button + confirmation where destructive); everything else is denied
-GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"})
+GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"})
 
 
 class ToolDenied(Exception):

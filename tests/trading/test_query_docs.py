@@ -66,7 +66,7 @@ class QueryDocsParityTests(unittest.TestCase):
 
     def test_all_mcp_tools_are_documented_once_in_the_mapping_and_in_both_languages(self) -> None:
         names = tool_names()
-        self.assertEqual(len(names), 19)
+        self.assertEqual(len(names), 20)
         for label, text in (("de", DE), ("en", EN)):
             mapping = chapters(text)[16][1]
             rows = re.findall(r"^\| `([a-z_]+)` \|", mapping, flags=re.M)
@@ -84,7 +84,7 @@ class QueryDocsParityTests(unittest.TestCase):
             return result
 
         self.assertEqual(flags(DE), flags(EN))
-        self.assertEqual({name for name, flag in flags(DE).items() if flag == "W"}, {"approve_swing_promotion", "sql_execute", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"})
+        self.assertEqual({name for name, flag in flags(DE).items() if flag == "W"}, {"approve_swing_promotion", "sql_execute", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"})
 
     def test_documented_status_terms_are_identical_in_both_languages(self) -> None:
         for term in ("PROMOTE", "KEEP_WATCHING", "ENTRY_READY", "WAIT_FOR_TRIGGER", "BLOCKED_BY_ALLOCATION", "BLOCKED_BY_DATA", "BLOCKED_BY_CONCENTRATION",

@@ -25,6 +25,7 @@ from .services.settings import GUI_VERSION, Settings, get_logger
 from .services.task_service import TaskBackend
 from .services.tool_loop import offered_tools, schema_hash
 from .services.tool_policy import classify
+from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.tasks import build_task_rows
 from .viewmodels.watchlist import build_watchlist, describe_action
@@ -94,6 +95,9 @@ class MainWindow(QMainWindow):
         self.watchlist.add_requested.connect(self.add_watchlist)
         self.watchlist.remove_requested.connect(self.remove_watchlist)
         self.watchlist.priority_requested.connect(self.set_watchlist_priority)
+        self.watchlist.onboard_check_requested.connect(self.check_onboarding)
+        self.watchlist.onboard_create_requested.connect(self.create_onboarding)
+        self.watchlist.onboard_watchlist_requested.connect(self.add_existing_to_watchlist)
         self.tasks.refresh_requested.connect(self.refresh_tasks)
         self.tasks.run_requested.connect(self.run_task)
         self.tasks.log_requested.connect(self.show_task_log)
@@ -260,6 +264,39 @@ class MainWindow(QMainWindow):
 
     def set_watchlist_priority(self, security_id: int, priority) -> None:
         self._watchlist_action("set_watchlist_priority", {"security_id": int(security_id), "priority": None if priority is None else int(priority)})
+
+    def _onboarding_action(self, arguments: dict, create: bool) -> None:
+        """``onboard_security`` for an explicit click: a check (dry run) or, after a clean check, the creation; the list is reloaded after a creation."""
+        self.log.info("Onboarding angefordert: %s", "Anlegen" if create else "Prüfen")  # no values in the log
+
+        def done(res: McpResult) -> None:
+            outcome = describe_onboarding(res.tool_ok, res.data, res.message)
+            self.log.info("Onboarding %s: %s", "Anlegen" if create else "Prüfen", outcome.result or res.kind)
+            self.watchlist.show_onboard_outcome(outcome, None if create else arguments)
+            self.statusBar().showMessage(outcome.text.splitlines()[0], 8000)
+            if outcome.created:
+                self.refresh_watchlist()
+
+        self.mcp.call_action("onboard_security", {**arguments, "dry_run": not create}, timeout=30, on_done=done)
+
+    def check_onboarding(self, arguments: dict) -> None:
+        self._onboarding_action(arguments, create=False)
+
+    def create_onboarding(self, arguments: dict) -> None:
+        self._onboarding_action(arguments, create=True)
+
+    def add_existing_to_watchlist(self, security_id: int) -> None:
+        """A security the onboarding check found in the Security Master: the ordinary add action (no second copy is ever created)."""
+        self.log.info("Watchlist-Aktion angefordert: add_watchlist_candidate (vorhandenes Wertpapier)")
+
+        def done(res: McpResult) -> None:
+            message = describe_action(res.tool_ok, res.data, res.message)
+            self.watchlist.show_onboard_watchlist_result(message)
+            self.statusBar().showMessage(message.text.splitlines()[0], 8000)
+            if message.done:
+                self.refresh_watchlist()
+
+        self.mcp.call_action("add_watchlist_candidate", {"identifier": str(int(security_id))}, timeout=30, on_done=done)
 
     def run_task(self, name: str) -> None:
         self.log.info("Task-Start angefordert: %s", name)

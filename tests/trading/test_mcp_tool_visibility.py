@@ -1,7 +1,7 @@
 """Which MCP tools a client sees: the server registers every public method of ``Tools``; ``TRADING_EXCLUDE`` hides tools per client process.
 
-The desktop GUI starts the server without an exclude (19 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
-three watchlist actions excluded, so it sees the 15 tools of before plus ``get_watchlist`` (16).  The 15 tools of before keep their exact description and schema.
+The desktop GUI starts the server without an exclude (20 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
+three watchlist actions and ``onboard_security`` excluded, so it sees the 15 tools of before plus ``get_watchlist`` (16).  The 15 tools of before keep their exact description and schema.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
-JAN_EXCLUDE = "add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority"  # the value in Jan's MCP configuration (documented in the architecture docs)
-WATCHLIST_ACTIONS = {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"}
+JAN_EXCLUDE = "add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority,onboard_security"  # the value in Jan's MCP configuration (documented in the architecture docs)
+WATCHLIST_ACTIONS = {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"}  # the three watchlist writes and the security onboarding
 NEW_TOOLS = WATCHLIST_ACTIONS | {"get_watchlist"}
 # sha256 prefix of {"description", "input_schema"} of each tool that existed before the watchlist tools; a changed description or parameter fails this test
 BASELINE = {
@@ -71,13 +71,13 @@ def fingerprint(tool) -> str:
 
 @unittest.skipIf(SERVER is None, "the mcp package is only in the Trading venv")
 class ToolVisibilityTests(unittest.TestCase):
-    def test_the_qt_gui_process_gets_all_19_tools(self) -> None:
+    def test_the_qt_gui_process_gets_all_20_tools(self) -> None:
         tools = listing()
-        self.assertEqual(len(tools), 19)
+        self.assertEqual(len(tools), 20)
         self.assertTrue(NEW_TOOLS <= set(tools))
         self.assertEqual(set(tools) - NEW_TOOLS, set(BASELINE))
 
-    def test_jans_exclude_hides_exactly_the_three_watchlist_actions(self) -> None:
+    def test_jans_exclude_hides_exactly_the_four_write_actions(self) -> None:
         self.assertEqual(set(JAN_EXCLUDE.split(",")), WATCHLIST_ACTIONS)
         everything, jan = listing(), listing(JAN_EXCLUDE)
         self.assertEqual(len(jan), 16)
@@ -88,7 +88,7 @@ class ToolVisibilityTests(unittest.TestCase):
 
     def test_the_exclude_is_tolerant_and_changes_nothing_else(self) -> None:
         self.assertEqual(set(listing(" add_watchlist_candidate , ,nonexistent_tool,")) , set(listing()) - {"add_watchlist_candidate"})
-        self.assertEqual(len(listing("")), 19)
+        self.assertEqual(len(listing("")), 20)
         for name, tool in listing(JAN_EXCLUDE).items():  # excluding does not touch the remaining tools
             if name in BASELINE:
                 self.assertEqual(fingerprint(tool), BASELINE[name], name)
@@ -110,7 +110,10 @@ class ToolVisibilityTests(unittest.TestCase):
         self.assertEqual(params["add_watchlist_candidate"], ["dry_run", "identifier", "priority"])
         self.assertEqual(params["remove_watchlist_candidate"], ["security_id"])
         self.assertEqual(params["set_watchlist_priority"], ["priority", "security_id"])
-        for name in WATCHLIST_ACTIONS:
+        self.assertEqual(params["onboard_security"], sorted(["symbol", "name", "asset_type", "isin", "wkn", "exchange", "currency", "country", "provider_symbols", "add_to_watchlist", "watchlist_priority", "dry_run"]))
+        for forbidden in ("sql", "query", "security_id", "sector", "cik", "active"):  # the onboarding takes no SQL, no id, no sector and no CIK
+            self.assertNotIn(forbidden, tools["onboard_security"].input_schema.get("properties", {}), forbidden)
+        for name in WATCHLIST_ACTIONS - {"onboard_security"}:
             for forbidden in ("sql", "query", "name", "isin", "wkn", "symbol", "exchange", "currency", "sector"):  # nothing that could describe a new security
                 self.assertNotIn(forbidden, tools[name].input_schema.get("properties", {}), f"{name}: {forbidden}")
 

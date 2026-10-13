@@ -347,19 +347,19 @@ class ChatViewTests(unittest.TestCase):
 class RealServerToolSurfaceTests(unittest.IsolatedAsyncioTestCase):
     """The tool surface of the REAL Trading MCP server (repository copy; it only lists tools, no database is touched)."""
 
-    async def test_v_w_the_19_real_tools_map_to_14_offered_ones(self) -> None:
+    async def test_v_w_the_20_real_tools_map_to_14_offered_ones(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         core = mc.McpClientCore(sys.executable, str(support.ROOT / "mcp-tools" / "server.py"), str(Path(tmp.name) / "none.db"), Path(tmp.name) / "e.log")
         try:
             self.assertTrue(await core.start(), core.detail)
             catalog = core.tools
-            self.assertEqual(len(catalog), 19)
+            self.assertEqual(len(catalog), 20)
             tools, schemas = tl.offered_tools(catalog)
             names = [t["function"]["name"] for t in tools]
             self.assertEqual(len(names), 14)  # the 13 READ tools of before and get_watchlist
             self.assertEqual(sorted(names), sorted(n for n in catalog if tp.is_read(n)))
-            self.assertFalse({"sql_execute", "approve_swing_promotion", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"} & set(names))
+            self.assertFalse({"sql_execute", "approve_swing_promotion", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"} & set(names))
             for tool in tools:
                 fn = tool["function"]
                 original = catalog[fn["name"]]

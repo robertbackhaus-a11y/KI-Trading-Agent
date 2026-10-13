@@ -159,6 +159,16 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "DECISIONS_UNAVAILABLE": ("Einstufung nicht verfügbar", "Die Einstufung der Kandidaten konnte nicht berechnet werden."),
     "ENGINE_UNAVAILABLE": ("Planner nicht verfügbar", "Das Ergebnis des Planners liegt nicht vor; der Einstiegsstatus fehlt."),
     "MARKET_INTELLIGENCE_REPORT_UNAVAILABLE": ("News-Bericht fehlt", "Es liegt kein gültiger Markt-Intelligence-Bericht vor; der News-Status ist nicht verfügbar."),
+    # -- security onboarding (the answers of onboard_security) ---------------------------------------------------------------------
+    "READY": ("Bereit zum Anlegen", "Die Prüfung hat keine Konflikte mit dem Security Master gefunden; es wurde noch nichts angelegt."),
+    "CREATED": ("Angelegt", "Das Wertpapier wurde im Security Master angelegt, bei Bedarf samt Provider-Symbolen und Watchlist-Eintrag."),
+    "ALREADY_EXISTS": ("Bereits vorhanden", "Das Wertpapier ist schon im Security Master; es wird weder ein zweites angelegt noch das vorhandene verändert."),
+    "ISIN_CONFLICT": ("ISIN gehört einem anderen", "Die ISIN ist im Security Master bereits einem anderen Wertpapier zugeordnet."),
+    "SYMBOL_CONFLICT": ("Symbol gehört einem anderen", "Das Symbol ist im Security Master bereits einem anderen Wertpapier zugeordnet (oder hat denselben Symbolstamm)."),
+    "WKN_CONFLICT": ("WKN gehört einem anderen", "Die WKN ist im Security Master bereits einem anderen Wertpapier zugeordnet."),
+    "ALIAS_CONFLICT": ("Provider-Symbol vergeben", "Das Provider-Symbol ist im Security Master bereits einem anderen Wertpapier zugeordnet."),
+    "INVALID_INPUT": ("Eingabe ungültig", "Mindestens eine Eingabe fehlt oder hat ein ungültiges Format; es wurde nichts angelegt."),
+    "ERROR": ("Fehler", "Die Aktion ist mit einem Fehler beendet worden; alle Änderungen wurden zurückgenommen."),
     # -- named explicitly for the GUI (not produced by the orchestrator / planner path) -----------------------------------------
     "BLOCKED_BY_EXISTING_POSITION": ("Position bereits vorhanden", "Ein neuer Einstieg wird nicht geplant, weil bereits eine Position in diesem Wertpapier besteht."),
     "STRATEGY_ASSIGNMENT_REQUIRED": ("Strategiezuordnung fehlt", "Für das Wertpapier ist noch nicht festgelegt, ob es als Swing- oder Long-Term-Position geführt werden soll."),

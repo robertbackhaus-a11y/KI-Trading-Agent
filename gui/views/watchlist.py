@@ -15,9 +15,11 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from ..viewmodels.onboarding import Outcome
 from ..viewmodels.portfolio import DASH
 from ..viewmodels.watchlist import ALL, HEADERS, NUMERIC_COLUMNS, SPIN_MAX, SPIN_MIN, ActionMessage, WatchlistVM, WatchRow, apply_filter, filter_options
 from ._common import LEVEL_COLORS, tooltip_of
+from .onboarding import OnboardSecurityDialog
 
 ROW_ID = Qt.ItemDataRole.UserRole + 1
 SORT_KEY = Qt.ItemDataRole.UserRole
@@ -47,6 +49,7 @@ class AddCandidateDialog(QDialog):
 
     check_requested = Signal(str)
     add_requested = Signal(str, object)
+    onboard_requested = Signal()  # "Neues Wertpapier aufnehmen": only offered after "noch nicht im Security Master", and only by a click
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -54,7 +57,7 @@ class AddCandidateDialog(QDialog):
         self.setModal(True)
         self.setMinimumWidth(460)
         outer = QVBoxLayout(self)
-        hint = QLabel("Es werden nur Wertpapiere aufgenommen, die bereits im Security Master stehen. Ein neues Wertpapier wird hier nicht angelegt.")
+        hint = QLabel("Hier werden nur Wertpapiere aufgenommen, die bereits im Security Master stehen. Ein unbekanntes Wertpapier legt erst „Neues Wertpapier aufnehmen“ an.")
         hint.setWordWrap(True)
         outer.addWidget(hint)
         form = QFormLayout()
@@ -83,7 +86,11 @@ class AddCandidateDialog(QDialog):
         self.cancel = QPushButton("Abbrechen")
         self.add = QPushButton("Hinzufügen")
         self.add.setDefault(True)
+        self.onboard = QPushButton("Neues Wertpapier aufnehmen …")
+        self.onboard.setToolTip("Öffnet einen eigenen Dialog, in dem das Wertpapier mit eigenen Angaben geprüft und angelegt wird")
+        self.onboard.setVisible(False)
         buttons.addWidget(self.check)
+        buttons.addWidget(self.onboard)
         buttons.addStretch(1)
         buttons.addWidget(self.cancel)
         buttons.addWidget(self.add)
@@ -91,6 +98,7 @@ class AddCandidateDialog(QDialog):
         self.cancel.clicked.connect(self.reject)
         self.check.clicked.connect(self._on_check)
         self.add.clicked.connect(self._on_add)
+        self.onboard.clicked.connect(self.onboard_requested.emit)
         self.identifier.returnPressed.connect(self._on_add)
 
     def value(self) -> tuple[str, Optional[int]]:
@@ -107,6 +115,7 @@ class AddCandidateDialog(QDialog):
             self.show_text("Bitte einen Identifier eingeben.", "warning")
             return
         self._set_busy(True)
+        self.onboard.setVisible(False)
         self.show_text("Prüfe …", "info")
         self.check_requested.emit(text)
 
@@ -116,6 +125,7 @@ class AddCandidateDialog(QDialog):
             self.show_text("Bitte einen Identifier eingeben.", "warning")
             return
         self._set_busy(True)
+        self.onboard.setVisible(False)
         self.show_text("Füge hinzu …", "info")
         self.add_requested.emit(text, priority)
 
@@ -125,6 +135,7 @@ class AddCandidateDialog(QDialog):
     def show_result(self, message: ActionMessage) -> None:
         self._set_busy(False)
         self.show_text(message.text, message.level)
+        self.onboard.setVisible(message.result == "SECURITY_NOT_FOUND")
         if message.done:
             self.accept()
 
@@ -166,12 +177,16 @@ class WatchlistView(QWidget):
     check_requested = Signal(str)
     remove_requested = Signal(int)  # security_id
     priority_requested = Signal(int, object)  # security_id, priority or None
+    onboard_check_requested = Signal(dict)  # arguments of a dry run of onboard_security
+    onboard_create_requested = Signal(dict)
+    onboard_watchlist_requested = Signal(int)  # an already existing security -> the ordinary add action
 
     def __init__(self) -> None:
         super().__init__()
         self.confirm_remove: Callable[[WatchRow], bool] = self._ask_remove  # replaceable (tests)
         self.ask_priority: Callable[[WatchRow], tuple[bool, Optional[int]]] = self._ask_priority  # replaceable (tests)
         self.add_dialog: Optional[AddCandidateDialog] = None
+        self.onboard_dialog: Optional[OnboardSecurityDialog] = None
         self._vm: Optional[WatchlistVM] = None
         self._by_id: dict[int, WatchRow] = {}
         self._action_html = ""  # the outcome of the last action stays visible while the list reloads
@@ -343,10 +358,36 @@ class WatchlistView(QWidget):
         dialog = AddCandidateDialog(self)
         dialog.check_requested.connect(self.check_requested.emit)
         dialog.add_requested.connect(self.add_requested.emit)
+        dialog.onboard_requested.connect(lambda: (dialog.reject(), self.open_onboard_dialog()))
         dialog.finished.connect(lambda _=0: setattr(self, "add_dialog", None))
         self.add_dialog = dialog
         dialog.open()
         return dialog
+
+    def open_onboard_dialog(self) -> OnboardSecurityDialog:
+        dialog = OnboardSecurityDialog(self)
+        dialog.check_requested.connect(self.onboard_check_requested.emit)
+        dialog.create_requested.connect(self.onboard_create_requested.emit)
+        dialog.watchlist_requested.connect(self.onboard_watchlist_requested.emit)
+        dialog.finished.connect(lambda _=0: setattr(self, "onboard_dialog", None))
+        self.onboard_dialog = dialog
+        dialog.open()
+        return dialog
+
+    def show_onboard_outcome(self, outcome: Outcome, arguments: Optional[dict] = None) -> None:
+        """The answer of a check (``arguments`` = what was checked) or of the creation; also copied into the page's message line."""
+        if self.onboard_dialog is not None:
+            self.onboard_dialog.show_outcome(outcome, arguments)
+        if outcome.created or self.onboard_dialog is None:
+            self._action_html = f"<span style='color:{_color(outcome.level)}'>{outcome.text}</span>"
+            self.message.setText(self._action_html)
+
+    def show_onboard_watchlist_result(self, message: ActionMessage) -> None:
+        if self.onboard_dialog is not None:
+            self.onboard_dialog.show_watchlist_result(message.text, message.level, message.done)
+        if message.done or self.onboard_dialog is None:
+            self._action_html = f"<span style='color:{_color(message.level)}'>{message.text.replace(chr(10), '<br>')}</span>"
+            self.message.setText(self._action_html)
 
     def _ask_remove(self, row: WatchRow) -> bool:
         held = "\n\nDas Wertpapier ist im Bestand. Nur der Watchlist-Eintrag wird entfernt, die Position bleibt unverändert." if row.held else ""

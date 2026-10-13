@@ -56,6 +56,7 @@ class ActionMessage:
     level: str  # "info" | "warning" | "blocker"
     text: str
     done: bool  # the operation did what was asked (the list is refreshed)
+    result: str = ""  # set where the dialog offers a follow-up: "SECURITY_NOT_FOUND" shows the button "Neues Wertpapier aufnehmen"
 
 
 def _d(value: Any) -> dict:
@@ -190,10 +191,9 @@ def describe_action(res_ok: bool, data: Any, fallback_error: str = "") -> Action
     if result == "ALREADY_EXISTS":
         return ActionMessage("warning", f"{who} steht bereits auf der Watchlist – nichts geändert.", False)
     if result == "SECURITY_NOT_FOUND":
-        text = "Wertpapier ist noch nicht im Security Master."
-        if d.get("reason") == "SECURITY_INACTIVE":
-            text = "Das Wertpapier ist im Security Master deaktiviert."
-        return ActionMessage("blocker", f"{text}\nDie Aufnahme eines vollständig neuen Wertpapiers ist ein separater Workflow.", False)
+        if d.get("reason") == "SECURITY_INACTIVE":  # it exists: a second one must not be created
+            return ActionMessage("blocker", "Das Wertpapier ist im Security Master deaktiviert.\nDie Aufnahme eines vollständig neuen Wertpapiers ist ein separater Workflow.", False)
+        return ActionMessage("blocker", "Wertpapier ist noch nicht im Security Master.\nÜber „Neues Wertpapier aufnehmen“ kann es mit eigenen Angaben angelegt werden.", False, result)
     if result == "AMBIGUOUS_IDENTIFIER":
         names = "; ".join(_who(c) + (f" (ID {c['security_id']})" if isinstance(c, dict) and c.get("security_id") else "") for c in _l(d.get("candidates")) if isinstance(c, dict))
         return ActionMessage("warning", "Der Identifier ist mehrdeutig – bitte security_id oder ISIN verwenden." + (f"\nTreffer: {names}" if names else ""), False)

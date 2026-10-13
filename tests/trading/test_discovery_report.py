@@ -371,8 +371,8 @@ class ToolSurfaceTests(unittest.TestCase):
 
     def test_nineteen_tools_and_the_twelve_original_ones_are_unchanged(self):
         names = self.public()
-        self.assertEqual(len(names), 19)  # the 15 tools of before and the four watchlist tools
-        self.assertEqual(sorted(set(names) - {"get_candidate_discovery", "get_market_intelligence", "get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"}), self.EXISTING)
+        self.assertEqual(len(names), 20)  # the 15 tools of before, the four watchlist tools and onboard_security
+        self.assertEqual(sorted(set(names) - {"get_candidate_discovery", "get_market_intelligence", "get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"}), self.EXISTING)
         self.assertIn("get_candidate_discovery", names)
 
     def test_the_new_tool_has_no_write_or_run_parameters(self):

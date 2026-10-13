@@ -1143,6 +1143,58 @@ class Tools:
         """
         return await self._watchlist_write("set_watchlist_priority", security_id, priority)
 
+    def _onboard_security_sync(self, **arguments) -> dict:
+        onboarding = self._load_runtime_trading_module("security_onboarding")
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000;")  # the scheduled collectors write too; wait a few seconds instead of failing at once
+            return onboarding.onboard_security(conn, **arguments)
+        finally:
+            conn.close()
+
+    async def onboard_security(
+        self,
+        symbol: str,
+        name: str,
+        asset_type: str,
+        isin: str | None = None,
+        wkn: str | None = None,
+        exchange: str | None = None,
+        currency: str | None = None,
+        country: str | None = None,
+        provider_symbols: dict[str, str] | None = None,
+        add_to_watchlist: bool = False,
+        watchlist_priority: int | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """ACTION (creates ONE new security in the Security Master; for the desktop GUI only): nothing is looked up or guessed, every value comes from the caller.
+
+        dry_run=true (the default) validates the input and checks it against the Security Master (ISIN, symbol, WKN, provider symbols) and writes
+        nothing: READY, ALREADY_EXISTS, ISIN_CONFLICT, SYMBOL_CONFLICT, WKN_CONFLICT, ALIAS_CONFLICT or INVALID_INPUT (all conflicts are listed).
+        dry_run=false repeats the checks and then creates, in ONE transaction, the security, the optional provider symbols and the optional
+        watchlist entry (CREATED); any error rolls everything back. No position, strategy, campaign, order, market data, fundamentals or news is
+        written or started, and no sector is assigned. An existing security is never changed.
+
+        :param symbol: public symbol exactly as it should be stored (no exchange suffix is added)
+        :param name: descriptive security name
+        :param asset_type: stock or etf (no default)
+        :param isin: optional, syntax and check digit are validated
+        :param wkn: optional, six characters
+        :param exchange: optional free text
+        :param currency: optional ISO 4217 code, three letters
+        :param country: optional ISO 3166 code, two letters
+        :param provider_symbols: optional {"Yahoo Finance": "XYZ.DE", "FMP": "XYZ"}; stored as source symbols
+        :param add_to_watchlist: true = also add the new security to the watchlist (status WATCH), in the same transaction
+        :param watchlist_priority: optional whole number, only together with add_to_watchlist
+        :param dry_run: true = check only (default), false = create
+        """
+        arguments = dict(symbol=symbol, name=name, asset_type=asset_type, isin=isin, wkn=wkn, exchange=exchange, currency=currency, country=country,
+                         provider_symbols=provider_symbols, add_to_watchlist=add_to_watchlist, watchlist_priority=watchlist_priority, dry_run=dry_run)
+        try:
+            return await asyncio.to_thread(self._onboard_security_sync, **arguments)
+        except Exception as exc:
+            return {"ok": False, "operation": "onboard_security", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
     # ============================================================
     # Runtime helper loading and read-only connection
     # ============================================================
