@@ -991,7 +991,7 @@ class Tools:
     # Unified opportunity view (read-only: orchestrator + two report files)
     # ============================================================
 
-    def _get_opportunity_view_sync(self, source: str, status: str, news_status: str | None, symbol: str | None, limit: int, detail: bool) -> dict:
+    def _get_opportunity_view_sync(self, source: str, status: str, news_status: str | None, symbol: str | None, limit: int, detail: bool, table: bool = False) -> dict:
         view_module = self._load_runtime_trading_module("opportunity_view")
         discovery_module = self._load_runtime_trading_module("discovery_report")
         intelligence_module = self._load_runtime_trading_module("intelligence_report")
@@ -1055,7 +1055,7 @@ class Tools:
         except Exception:
             return None
 
-    def _get_watchlist_sync(self, status: str | None, strategy: str | None, symbol: str | None, limit: int, detail: bool) -> dict:
+    def _get_watchlist_sync(self, status: str | None, strategy: str | None, symbol: str | None, limit: int, detail: bool, table: bool = False) -> dict:
         view_module = self._load_runtime_trading_module("watchlist_view")
         opportunity = self._load_runtime_trading_module("opportunity_view")
         analytics = self._load_runtime_trading_module("trading_analytics")
@@ -1072,7 +1072,7 @@ class Tools:
             conn.close()
         intelligence, _reason, _ = intelligence_module.read_latest_report(self._market_intelligence_report_directory())
         view = view_module.build_watchlist(rows=rows, ranking=ranking, decisions=decisions, engine=engine, mi=intelligence, symbol_map=symbol_map, alias_index=alias_index)
-        return view_module.query_watchlist(view, status=status, strategy=strategy, symbol=symbol, limit=limit, detail=detail)
+        return view_module.query_watchlist(view, status=status, strategy=strategy, symbol=symbol, limit=limit, detail=detail, table=table)
 
     async def get_watchlist(
         self,
@@ -1081,6 +1081,7 @@ class Tools:
         symbol: str | None = None,
         limit: int = 150,
         detail: bool = False,
+        table: bool = False,
     ) -> dict:
         """Every watchlist entry with security data, strategy, priority, rank, score, data quality, candidate decision, entry status and news status
         (read-only: no web, no scan, no DB write, no order; joins the existing ranking, decision, planner and news results and computes nothing new).
@@ -1090,10 +1091,12 @@ class Tools:
         :param symbol: one or comma-separated symbols, ISINs or WKNs
         :param limit: rows (default 150, max 200)
         :param detail: true = complete rows (at most 10), only for diagnosis
+        :param table: true = the row shape of the desktop GUI table (ids, ISIN, dates, notes flag); chat and LLM clients leave it false
+        The default answer is compact: a summary (counts by strategy, status, data quality, news) plus a few fields per entry; absent fields have no value.
         Rows are ordered by rank (scored entries first), then priority (higher first), then symbol.
         """
         try:
-            return await asyncio.to_thread(self._get_watchlist_sync, status, strategy, symbol, int(limit), bool(detail))
+            return await asyncio.to_thread(self._get_watchlist_sync, status, strategy, symbol, int(limit), bool(detail), bool(table))
         except Exception as exc:
             return {"ok": False, "operation": "get_watchlist", "error": "WATCHLIST_VIEW_FAILED", "message": str(exc)}
 

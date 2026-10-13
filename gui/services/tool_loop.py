@@ -30,7 +30,7 @@ MAX_RESULT_CHARS = 40_000  # the same cap the MCP server applies to compact answ
 MAX_TOTAL_RESULT_CHARS = 80_000  # all tool results of one request together
 WARN_RESULT_CHARS = 20_000
 TOOL_TIMEOUT_S = 90.0
-FORCED_ARGUMENTS = {"detail": False}
+FORCED_ARGUMENTS = {"detail": False, "table": False}  # the chat always gets the compact answer; set only where the tool has the parameter
 
 SYSTEM_PROMPT = (
     "Du bist der Assistent des Trading Agents, einer lokalen Portfolio-Analyse. Der Agent simuliert nur: Pläne und Empfehlungen sind keine Orders, "
@@ -86,9 +86,10 @@ def offered_tools(catalog: Mapping[str, Mapping[str, Any]]) -> tuple[list[dict[s
     return tools, schemas
 
 
-def has_forced_argument(catalog: Mapping[str, Mapping[str, Any]], name: str) -> bool:
+def forced_arguments(catalog: Mapping[str, Mapping[str, Any]], name: str) -> dict[str, Any]:
+    """The forced arguments this tool actually has (a tool without ``table`` must not be sent one)."""
     props = (catalog.get(name, {}).get("input_schema") or {}).get("properties") or {}
-    return any(k in props for k in FORCED_ARGUMENTS)
+    return {k: v for k, v in FORCED_ARGUMENTS.items() if k in props}
 
 
 def schema_hash(catalog: Mapping[str, Mapping[str, Any]]) -> str:
@@ -273,8 +274,7 @@ class ToolLoop:
         if errors:
             return refuse("TOOL_ARGS_INVALID", "; ".join(errors)[:300])
         final_args = dict(coerced)
-        if has_forced_argument(self.catalog, name):
-            final_args.update(FORCED_ARGUMENTS)
+        final_args.update(forced_arguments(self.catalog, name))
         emit(LoopEvent("tool_call", name, {"arguments": coerced, "allowed": True}))
         emit(LoopEvent("status", f"Tool {name} läuft …"))
         result = self.call_tool(name, final_args, token)

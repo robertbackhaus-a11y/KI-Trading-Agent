@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
             return
         self._inflight.add("watchlist")
         self.watchlist.show_loading()
-        self.mcp.call("get_watchlist", {"limit": 200}, timeout=90, on_done=self._on_watchlist)
+        self.mcp.call("get_watchlist", {"limit": 200, "table": True}, timeout=90, on_done=self._on_watchlist)
 
     def _on_watchlist(self, res: McpResult) -> None:
         self._inflight.discard("watchlist")

@@ -221,6 +221,15 @@ class LoopFlowTests(LoopBase):
         shown = [e.data["arguments"] for e in self.events if e.kind == "tool_call"]
         self.assertNotIn("detail", shown[0])  # the screen shows what the model chose, not what the loop forced
 
+    def test_the_chat_never_offers_or_sends_table_and_only_to_tools_that_have_it(self) -> None:
+        watchlist = {"description": "w", "input_schema": schema({"limit": {"type": "integer", "default": 150}, "detail": DETAIL, "table": {"default": False, "type": "boolean", "title": "Table"}})}
+        catalog = {**CATALOG, "get_watchlist": watchlist}
+        tools, schemas = tl.offered_tools(catalog)
+        self.assertEqual(sorted(schemas["get_watchlist"]["properties"]), ["limit"])  # neither detail nor table is the model's to choose
+        self.assertEqual(tl.forced_arguments(catalog, "get_watchlist"), {"detail": False, "table": False})
+        self.assertEqual(tl.forced_arguments(catalog, "get_market_intelligence"), {"detail": False})  # no table parameter there: none is sent
+        self.assertEqual(tl.forced_arguments(catalog, "database_status"), {})
+
     def test_the_validator(self) -> None:
         s = CATALOG["get_market_intelligence"]["input_schema"]
         errors: list[str] = []

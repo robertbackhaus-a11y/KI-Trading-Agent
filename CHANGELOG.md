@@ -13,6 +13,7 @@
 - Readable reason-code presentation in the desktop GUI (`gui/viewmodels/reason_codes.py`): technical codes are shown as short German texts, and the hover tooltip keeps the explanation and the original code; the backend codes are unchanged
 
 ### Changed
+- `get_watchlist` answers compactly by default for chat clients: a `summary` (counts by strategy, status, data quality, news) plus a few fields per entry instead of every table field (about 55 % fewer characters for 54 entries); the new optional parameter `table=true` returns the former row shape for the desktop GUI, `detail=true` stays unchanged. The chat never offers `detail` or `table`.
 - Free-text attribution of wire releases requires an explicit identification (ISIN, exchange-qualified ticker or full company name); a bare ticker word never matches
 - Market-intelligence events and reports remain readable by earlier versions (new fields are optional)
 - Desktop GUI: a duplicate or contradictory display of reason codes is cleaned up (a status that equals its reason is shown once; a position that is sold or reduced no longer reads "hold")

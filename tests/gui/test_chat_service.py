@@ -365,9 +365,10 @@ class RealServerToolSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 original = catalog[fn["name"]]
                 self.assertEqual(fn["description"], original["description"] or fn["name"])  # passed through
                 expected = json.loads(json.dumps(original["input_schema"]))
-                expected.get("properties", {}).pop("detail", None)
-                if "required" in expected:
-                    expected["required"] = [r for r in expected["required"] if r != "detail"]
+                for forced in ("detail", "table"):  # forced to false for the chat, so not offered
+                    expected.get("properties", {}).pop(forced, None)
+                    if "required" in expected:
+                        expected["required"] = [r for r in expected["required"] if r != forced]
                 self.assertEqual(fn["parameters"], expected, fn["name"])
             self.assertEqual({n for n in catalog if "detail" in catalog[n]["input_schema"].get("properties", {})}, {"run_trading_orchestrator", "get_market_intelligence", "get_opportunity_view", "get_candidate_discovery", "get_watchlist"})
             # the validator accepts what the real schemas describe and rejects what they do not

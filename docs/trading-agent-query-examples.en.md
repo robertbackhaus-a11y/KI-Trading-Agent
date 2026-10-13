@@ -395,7 +395,7 @@ All 19 MCP tools with their access type. Names and parameters are taken from the
 | `get_candidate_discovery` | Read | Last discovery report: new candidates, not PROMOTE/BUY | `status`, `limit`, `detail`, `symbol` | 4, 7, 14 |
 | `get_market_intelligence` | Read | Last news report: classified macro and company news | `scope`, `category`, `importance`, `symbol`, `sector`, `limit`, `detail` | 5, 7, 14 |
 | `get_opportunity_view` | Read | Candidates from engine and discovery with news context, plan status and capital | `source`, `status`, `news_status`, `symbol`, `limit`, `detail` | 2, 6, 7, 8, 9, 14 |
-| `get_watchlist` | Read | Whole watchlist with strategy, priority, rank, score, data quality, decision, entry status and news status | `status`, `strategy`, `symbol`, `limit`, `detail` | 3 |
+| `get_watchlist` | Read | Whole watchlist with strategy, priority, rank, score, data quality, decision, entry status and news status; default: compact answer with a summary (chat clients), `table=true` the table shape of the desktop GUI, `detail=true` at most 10 complete entries | `status`, `strategy`, `symbol`, `limit`, `detail`, `table` | 3 |
 | `rank_watchlist` | Read | Technical momentum/trend ranking of the watchlist | – | 3 |
 | `remove_watchlist_candidate` | Write (watchlist only) | Remove one security from the watchlist; positions, strategies and campaigns stay untouched | `security_id` | – |
 | `run_trading_orchestrator` | Read | Portfolio status with actions, allocation, capital and entry plan | `as_of`, `detail` | 1, 2, 9, 10, 11, 14 |

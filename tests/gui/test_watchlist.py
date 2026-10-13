@@ -244,6 +244,13 @@ class WatchlistWindowTests(unittest.TestCase):
         self.assertEqual(self.actions(), [])  # opening and reading never calls an action
         self.assertEqual(self.reads(), 1)
 
+    def test_the_page_asks_for_the_table_shape_and_never_for_the_diagnosis_view(self) -> None:
+        self.open_page()
+        reads = [c for c in self.calls() if c["tool"] == "get_watchlist"]
+        self.assertEqual(len(reads), 1)
+        args = reads[0].get("args") or reads[0].get("arguments") or {}
+        self.assertEqual((args.get("table"), args.get("detail"), args.get("limit")), (True, False, 200))
+
     # T
     def test_t_the_table_loads_with_the_columns_and_readable_values(self) -> None:
         self.open_page()

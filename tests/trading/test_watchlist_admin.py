@@ -8,6 +8,7 @@ import hashlib
 import importlib
 import importlib.util
 import io
+import json
 import sqlite3
 import sys
 import tempfile
@@ -238,7 +239,7 @@ class AddTests(WatchlistDbCase):
 
     def test_a_security_without_market_data_can_be_added(self) -> None:
         self.assertEqual(self.add("AAA")["result"], "ADDED")  # AAA has no price history at all
-        rows = {r["security_id"]: r for r in self.run_tool("get_watchlist")["rows"]}
+        rows = {r["security_id"]: r for r in self.run_tool("get_watchlist", table=True)["rows"]}
         self.assertEqual(rows[1]["quality"], "MARKET_DATA_MISSING")
         self.assertNotIn("score", rows[1])
 
@@ -277,7 +278,7 @@ class RemoveAndPriorityTests(WatchlistDbCase):
         with self.connect() as conn:
             conn.execute("UPDATE watchlist SET thesis = 'a thesis' WHERE security_id = 3")
             conn.commit()
-        flagged = {r["security_id"]: r.get("annotated") for r in self.run_tool("get_watchlist")["rows"]}
+        flagged = {r["security_id"]: r.get("annotated") for r in self.run_tool("get_watchlist", table=True)["rows"]}
         self.assertEqual(flagged, {3: True, 4: None})  # the flag is shown only where something would be lost
         detail = self.run_tool("get_watchlist", symbol="GGG", detail=True)["rows"][0]
         self.assertEqual((detail["thesis"], detail["notes"], detail["entry_reason"], detail["target_entry"]), ("a thesis", None, None, None))
@@ -397,7 +398,7 @@ class ReadTests(WatchlistDbCase):
     def test_a_get_watchlist_returns_every_candidate(self) -> None:
         self.run_tool("add_watchlist_candidate", "AAA")
         self.run_tool("add_watchlist_candidate", ISIN_B, priority=80)
-        result = self.run_tool("get_watchlist")
+        result = self.run_tool("get_watchlist", table=True)
         self.assertEqual((result["ok"], result["read_only"], result["matching"], result["returned"], result["truncated"]), (True, True, 4, 4, False))
         self.assertEqual(result["counts"]["total"], 4)
         self.assertEqual(result["counts"]["by_status"], {"WATCH": 4})
@@ -427,10 +428,10 @@ class ReadTests(WatchlistDbCase):
 
     def test_filters(self) -> None:
         self.run_tool("add_watchlist_candidate", "AAA")
-        self.assertEqual([r["security_id"] for r in self.run_tool("get_watchlist", strategy="swing")["rows"]], [3])
-        self.assertEqual(sorted(r["security_id"] for r in self.run_tool("get_watchlist", strategy="NONE")["rows"]), [1, 4])
-        self.assertEqual([r["security_id"] for r in self.run_tool("get_watchlist", symbol="ggg, nope")["rows"]], [3])
-        self.assertEqual([r["security_id"] for r in self.run_tool("get_watchlist", symbol=ISIN_A)["rows"]], [1])
+        self.assertEqual([r["security_id"] for r in self.run_tool("get_watchlist", strategy="swing", table=True)["rows"]], [3])
+        self.assertEqual(sorted(r["security_id"] for r in self.run_tool("get_watchlist", strategy="NONE", table=True)["rows"]), [1, 4])
+        self.assertEqual([r["security_id"] for r in self.run_tool("get_watchlist", symbol="ggg, nope", table=True)["rows"]], [3])
+        self.assertEqual([r["security_id"] for r in self.run_tool("get_watchlist", symbol=ISIN_A, table=True)["rows"]], [1])
         self.assertEqual(self.run_tool("get_watchlist", status="REMOVED")["matching"], 0)
         limited = self.run_tool("get_watchlist", limit=1)
         self.assertEqual((limited["returned"], limited["matching"], limited["truncated"]), (1, 3, True))
@@ -442,12 +443,54 @@ class ReadTests(WatchlistDbCase):
         compact = self.run_tool("get_watchlist", symbol="GGG")["rows"][0]
         self.assertNotIn("aliases", compact)
 
+    # compact (chat) answer
+    def test_the_default_answer_is_the_compact_chat_shape(self) -> None:
+        self.run_tool("add_watchlist_candidate", "AAA")
+        result = self.run_tool("get_watchlist")
+        self.assertNotIn("counts", result)
+        summary = result["summary"]
+        self.assertEqual((summary["total"], summary["held"], summary["statuses"], summary["strategies"]), (3, 1, {"WATCH": 3}, {"NONE": 2, "swing": 1}))
+        self.assertEqual(summary["same_for_all"], {"status": "WATCH", "news_status": "NEWS_UNAVAILABLE"})
+        allowed = set(wv._COMPACT_KEYS)
+        for row in result["rows"]:
+            self.assertLessEqual(set(row), allowed)
+            for private in ("security_id", "isin", "added_at", "as_of", "promotion", "annotated", "notes", "thesis", "aliases"):
+                self.assertNotIn(private, row)
+            self.assertNotIn("status", row)  # identical for every entry: stated once in the summary
+        self.assertEqual([r["symbol"] for r in result["rows"]][0], "GGG")
+        self.assertEqual(result["rows"][0]["held"], True)
+        self.assertNotIn("held", result["rows"][1])  # only ever true
+        self.assertEqual((result["matching"], result["returned"], result["truncated"]), (3, 3, False))
+        json.loads(json.dumps(result))
+
+    def test_a_differing_status_stays_in_the_rows(self) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE watchlist SET status = 'PAUSED' WHERE security_id = 4")
+            conn.commit()
+        result = self.run_tool("get_watchlist")
+        self.assertNotIn("status", result["summary"]["same_for_all"])
+        self.assertEqual(sorted(r["status"] for r in result["rows"]), ["PAUSED", "WATCH"])
+
+    def test_table_and_detail_keep_the_previous_shapes(self) -> None:
+        table = self.run_tool("get_watchlist", table=True)
+        self.assertIn("counts", table)
+        self.assertNotIn("summary", table)
+        self.assertEqual(set(table["rows"][0]) & {"security_id", "status", "added_at", "news_status"}, {"security_id", "status", "added_at", "news_status"})
+        self.assertNotIn("aliases", table["rows"][0])
+        detail = self.run_tool("get_watchlist", table=True, detail=True)  # detail wins over table
+        self.assertIn("aliases", detail["rows"][0])
+        self.assertIn("counts", detail)
+
+    def test_the_summary_describes_the_whole_selection_when_rows_are_limited(self) -> None:
+        result = self.run_tool("get_watchlist", limit=1)
+        self.assertEqual((result["returned"], result["matching"], result["truncated"], result["summary"]["total"]), (1, 2, True, 2))
+
     def test_an_oversized_answer_is_trimmed_to_the_budget(self) -> None:
         rows = [{"security_id": i, "symbol": f"S{i}", "name": "N" * 60, "isin": "ZZ0000000011", "strategy": "swing", "held": False, "priority": 1, "status": "WATCH", "rank": i,
                  "score": 1.0, "quality": "OK", "as_of": "2026-01-01", "assessment": "WATCH", "entry_status": "WAIT_FOR_TRIGGER", "promotion": "KEEP_WATCHING",
                  "news_status": "NEWS_CLEAR", "added_at": "2026-01-01 00:00:00", "aliases": [], "news": {"counts": {}, "events": []}} for i in range(1, 400)]
         view = {"status": "AVAILABLE", "counts": {"total": 399}, "order": "x", "rows": rows, "warnings": []}
-        out = wv.query_watchlist(view, limit=500)
+        out = wv.query_watchlist(view, limit=500, table=True)
         self.assertLessEqual(len(wv._text(out)), wv.RESPONSE_CHAR_BUDGET)
         self.assertTrue(out["truncated"])
         self.assertEqual(out["rows"][0]["security_id"], 1)  # the best-ranked rows are kept

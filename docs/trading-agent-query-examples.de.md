@@ -395,7 +395,7 @@ Alle 19 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen
 | `get_candidate_discovery` | Lesen | Letzter Discovery-Report: neue Kandidaten, nicht PROMOTE/BUY | `status`, `limit`, `detail`, `symbol` | 4, 7, 14 |
 | `get_market_intelligence` | Lesen | Letzter News-Report: klassifizierte Makro- und Unternehmensnachrichten | `scope`, `category`, `importance`, `symbol`, `sector`, `limit`, `detail` | 5, 7, 14 |
 | `get_opportunity_view` | Lesen | Kandidaten aus Engine und Discovery mit News-Kontext, Plan-Status und Kapital | `source`, `status`, `news_status`, `symbol`, `limit`, `detail` | 2, 6, 7, 8, 9, 14 |
-| `get_watchlist` | Lesen | Gesamte Watchlist mit Strategie, Priorität, Rang, Score, Datenqualität, Einstufung, Entry-Status und News-Status | `status`, `strategy`, `symbol`, `limit`, `detail` | 3 |
+| `get_watchlist` | Lesen | Gesamte Watchlist mit Strategie, Priorität, Rang, Score, Datenqualität, Einstufung, Entry-Status und News-Status; Standard: kompakte Antwort mit Zusammenfassung (Chat-Clients), `table=true` die Tabellenform der Desktop-GUI, `detail=true` höchstens 10 vollständige Einträge | `status`, `strategy`, `symbol`, `limit`, `detail`, `table` | 3 |
 | `rank_watchlist` | Lesen | Technischer Momentum-/Trend-Rang der Watchlist | – | 3 |
 | `remove_watchlist_candidate` | Schreiben (nur Watchlist) | Ein Wertpapier von der Watchlist entfernen; Positionen, Strategien und Kampagnen bleiben unberührt | `security_id` | – |
 | `run_trading_orchestrator` | Lesen | Depotstatus mit Aktionen, Allokation, Kapital- und Entry-Plan | `as_of`, `detail` | 1, 2, 9, 10, 11, 14 |

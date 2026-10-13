@@ -106,7 +106,7 @@ class ToolVisibilityTests(unittest.TestCase):
     def test_the_new_tools_have_narrow_signatures_without_sql_or_security_fields(self) -> None:
         tools = listing()
         params = {n: sorted(tools[n].input_schema.get("properties", {})) for n in NEW_TOOLS}
-        self.assertEqual(params["get_watchlist"], ["detail", "limit", "status", "strategy", "symbol"])
+        self.assertEqual(params["get_watchlist"], ["detail", "limit", "status", "strategy", "symbol", "table"])
         self.assertEqual(params["add_watchlist_candidate"], ["dry_run", "identifier", "priority"])
         self.assertEqual(params["remove_watchlist_candidate"], ["security_id"])
         self.assertEqual(params["set_watchlist_priority"], ["priority", "security_id"])

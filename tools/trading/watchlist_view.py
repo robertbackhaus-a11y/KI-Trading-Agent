@@ -21,8 +21,9 @@ RESPONSE_CHAR_BUDGET = 34_000  # the MCP server refuses results above 40,000 cha
 STRATEGY_NONE = "NONE"  # filter value: entries without an active strategy assignment
 NO_MARKET_DATA = "MARKET_DATA_MISSING"
 NOTE_FIELDS = ("entry_reason", "thesis", "target_entry", "notes")  # free-text / target fields of a watchlist row
-_COMPACT_KEYS = ("security_id", "symbol", "name", "isin", "strategy", "held", "priority", "status", "rank", "score", "quality", "as_of",
-                 "assessment", "entry_status", "promotion", "news_status", "annotated", "added_at")
+_TABLE_KEYS = ("security_id", "symbol", "name", "isin", "strategy", "held", "priority", "status", "rank", "score", "quality", "as_of",
+               "assessment", "entry_status", "promotion", "news_status", "annotated", "added_at")  # the desktop GUI's table rows (``table=true``)
+_COMPACT_KEYS = ("symbol", "name", "strategy", "held", "priority", "status", "rank", "score", "quality", "assessment", "entry_status", "news_status")  # chat / LLM rows
 
 
 def load_rows(conn: Any, today: str) -> list[dict[str, Any]]:
@@ -143,8 +144,36 @@ def _wanted(row: Mapping[str, Any], wanted: Sequence[str]) -> bool:
     return any(w in names for w in wanted)
 
 
-def _compact(row: Mapping[str, Any]) -> dict[str, Any]:
-    return {k: row[k] for k in _COMPACT_KEYS if row.get(k) is not None}  # absent = no value; keeps the answer small
+def _table(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {k: row[k] for k in _TABLE_KEYS if row.get(k) is not None}  # absent = no value; keeps the answer small
+
+
+_UNIFORM_KEYS = ("status", "news_status")  # stated once in the summary when every matching entry has the same value
+
+
+def _uniform(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    out = {}
+    for key in _UNIFORM_KEYS:
+        values = {r.get(key) for r in rows}
+        if len(values) == 1 and None not in values and len(rows) > 1:
+            out[key] = next(iter(values))
+    return out
+
+
+def _compact(row: Mapping[str, Any], same: Mapping[str, Any] = {}) -> dict[str, Any]:
+    out = {k: row[k] for k in _COMPACT_KEYS if row.get(k) is not None and k not in same}
+    if not out.get("held"):
+        out.pop("held", None)  # ``held`` appears only as true; the summary carries the number of held entries
+    return out
+
+
+def _summary(total: int, rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Small aggregation of the matching entries (before the limit), so a trimmed row list still describes the whole selection."""
+    dates = [str(r["as_of"]) for r in rows if r.get("as_of")]
+    return {"total": total, "held": sum(1 for r in rows if r.get("held")),
+            "strategies": _count(r["strategy"] or STRATEGY_NONE for r in rows), "statuses": _count(r["status"] for r in rows),
+            "data_quality": _count(r["quality"] or "NONE" for r in rows), "news": _count(r["news_status"] or "NONE" for r in rows),
+            "as_of": max(dates) if dates else None, "same_for_all": _uniform(rows)}  # same_for_all: fields left out of every row because they never differ
 
 
 def _text(obj: Any) -> str:
@@ -152,8 +181,11 @@ def _text(obj: Any) -> str:
 
 
 def query_watchlist(view: Mapping[str, Any], *, status: Optional[str] = None, strategy: Optional[str] = None, symbol: Optional[str] = None, limit: Any = DEFAULT_LIMIT,
-                    detail: bool = False) -> dict[str, Any]:
-    """Filter and shape the view.  Filters are exact (status, strategy ``swing`` / ``long_term`` / ``NONE``) or a comma-separated symbol / ISIN / WKN list."""
+                    detail: bool = False, table: bool = False) -> dict[str, Any]:
+    """Filter and shape the view.  Filters are exact (status, strategy ``swing`` / ``long_term`` / ``NONE``) or a comma-separated symbol / ISIN / WKN list.
+
+    Three shapes: the default is the small chat / LLM answer (a summary plus a few fields per entry); ``table`` is the row shape the desktop GUI needs
+    (ids, ISIN, dates, the notes flag); ``detail`` is the diagnosis view (at most 10 complete rows) and wins over ``table``."""
     try:
         cap = max(1, min(int(limit), MAX_LIMIT))
     except (TypeError, ValueError):
@@ -169,11 +201,14 @@ def query_watchlist(view: Mapping[str, Any], *, status: Optional[str] = None, st
         rows = [r for r in rows if _wanted(r, wanted_symbols)]
     matching = len(rows)
     shown = rows[:cap]
+    chat = not detail and not table
+    same = _uniform(rows) if chat else {}
     response = {
-        "ok": True, "operation": "get_watchlist", "read_only": True, "status": view["status"], "counts": view["counts"], "order": view["order"],
-        "filter": {"status": status, "strategy": strategy, "symbol": symbol, "limit": cap, "detail": bool(detail)},
+        "ok": True, "operation": "get_watchlist", "read_only": True, "status": view["status"],
+        ("summary" if chat else "counts"): _summary(len(view["rows"]), rows) if chat else view["counts"], "order": view["order"],
+        "filter": {"status": status, "strategy": strategy, "symbol": symbol, "limit": cap, "detail": bool(detail), "table": bool(table)},
         "matching": matching, "returned": len(shown), "truncated": matching > len(shown),
-        "rows": [dict(r) if detail else _compact(r) for r in shown], "warnings": list(view["warnings"]),
+        "rows": [dict(r) if detail else (_compact(r, same) if chat else _table(r)) for r in shown], "warnings": list(view["warnings"]),
     }
     while not detail and len(_text(response)) > RESPONSE_CHAR_BUDGET and response["rows"]:  # the oldest rank is kept; the tail is dropped, never half a row
         response["rows"].pop()

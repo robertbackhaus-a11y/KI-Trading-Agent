@@ -96,9 +96,9 @@ def _rows() -> list:
     return _template()["rows"]
 
 
-async def get_watchlist(status: str | None = None, strategy: str | None = None, symbol: str | None = None, limit: int = 150, detail: bool = False) -> str:
+async def get_watchlist(status: str | None = None, strategy: str | None = None, symbol: str | None = None, limit: int = 150, detail: bool = False, table: bool = False) -> str:
     """Watchlist (fake, READ)."""
-    _calls("get_watchlist", {"status": status, "strategy": strategy, "symbol": symbol, "limit": limit, "detail": detail})
+    _calls("get_watchlist", {"status": status, "strategy": strategy, "symbol": symbol, "limit": limit, "detail": detail, "table": table})
     env = dict(_template())
     env["counts"] = {"total": len(_rows()), "held": sum(1 for r in _rows() if r.get("held"))}
     env["matching"] = env["returned"] = len(_rows())
