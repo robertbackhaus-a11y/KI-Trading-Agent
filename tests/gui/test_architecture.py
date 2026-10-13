@@ -33,8 +33,8 @@ class ArchitectureTests(unittest.TestCase):
         names = {str(p.relative_to(GUI)).replace("\\", "/") for p in files()}
         self.assertEqual(names - {"__init__.py", "services/__init__.py", "viewmodels/__init__.py", "views/__init__.py"}, {
             "__main__.py", "app.py", "services/background.py", "services/chat_service.py", "services/mcp_client.py", "services/ollama_client.py", "services/settings.py",
-            "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/portfolio.py", "viewmodels/reason_codes.py", "viewmodels/tasks.py",
-            "views/_common.py", "views/chat.py", "views/dashboard.py", "views/diagnostics.py", "views/planner.py", "views/tasks.py",
+            "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/portfolio.py", "viewmodels/reason_codes.py", "viewmodels/tasks.py", "viewmodels/watchlist.py",
+            "views/_common.py", "views/chat.py", "views/dashboard.py", "views/diagnostics.py", "views/planner.py", "views/tasks.py", "views/watchlist.py",
         })
         self.assertFalse((GUI / "controllers").exists())
         self.assertFalse((GUI / "widgets").exists())
@@ -74,7 +74,7 @@ class ArchitectureTests(unittest.TestCase):
         called = set()
         for path in files():
             called |= set(re.findall(r"\.call\(\s*\"([a-z_]+)\"", path.read_text(encoding="utf-8")))
-        self.assertEqual(called, {"database_status", "run_trading_orchestrator"})
+        self.assertEqual(called, {"database_status", "run_trading_orchestrator", "get_watchlist"})
         self.assertTrue(all(is_read(n) for n in called))
 
     def test_the_mcp_server_is_never_imported_and_the_chat_endpoint_has_one_owner(self) -> None:

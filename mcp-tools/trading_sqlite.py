@@ -13,6 +13,7 @@ import importlib.util
 import sqlite3
 import sys
 import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -1041,6 +1042,103 @@ class Tools:
             return await asyncio.to_thread(self._get_opportunity_view_sync, source, status, news_status, symbol, int(limit), bool(detail))
         except Exception as exc:
             return {"ok": False, "operation": "get_opportunity_view", "error": "OPPORTUNITY_VIEW_FAILED", "message": str(exc)}
+
+    # ============================================================
+    # Watchlist: get_watchlist reads; the three other operations are narrow writes to the watchlist table only
+    # ============================================================
+
+    @staticmethod
+    def _optional(compute):
+        """One optional input of the watchlist view: a failure means 'not available' (reported as a warning), never a failed tool."""
+        try:
+            return compute()
+        except Exception:
+            return None
+
+    def _get_watchlist_sync(self, status: str | None, strategy: str | None, symbol: str | None, limit: int, detail: bool) -> dict:
+        view_module = self._load_runtime_trading_module("watchlist_view")
+        opportunity = self._load_runtime_trading_module("opportunity_view")
+        analytics = self._load_runtime_trading_module("trading_analytics")
+        decisions_module = self._load_runtime_trading_module("candidate_decision")
+        intelligence_module = self._load_runtime_trading_module("intelligence_report")
+        conn = self._readonly_import_connection(self.valves.database_path)
+        try:
+            rows = view_module.load_rows(conn, date.today().isoformat())
+            ranking = self._optional(lambda: analytics.rank_watchlist(conn))
+            decisions = self._optional(lambda: [item.primitive() for item in decisions_module.evaluate_watchlist_candidates(conn)])
+            engine = self._optional(lambda: self._load_runtime_trading_module("trading_orchestrator").run_trading_orchestrator(conn).primitive())
+            symbol_map, alias_index = opportunity.load_symbol_map(conn), opportunity.load_alias_index(conn)
+        finally:
+            conn.close()
+        intelligence, _reason, _ = intelligence_module.read_latest_report(self._market_intelligence_report_directory())
+        view = view_module.build_watchlist(rows=rows, ranking=ranking, decisions=decisions, engine=engine, mi=intelligence, symbol_map=symbol_map, alias_index=alias_index)
+        return view_module.query_watchlist(view, status=status, strategy=strategy, symbol=symbol, limit=limit, detail=detail)
+
+    async def get_watchlist(
+        self,
+        status: str | None = None,
+        strategy: str | None = None,
+        symbol: str | None = None,
+        limit: int = 150,
+        detail: bool = False,
+    ) -> dict:
+        """Every watchlist entry with security data, strategy, priority, rank, score, data quality, candidate decision, entry status and news status
+        (read-only: no web, no scan, no DB write, no order; joins the existing ranking, decision, planner and news results and computes nothing new).
+
+        :param status: watchlist status, e.g. WATCH
+        :param strategy: swing, long_term or NONE (no active strategy assignment)
+        :param symbol: one or comma-separated symbols, ISINs or WKNs
+        :param limit: rows (default 150, max 200)
+        :param detail: true = complete rows (at most 10), only for diagnosis
+        Rows are ordered by rank (scored entries first), then priority (higher first), then symbol.
+        """
+        try:
+            return await asyncio.to_thread(self._get_watchlist_sync, status, strategy, symbol, int(limit), bool(detail))
+        except Exception as exc:
+            return {"ok": False, "operation": "get_watchlist", "error": "WATCHLIST_VIEW_FAILED", "message": str(exc)}
+
+    def _watchlist_write_sync(self, operation: str, *args, **kwargs) -> dict:
+        admin = self._load_runtime_trading_module("watchlist_admin")
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000;")  # the scheduled collectors write too; wait a few seconds instead of failing at once
+            return getattr(admin, operation)(conn, *args, **kwargs)
+        finally:
+            conn.close()
+
+    async def _watchlist_write(self, operation: str, *args, **kwargs) -> dict:
+        try:
+            return await asyncio.to_thread(self._watchlist_write_sync, operation, *args, **kwargs)
+        except Exception as exc:
+            return {"ok": False, "operation": operation, "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
+    async def add_watchlist_candidate(self, identifier: str, priority: int | None = None, dry_run: bool = False) -> dict:
+        """ACTION (writes only the watchlist table): add a security that is ALREADY in the Security Master to the watchlist (status WATCH).
+
+        The identifier is resolved deterministically (security_id, ISIN, WKN, exact symbol/alias, symbol stem, exact company name); there is no
+        fuzzy search and a security is never created.  Results: ADDED, ALREADY_EXISTS, SECURITY_NOT_FOUND, AMBIGUOUS_IDENTIFIER,
+        INVALID_IDENTIFIER, INVALID_PRIORITY, ERROR.  dry_run=true only resolves (WOULD_ADD) and writes nothing.
+
+        :param identifier: security_id, ISIN, WKN, symbol or alias, or the exact full company name
+        :param priority: optional whole number (higher ranks first, as in the planner tie-break)
+        :param dry_run: true = resolve only, no write
+        """
+        return await self._watchlist_write("add_watchlist_candidate", identifier, priority, dry_run=bool(dry_run))
+
+    async def remove_watchlist_candidate(self, security_id: int) -> dict:
+        """ACTION (writes only the watchlist table): remove one security from the watchlist.
+
+        Only the watchlist row is deleted; a held position, its strategy assignment and its campaigns stay untouched.
+        Results: REMOVED, NOT_FOUND, INVALID_IDENTIFIER, ERROR.
+        """
+        return await self._watchlist_write("remove_watchlist_candidate", security_id)
+
+    async def set_watchlist_priority(self, security_id: int, priority: int | None) -> dict:
+        """ACTION (writes only the watchlist table): set the priority of one watchlist entry (a whole number, higher ranks first; null clears it).
+
+        Results: PRIORITY_SET, NOT_FOUND, INVALID_IDENTIFIER, INVALID_PRIORITY, ERROR.
+        """
+        return await self._watchlist_write("set_watchlist_priority", security_id, priority)
 
     # ============================================================
     # Runtime helper loading and read-only connection

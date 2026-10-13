@@ -795,10 +795,10 @@ class ToolSurfaceTests(unittest.TestCase):
     def public(self):
         return sorted(n for n, m in inspect.getmembers(Tools()) if not n.startswith("_") and callable(m) and (inspect.ismethod(m) or inspect.isfunction(m)))
 
-    def test_fifteen_tools_and_the_thirteen_earlier_ones_are_unchanged(self):
+    def test_nineteen_tools_and_the_thirteen_earlier_ones_are_unchanged(self):
         names = self.public()
-        self.assertEqual(len(names), 15)
-        self.assertEqual(sorted(set(names) - {"get_market_intelligence", "get_opportunity_view"}), sorted([*self.ORIGINAL, "get_candidate_discovery"]))
+        self.assertEqual(len(names), 19)  # the 15 tools of before and the four watchlist tools
+        self.assertEqual(sorted(set(names) - {"get_market_intelligence", "get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"}), sorted([*self.ORIGINAL, "get_candidate_discovery"]))
         self.assertIn("get_market_intelligence", names)
 
     def test_the_new_tool_has_only_read_filters(self):

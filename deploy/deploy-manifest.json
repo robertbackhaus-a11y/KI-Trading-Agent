@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "description": "Explicit list of the runtime files deployed to the production root. Nothing outside this list is ever copied, overwritten or deleted. Keep it in sync with the repo: tests/trading/test_deploy_manifest.py fails if a runtime file is neither listed here nor in not_deployed.",
-  "expected_tool_count": 15,
+  "expected_tool_count": 19,
   "groups": [
     {
       "name": "app",
@@ -61,7 +61,9 @@
         "swing_promotion.py",
         "trading_analytics.py",
         "trading_orchestrator.py",
-        "transaction_import.py"
+        "transaction_import.py",
+        "watchlist_admin.py",
+        "watchlist_view.py"
       ]
     },
     {
@@ -128,7 +130,8 @@
         "chat.py",
         "portfolio.py",
         "reason_codes.py",
-        "tasks.py"
+        "tasks.py",
+        "watchlist.py"
       ]
     },
     {
@@ -142,7 +145,8 @@
         "dashboard.py",
         "diagnostics.py",
         "planner.py",
-        "tasks.py"
+        "tasks.py",
+        "watchlist.py"
       ]
     },
     {

@@ -26,8 +26,8 @@ async def main():
             await s.initialize()
             tools = (await s.list_tools()).tools
             print("Tools:", len(tools), [t.name for t in tools])
-            assert len(tools) == 15, f"expected 15 tools, got {len(tools)}"
-            assert {"get_candidate_discovery", "get_market_intelligence", "get_opportunity_view"} <= {t.name for t in tools}
+            assert len(tools) == 19, f"expected 19 tools, got {len(tools)}"
+            assert {"get_candidate_discovery", "get_market_intelligence", "get_opportunity_view", "get_watchlist"} <= {t.name for t in tools}
             total = sum(len(json.dumps(t.model_dump(), ensure_ascii=False)) for t in tools)
             print("Beschreibungsumfang (Zeichen):", total, "~Token:", total // 3)
             for name, args in [("database_status", {}), ("database_tables", {}), ("run_trading_orchestrator", {}), ("get_candidate_discovery", {"limit": 3}), ("get_market_intelligence", {"limit": 3}), ("get_opportunity_view", {"limit": 3})]:

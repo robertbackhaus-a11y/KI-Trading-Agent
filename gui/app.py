@@ -1,6 +1,7 @@
 """Desktop GUI of the Trading Agent: main window, wiring and entry point (``python -m gui``).
 
-Read-only cockpit.  Trading data comes only from the Trading MCP server (READ tools, see ``services/tool_policy.py``); the Windows
+Cockpit.  Trading data comes only from the Trading MCP server (READ tools, see ``services/tool_policy.py``); the only writes are the
+three narrow watchlist actions of the Watchlist page (add, remove, change priority; explicit buttons, ``McpService.call_action``); the Windows
 Task Scheduler is used directly; there is no database access, no trading logic and no order function in this package.  Blocking work
 never runs in the GUI thread: the MCP client lives in its own QThread with an asyncio loop, everything else in a thread pool.
 """
@@ -26,14 +27,17 @@ from .services.tool_loop import offered_tools, schema_hash
 from .services.tool_policy import classify
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.tasks import build_task_rows
+from .viewmodels.watchlist import build_watchlist, describe_action
 from .views.chat import ChatView
 from .views.dashboard import DashboardView
 from .views.diagnostics import DiagnosticsView
 from .views.planner import PlannerView
 from .views.tasks import TasksView
+from .views.watchlist import WatchlistView
 
-PAGES = ("Dashboard", "Planner / Actions", "Tasks", "Chat", "Diagnostics / Settings")
-CHAT_PAGE, DIAGNOSTICS_PAGE = 3, 4
+PAGES = ("Dashboard", "Planner / Actions", "Watchlist", "Tasks", "Chat", "Diagnostics / Settings")
+WATCHLIST_PAGE, TASKS_PAGE, CHAT_PAGE, DIAGNOSTICS_PAGE = 2, 3, 4, 5
+WATCHLIST_STALE_S = 60  # opening the page reloads a list older than this; there is no polling
 STATE_TEXT = {"CONNECTED": "verbunden", "CONNECTING": "verbindet …", "DISCONNECTED": "getrennt", "ERROR": "Fehler"}
 
 
@@ -54,6 +58,8 @@ class MainWindow(QMainWindow):
         self._db_text = DASH
         self._last_refresh: Optional[datetime] = None
         self._tasks_at: Optional[datetime] = None
+        self._watchlist = None
+        self._watchlist_at: Optional[datetime] = None
         self.setWindowTitle(f"Trading Agent – Desktop GUI ({GUI_VERSION})")
         self.resize(1200, 760)
         if settings.window_geometry:
@@ -65,10 +71,10 @@ class MainWindow(QMainWindow):
         self.sidebar.setFixedWidth(190)
         self.sidebar.addItems(PAGES)
         self.stack = QStackedWidget()
-        self.dashboard, self.planner, self.tasks = DashboardView(), PlannerView(), TasksView()
+        self.dashboard, self.planner, self.watchlist, self.tasks = DashboardView(), PlannerView(), WatchlistView(), TasksView()
         self.chat = ChatView(settings.ollama_model, settings.think_enabled)
         self.diagnostics = DiagnosticsView(settings)
-        for page in (self.dashboard, self.planner, self.tasks, self.chat, self.diagnostics):
+        for page in (self.dashboard, self.planner, self.watchlist, self.tasks, self.chat, self.diagnostics):
             self.stack.addWidget(page)
         layout.addWidget(self.sidebar)
         layout.addWidget(self.stack, 1)
@@ -83,6 +89,11 @@ class MainWindow(QMainWindow):
         self.sidebar.currentRowChanged.connect(self._on_page)
         self.dashboard.refresh_requested.connect(self.refresh_orchestrator)
         self.planner.refresh_requested.connect(self.refresh_orchestrator)
+        self.watchlist.refresh_requested.connect(self.refresh_watchlist)
+        self.watchlist.check_requested.connect(self.check_watchlist)
+        self.watchlist.add_requested.connect(self.add_watchlist)
+        self.watchlist.remove_requested.connect(self.remove_watchlist)
+        self.watchlist.priority_requested.connect(self.set_watchlist_priority)
         self.tasks.refresh_requested.connect(self.refresh_tasks)
         self.tasks.run_requested.connect(self.run_task)
         self.tasks.log_requested.connect(self.show_task_log)
@@ -128,13 +139,15 @@ class MainWindow(QMainWindow):
         self.refresh_status()
         self.refresh_orchestrator()
         self.refresh_tasks()
+        if self.stack.currentIndex() == WATCHLIST_PAGE:  # reconnected while the page is open
+            self.refresh_watchlist()
 
     def _tick(self) -> None:
         self.refresh_status()
         page = self.stack.currentIndex()
         if page in (0, 1):
             self.refresh_orchestrator()
-        elif page == 2:
+        elif page == TASKS_PAGE:
             self.refresh_tasks()
 
     def refresh_status(self) -> None:
@@ -199,6 +212,54 @@ class MainWindow(QMainWindow):
             return
         self._tasks_at = datetime.now()
         self.tasks.show_rows(build_task_rows(value), fmt_time(self._tasks_at))
+
+    # -- watchlist ------------------------------------------------------------------------------------------
+    def refresh_watchlist(self) -> None:
+        if "watchlist" in self._inflight:
+            return
+        self._inflight.add("watchlist")
+        self.watchlist.show_loading()
+        self.mcp.call("get_watchlist", {"limit": 200}, timeout=90, on_done=self._on_watchlist)
+
+    def _on_watchlist(self, res: McpResult) -> None:
+        self._inflight.discard("watchlist")
+        error = ""
+        if res.tool_ok:
+            self._watchlist, self._watchlist_at = res.data, datetime.now()
+            self._mark_refresh()
+        else:
+            error = res.message or "Unbekannter Fehler"
+        envelope = self._watchlist if self._watchlist is not None else {"ok": False, "message": error or "Noch keine Daten"}
+        self.watchlist.show_vm(build_watchlist(envelope, self._watchlist_at))
+        if error and self._watchlist is not None:  # keep the last good list and say so
+            self.watchlist.message.setText(f"Aktualisierung fehlgeschlagen ({error}); gezeigt wird der Stand von {fmt_time(self._watchlist_at)}.")
+
+    def _watchlist_action(self, tool: str, arguments: dict, to_dialog: bool = False) -> None:
+        """One watchlist ACTION for an explicit user action; the outcome is shown and, if something changed, the list is reloaded."""
+        self.log.info("Watchlist-Aktion angefordert: %s", tool)
+
+        def done(res: McpResult) -> None:
+            message = describe_action(res.tool_ok, res.data, res.message)
+            self.log.info("Watchlist-Aktion %s: %s", tool, res.data.get("result") if isinstance(res.data, dict) and res.data.get("result") else res.kind)
+            self.watchlist.show_message(message, to_dialog)
+            self.statusBar().showMessage(message.text.splitlines()[0], 8000)
+            if message.done:
+                self.refresh_watchlist()
+
+        self.mcp.call_action(tool, arguments, timeout=30, on_done=done)
+
+    def check_watchlist(self, identifier: str) -> None:
+        self._watchlist_action("add_watchlist_candidate", {"identifier": identifier, "dry_run": True}, to_dialog=True)
+
+    def add_watchlist(self, identifier: str, priority) -> None:
+        arguments = {"identifier": identifier} if priority is None else {"identifier": identifier, "priority": int(priority)}
+        self._watchlist_action("add_watchlist_candidate", arguments, to_dialog=True)
+
+    def remove_watchlist(self, security_id: int) -> None:
+        self._watchlist_action("remove_watchlist_candidate", {"security_id": int(security_id)})
+
+    def set_watchlist_priority(self, security_id: int, priority) -> None:
+        self._watchlist_action("set_watchlist_priority", {"security_id": int(security_id), "priority": None if priority is None else int(priority)})
 
     def run_task(self, name: str) -> None:
         self.log.info("Task-Start angefordert: %s", name)
@@ -316,7 +377,10 @@ class MainWindow(QMainWindow):
         if row < 0:
             return
         self.stack.setCurrentIndex(row)
-        if row == 2 and (self._tasks_at is None or (datetime.now() - self._tasks_at).total_seconds() > 30):
+        if row == WATCHLIST_PAGE:
+            if self._watchlist_at is None or (datetime.now() - self._watchlist_at).total_seconds() > WATCHLIST_STALE_S:
+                self.refresh_watchlist()
+        elif row == TASKS_PAGE and (self._tasks_at is None or (datetime.now() - self._tasks_at).total_seconds() > 30):
             self.refresh_tasks()
         elif row == CHAT_PAGE:
             self.check_ollama()  # two GET requests (version, model names); no model is loaded by looking

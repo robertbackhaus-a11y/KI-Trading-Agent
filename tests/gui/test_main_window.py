@@ -14,7 +14,7 @@ from support import FAKE_SERVER, HAVE_QT, pump, qapp, wait_gone
 if HAVE_QT:
     from PySide6.QtWidgets import QPushButton
 
-    from gui.app import PAGES, MainWindow
+    from gui.app import DIAGNOSTICS_PAGE, PAGES, TASKS_PAGE, WATCHLIST_PAGE, MainWindow
     from gui.services import mcp_client as mc
     from gui.services.background import AsyncRunner
     from gui.services.settings import Settings
@@ -71,16 +71,16 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(pump(40, lambda: self.window._orch is not None), "dashboard data did not arrive")
 
     # R
-    def test_r_the_window_builds_with_five_pages_including_the_chat_and_a_status_bar(self) -> None:
+    def test_r_the_window_builds_with_six_pages_including_watchlist_and_chat_and_a_status_bar(self) -> None:
         w = self.window
         w.show()
-        self.assertEqual(w.sidebar.count(), 5)
-        self.assertEqual([w.sidebar.item(i).text() for i in range(5)], list(PAGES))
-        self.assertEqual(PAGES[3], "Chat")
-        self.assertEqual(w.stack.count(), 5)
+        self.assertEqual(w.sidebar.count(), 6)
+        self.assertEqual([w.sidebar.item(i).text() for i in range(6)], list(PAGES))
+        self.assertEqual((PAGES[WATCHLIST_PAGE], PAGES[3], PAGES[4]), ("Watchlist", "Tasks", "Chat"))
+        self.assertEqual(w.stack.count(), 6)
         self.assertEqual((w.lbl_mcp.text(), w.lbl_tools.text(), w.lbl_db.text(), w.lbl_refresh.text()), ("MCP: getrennt", "Tools: —", "DB: —", "Letzter Refresh: —"))
         self.assertIn("Desktop GUI (dev)", w.windowTitle())
-        for row in range(5):
+        for row in range(6):
             w.sidebar.setCurrentRow(row)
             self.assertEqual(w.stack.currentIndex(), row)
         pixmap = w.grab()
@@ -112,7 +112,7 @@ class MainWindowTests(unittest.TestCase):
     def test_tasks_page_run_now_needs_the_confirmation(self) -> None:
         self.start()
         w = self.window
-        w.sidebar.setCurrentRow(2)
+        w.sidebar.setCurrentRow(TASKS_PAGE)
         self.assertTrue(pump(10, lambda: w.tasks.table.rowCount() == 6 and len(w.tasks.run_buttons) == 6))
         name = TASKS[5].name
         button = w.tasks.run_buttons[name]
@@ -139,7 +139,7 @@ class MainWindowTests(unittest.TestCase):
         self.backend.tasks = [TaskInfo(t.name, True, "Running" if i == 1 else "Ready", None, None, 267009 if i == 1 else 0, t.log_file) for i, t in enumerate(TASKS)]
         self.start()
         w = self.window
-        w.sidebar.setCurrentRow(2)
+        w.sidebar.setCurrentRow(TASKS_PAGE)
         self.assertTrue(pump(10, lambda: len(w.tasks.run_buttons) == 6))
         self.assertFalse(w.tasks.run_buttons[TASKS[1].name].isEnabled())
         self.assertTrue(w.tasks.run_buttons[TASKS[0].name].isEnabled())
@@ -148,7 +148,7 @@ class MainWindowTests(unittest.TestCase):
     def test_a_failed_scheduler_query_is_shown_not_raised(self) -> None:
         self.backend.fail_query = True
         self.start()
-        self.window.sidebar.setCurrentRow(2)
+        self.window.sidebar.setCurrentRow(TASKS_PAGE)
         self.assertTrue(pump(10, lambda: "Scheduler-Abfrage fehlgeschlagen" in self.window.tasks.message.text()))
 
     def test_log_viewer_loads_in_the_background(self) -> None:
@@ -160,7 +160,7 @@ class MainWindowTests(unittest.TestCase):
     def test_diagnostics_shows_paths_tools_and_ollama(self) -> None:
         self.start()
         w = self.window
-        w.sidebar.setCurrentRow(4)
+        w.sidebar.setCurrentRow(DIAGNOSTICS_PAGE)
         pump(1)
         info = " ".join(label.text() for label in w.diagnostics.findChildren(type(w.lbl_mcp)))
         for expected in (str(FAKE_SERVER), sys.executable, str(self.tmp / "trading.db"), "dev", "settings.json", "gui.log", "mcp-stderr.log"):

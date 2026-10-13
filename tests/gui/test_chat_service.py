@@ -77,7 +77,7 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual([m["role"] for m in self.chat.history], ["user", "assistant", "tool", "assistant"])
         self.assertEqual(self.busy_log, [True, False])
         sent = [t["function"]["name"] for t in self.fake.chat_requests[0]["tools"]]
-        self.assertEqual(len(sent), 3)  # the fake server's READ-class names; its other tools (sql_execute, slow, crash ...) are never offered
+        self.assertEqual(len(sent), 4)  # the fake server's READ-class names; its other tools (sql_execute, slow, crash ...) are never offered
         self.assertTrue(set(sent) <= {n for n in self.mcp.tools if tp.is_read(n)})
 
     def test_the_tools_offered_are_the_discovered_read_tools_only(self) -> None:
@@ -86,7 +86,7 @@ class ChatServiceTests(unittest.TestCase):
         self.chat.send("x")
         self.idle()
         sent = {t["function"]["name"] for t in self.fake.chat_requests[0]["tools"]}
-        self.assertEqual(sent, {"database_status", "run_trading_orchestrator", "rank_watchlist"})  # the fake's READ names; sql_execute (ACTION) and the made-up ones are not offered
+        self.assertEqual(sent, {"database_status", "run_trading_orchestrator", "rank_watchlist", "get_watchlist"})  # the fake's READ names; sql_execute (ACTION) and the made-up ones are not offered
         self.assertNotIn("sql_execute", sent)
 
     def test_m_n_o_an_action_call_never_reaches_the_mcp_server(self) -> None:
@@ -347,19 +347,19 @@ class ChatViewTests(unittest.TestCase):
 class RealServerToolSurfaceTests(unittest.IsolatedAsyncioTestCase):
     """The tool surface of the REAL Trading MCP server (repository copy; it only lists tools, no database is touched)."""
 
-    async def test_v_w_the_15_real_tools_map_to_13_offered_ones(self) -> None:
+    async def test_v_w_the_19_real_tools_map_to_14_offered_ones(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         core = mc.McpClientCore(sys.executable, str(support.ROOT / "mcp-tools" / "server.py"), str(Path(tmp.name) / "none.db"), Path(tmp.name) / "e.log")
         try:
             self.assertTrue(await core.start(), core.detail)
             catalog = core.tools
-            self.assertEqual(len(catalog), 15)
+            self.assertEqual(len(catalog), 19)
             tools, schemas = tl.offered_tools(catalog)
             names = [t["function"]["name"] for t in tools]
-            self.assertEqual(len(names), 13)
+            self.assertEqual(len(names), 14)  # the 13 READ tools of before and get_watchlist
             self.assertEqual(sorted(names), sorted(n for n in catalog if tp.is_read(n)))
-            self.assertFalse({"sql_execute", "approve_swing_promotion"} & set(names))
+            self.assertFalse({"sql_execute", "approve_swing_promotion", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority"} & set(names))
             for tool in tools:
                 fn = tool["function"]
                 original = catalog[fn["name"]]
@@ -369,7 +369,7 @@ class RealServerToolSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 if "required" in expected:
                     expected["required"] = [r for r in expected["required"] if r != "detail"]
                 self.assertEqual(fn["parameters"], expected, fn["name"])
-            self.assertEqual({n for n in catalog if "detail" in catalog[n]["input_schema"].get("properties", {})}, {"run_trading_orchestrator", "get_market_intelligence", "get_opportunity_view", "get_candidate_discovery"})
+            self.assertEqual({n for n in catalog if "detail" in catalog[n]["input_schema"].get("properties", {})}, {"run_trading_orchestrator", "get_market_intelligence", "get_opportunity_view", "get_candidate_discovery", "get_watchlist"})
             # the validator accepts what the real schemas describe and rejects what they do not
             errors: list[str] = []
             self.assertEqual(tl.validate_arguments(schemas["get_market_intelligence"], {"symbol": "AAA", "limit": "3", "importance": None}, errors), {"symbol": "AAA", "limit": 3, "importance": None})

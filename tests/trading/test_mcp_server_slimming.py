@@ -129,7 +129,7 @@ class McpServerSlimmingTests(unittest.TestCase):
         spec.loader.exec_module(module)
         self.assertEqual(list(inspect.signature(module.Tools.run_trading_orchestrator).parameters), ["self", "as_of"])
         public = [name for name, _f in inspect.getmembers(module.Tools, inspect.isfunction) if not name.startswith("_")]
-        self.assertEqual(len(public), 15)
+        self.assertEqual(len(public), 19)  # the 15 tools of before and the four watchlist tools
 
 
 if __name__ == "__main__":

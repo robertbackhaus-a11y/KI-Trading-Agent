@@ -9,6 +9,7 @@
 - Company-wire RSS source adapter on the existing market-intelligence pipeline (PR Newswire feeds, configurable in `universe/news_feeds_v1.json`), with per-feed health in the report and isolation of broken feeds
 - Deterministic cross-source deduplication of news (event id, URL, normalized headline within a time window); merged sources are listed as `duplicate_sources` in detail answers
 - Matching diagnostics in detail answers (`security_ids`, `matches`, `source_event_id`)
+- Watchlist page in the desktop GUI: the whole watchlist with filters and sorting, add (only securities that are already in the Security Master; a new security is never created), remove (with a confirmation) and change priority; four new MCP tools (tool count 15 → 19): `get_watchlist` (read-only) and the narrow actions `add_watchlist_candidate`, `remove_watchlist_candidate` and `set_watchlist_priority`, which write only the `watchlist` table in one atomic transaction and are never offered to the chat
 - Readable reason-code presentation in the desktop GUI (`gui/viewmodels/reason_codes.py`): technical codes are shown as short German texts, and the hover tooltip keeps the explanation and the original code; the backend codes are unchanged
 
 ### Changed

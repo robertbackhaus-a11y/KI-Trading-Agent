@@ -380,10 +380,11 @@ Kurze Formulierungen, die zuverlässig auf das passende Tool führen.
 
 ## A. Technische Zuordnung
 
-Alle 15 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
+Alle 19 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
 
 | Tool | Zugriff | Zweck | Wichtige Parameter | Kapitel |
 |---|---|---|---|---|
+| `add_watchlist_candidate` | Schreiben (nur Watchlist) | Wertpapier, das bereits im Security Master steht, zur Watchlist hinzufügen; legt nie ein Wertpapier an; `dry_run` löst nur auf | `identifier`, `priority`, `dry_run` | – |
 | `approve_swing_promotion` | Schreiben (nur nach Freigabe) | Genehmigten, noch aktuellen PROMOTE-Plan anwenden: genau eine swing-Zuordnung | `security_id`, `plan_token`, `effective_from` | 13 |
 | `database_schema` | Lesen | Vollständiges SQLite-Schema (Tabellen, Views, Indizes, Trigger) | – | 12 |
 | `database_status` | Lesen | Datenbankstatus: Pfad, Größe, SQLite-Version, Journal-Modus | – | 12, 14 |
@@ -394,8 +395,11 @@ Alle 15 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen
 | `get_candidate_discovery` | Lesen | Letzter Discovery-Report: neue Kandidaten, nicht PROMOTE/BUY | `status`, `limit`, `detail`, `symbol` | 4, 7, 14 |
 | `get_market_intelligence` | Lesen | Letzter News-Report: klassifizierte Makro- und Unternehmensnachrichten | `scope`, `category`, `importance`, `symbol`, `sector`, `limit`, `detail` | 5, 7, 14 |
 | `get_opportunity_view` | Lesen | Kandidaten aus Engine und Discovery mit News-Kontext, Plan-Status und Kapital | `source`, `status`, `news_status`, `symbol`, `limit`, `detail` | 2, 6, 7, 8, 9, 14 |
+| `get_watchlist` | Lesen | Gesamte Watchlist mit Strategie, Priorität, Rang, Score, Datenqualität, Einstufung, Entry-Status und News-Status | `status`, `strategy`, `symbol`, `limit`, `detail` | 3 |
 | `rank_watchlist` | Lesen | Technischer Momentum-/Trend-Rang der Watchlist | – | 3 |
+| `remove_watchlist_candidate` | Schreiben (nur Watchlist) | Ein Wertpapier von der Watchlist entfernen; Positionen, Strategien und Kampagnen bleiben unberührt | `security_id` | – |
 | `run_trading_orchestrator` | Lesen | Depotstatus mit Aktionen, Allokation, Kapital- und Entry-Plan | `as_of`, `detail` | 1, 2, 9, 10, 11, 14 |
+| `set_watchlist_priority` | Schreiben (nur Watchlist) | Priorität eines Watchlist-Eintrags setzen oder löschen | `security_id`, `priority` | – |
 | `sql_execute` | Schreiben möglich (uneingeschränkt) | Beliebiges SQL auf der lokalen Datenbank | `sql` | 7, 11, 12 |
 | `suggest_strategy_assignments` | Lesen | Vorschlag swing, long_term oder unknown je Watchlist-Titel ohne Zuordnung | `as_of` | 13 |
 | `table_info` | Lesen | Spalten, Indizes und Foreign Keys einer Tabelle | `table_name` | 11, 12 |
@@ -405,7 +409,7 @@ Alle 15 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen
 Statuswerte und Tool-Namen werden nicht übersetzt.
 
 - `PROMOTE` ist kein `BUY`; `DISCOVERY` ist kein `PROMOTE`; `NEWS` ist kein Signal. Es werden keine Orders erzeugt.
-- Nur `approve_swing_promotion` (nach ausdrücklicher Freigabe) und `sql_execute` können Daten schreiben; alle anderen Tools lesen nur.
+- Nur `approve_swing_promotion` (nach ausdrücklicher Freigabe), `sql_execute` und die drei schmalen Watchlist-Tools `add_watchlist_candidate`, `remove_watchlist_candidate` und `set_watchlist_priority` können Daten schreiben (die Watchlist-Tools nur die Watchlist-Tabelle; nur ausdrückliche Schaltflächen der Desktop-GUI rufen sie auf, der Chat bietet sie nie an); alle anderen Tools lesen nur.
 - Discovery- und News-Reader lesen den letzten fertigen Report und führen weder Scan noch Webabruf aus. Stand und Alter werden immer mit ausgegeben.
 - Kompakt ist der Standard. `detail=true` liefert Rohdaten in großem Umfang und gehört nur auf ausdrücklichen Wunsch angefragt. Antworten bleiben unter dem Größenlimit des MCP (40.000 Zeichen).
 - Die Engine rechnet, das Frontend zeigt an: Summen, Zähler und Rangfolgen werden nicht neu berechnet oder geschätzt.

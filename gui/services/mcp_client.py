@@ -9,7 +9,7 @@ Two layers:
 
 The server is never imported; it stays a separate runtime boundary (it may run next to another client at the same time).  All
 paths are absolute (a relative ``TRADING_DB_PATH`` breaks the server's read-only tools).  Nothing here depends on
-``capabilities.experimental`` (2.3.0 omits it).  Only READ tools can be called (see ``tool_policy``).
+``capabilities.experimental`` (2.3.0 omits it).  ``call`` / ``call_sync`` accept READ tools only; ``call_action`` accepts exactly the watchlist ACTIONs of ``tool_policy.GUI_ACTIONS`` (see ``tool_policy``).
 """
 
 from __future__ import annotations
@@ -399,6 +399,33 @@ class McpService(QObject):
             self.log.warning("Tool %s abgelehnt (%s)", name, tool_policy.classify(name))
             denied = McpResult(name, False, error=f"{name} ist in dieser GUI-Version nicht erlaubt", kind="DENIED")
             self._deliver.emit(on_done, denied)
+            return request_id
+        if self._thread is None:
+            self._deliver.emit(on_done, McpResult(name, False, error="MCP-Dienst ist nicht gestartet", kind="NOT_CONNECTED"))
+            return request_id
+        future = self._submit(self._core.call(name, arguments, timeout))
+
+        def finished(f) -> None:
+            try:
+                res = f.result()
+            except BaseException as exc:  # noqa: BLE001
+                res = McpResult(name, False, error=describe(exc), kind="TRANSPORT")
+            self._deliver.emit(on_done, res)
+
+        future.add_done_callback(finished)
+        return request_id
+
+    def call_action(self, name: str, arguments: Optional[dict[str, Any]] = None, timeout: float = 30.0, on_done: Optional[Callable[[McpResult], None]] = None) -> int:
+        """Call one of the narrow watchlist ACTIONs (``tool_policy.GUI_ACTIONS``) -- only for an explicit user action (a button), never for the chat.
+
+        Anything else (``sql_execute``, ``approve_swing_promotion``, an unknown tool, a READ tool) is refused here exactly as ``call`` refuses
+        the ACTIONs.  The result arrives like that of :meth:`call`, in the GUI thread.
+        """
+        self._next_id += 1
+        request_id = self._next_id
+        if not tool_policy.is_gui_action(name):
+            self.log.warning("Aktion %s abgelehnt (%s)", name, tool_policy.classify(name))
+            self._deliver.emit(on_done, McpResult(name, False, error=f"{name} ist keine erlaubte GUI-Aktion", kind="DENIED"))
             return request_id
         if self._thread is None:
             self._deliver.emit(on_done, McpResult(name, False, error="MCP-Dienst ist nicht gestartet", kind="NOT_CONNECTED"))

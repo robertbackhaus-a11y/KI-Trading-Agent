@@ -163,7 +163,7 @@ SQLite                   C:\tools\trading\data\trading.db
 ```
 
 Der MCP-Server (`server.py`) stellt jede öffentliche Methode der Klasse `Tools` in
-`trading_sqlite.py` als MCP-Tool bereit — derzeit 15 (siehe §5).
+`trading_sqlite.py` als MCP-Tool bereit — derzeit 19 (siehe §5).
 
 ---
 
@@ -401,9 +401,9 @@ Ausgabeschlüssel: `status`, `read_only`, `watchlist_written`, `orders_created`,
 
 > **Aktueller Zugangsweg:** Der Agent (über einen MCP-Client) nutzt dieses Tool über den Trading-MCP-Server (`C:\tools\trading\mcp\server.py`; Repo-Quelle `mcp-tools/`), der jede öffentliche Methode der Klasse `Tools` in `trading_sqlite.py` als MCP-Tool bereitstellt — derzeit 15. Parqet-Importe laufen über `Import-ParqetTransactions.py` (der MCP-Server hat keine Upload-Methoden).
 
-**Deploy (aktuell):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, siehe README) kopiert nach einem Datei- und Datenbank-Backup nur die in `deploy/deploy-manifest.json` aufgeführten Dateien nach `C:\tools\trading\app\`, `mcp\` und `scheduler\`, vergleicht Hashes und führt einen MCP-Smoke-Test aus (erwartet 15 Tools). Danach den MCP-Server-Prozess neu starten (im aktuellen Setup startet der MCP-Client ihn automatisch neu, wenn er beendet wird).
+**Deploy (aktuell):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, siehe README) kopiert nach einem Datei- und Datenbank-Backup nur die in `deploy/deploy-manifest.json` aufgeführten Dateien nach `C:\tools\trading\app\`, `mcp\` und `scheduler\`, vergleicht Hashes und führt einen MCP-Smoke-Test aus (erwartet 19 Tools). Danach den MCP-Server-Prozess neu starten (im aktuellen Setup startet der MCP-Client ihn automatisch neu, wenn er beendet wird).
 
-**Aktuelles Inventar der öffentlichen Methoden** (Version `1.7.0`, 15 öffentliche Methoden, jetzt `mcp-tools/trading_sqlite.py`), eingeteilt in rein lesend vs. schreibfähig:
+**Aktuelles Inventar der öffentlichen Methoden** (Version `1.7.0`, 19 öffentliche Methoden, jetzt `mcp-tools/trading_sqlite.py`), eingeteilt in rein lesend vs. schreibfähig:
 
 | Methode | Rein lesend? | Hinweise |
 |---|---|---|
@@ -421,6 +421,12 @@ Ausgabeschlüssel: `status`, `read_only`, `watchlist_written`, `orders_created`,
 | `get_candidate_discovery(status="ALL", limit=20, detail=False, symbol=None)` | Ja — liest eine Datei | Version `1.5.0`. Lädt `discovery_report.py` dynamisch und liest `<database directory>\candidate-discovery\latest.json` (Valve `discovery_report_dir`); **kein Discovery-Lauf, kein Provider-Aufruf, kein Datenbankzugriff** (§3.11) |
 | `get_market_intelligence(scope="ALL", category=None, importance=None, symbol=None, sector=None, limit=20, detail=False)` | Ja — liest eine Datei | Version `1.6.0`. Lädt `intelligence_report.py` dynamisch und liest `<database directory>\market-intelligence\latest.json` (Valve `market_intelligence_report_dir`); **kein Collection-Lauf, kein Web-Request, kein Datenbankzugriff** (§3.12) |
 | `get_opportunity_view(source="ALL", status="ALL", news_status=None, symbol=None, limit=30, detail=False)` | Ja — Orchestrator auf der lesenden Verbindung + zwei Report-Dateien | Version `1.7.0`. Lädt `opportunity_view.py`, `trading_orchestrator.py`, `discovery_report.py`, `intelligence_report.py` dynamisch; **kein Web-Request, kein Collection-/Discovery-Lauf, kein Datenbank-Schreibzugriff, keine Order** (§3.13) |
+| `get_watchlist(status=None, strategy=None, symbol=None, limit=150, detail=False)` | Ja — Lese-Verbindung + die Report-Datei der Market Intelligence | Lädt dynamisch `watchlist_view.py`, `opportunity_view.py`, `trading_analytics.py`, `candidate_decision.py`, `trading_orchestrator.py` und `intelligence_report.py`; **verbindet** die vorhandenen Ergebnisse von Ranking, Einstufung, Planner und News je Watchlist-Eintrag und rechnet nichts Neues; kompakt als Standard (einige hundert Zeichen je Eintrag, auf das Limit von 40.000 Zeichen gekürzt), `detail=true` liefert höchstens 10 vollständige Einträge |
+| `add_watchlist_candidate(identifier, priority=None, dry_run=False)` | **Nein — schreibt** eine `watchlist`-Zeile | Lädt dynamisch `watchlist_admin.py`; löst eine security_id, ISIN, WKN, ein exaktes Symbol/Alias, einen Symbol-Stamm oder den exakten vollständigen Firmennamen deterministisch auf (keine unscharfe Suche); **legt nie ein Wertpapier an**; Ergebnisse `ADDED`, `ALREADY_EXISTS`, `SECURITY_NOT_FOUND`, `AMBIGUOUS_IDENTIFIER`, `INVALID_IDENTIFIER`, `INVALID_PRIORITY`, `ERROR`; eine atomare `BEGIN IMMEDIATE`-Transaktion, nur parametrisierte Statements |
+| `remove_watchlist_candidate(security_id)` | **Nein — schreibt** (löscht) eine `watchlist`-Zeile | Lädt dynamisch `watchlist_admin.py`; berührt keine Position, Strategiezuordnung, Kampagne oder Transaktion; Ergebnisse `REMOVED`, `NOT_FOUND`, `INVALID_IDENTIFIER`, `ERROR` |
+| `set_watchlist_priority(security_id, priority)` | **Nein — schreibt** `watchlist.priority` und `updated_at` einer Zeile | Lädt dynamisch `watchlist_admin.py`; eine ganze Zahl (höher steht vorn, wie beim Planner-Tie-Break) oder null; das Schema definiert keinen Bereich; Ergebnisse `PRIORITY_SET`, `NOT_FOUND`, `INVALID_IDENTIFIER`, `INVALID_PRIORITY`, `ERROR` |
+
+**Clientspezifische Sichtbarkeit.** Der Server registriert jede öffentliche Methode von `trading_sqlite.py`; die Umgebungsvariable `TRADING_EXCLUDE` (kommagetrennte Tool-Namen) hält Tools aus dem Prozess eines Clients heraus, ohne den Servercode clientspezifisch zu machen. Ein Frontend, das die Watchlist nicht ändern darf, startet den Server mit `TRADING_EXCLUDE=add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority` und sieht daher die bisherigen Tools plus `get_watchlist` (16 Tools); die Desktop-GUI startet ihn ohne Exclude (19 Tools) und bietet ihrem Chat nur die READ-Tools an.
 
 Beide neuen Methoden folgen exakt demselben Muster wie `run_trading_orchestrator`/`evaluate_swing_candidates`: `_load_runtime_trading_module()` lädt das deployte Modul aus `C:\tools\trading\app\`, `_readonly_import_connection()` öffnet eine strikte `PRAGMA query_only=ON`-Verbindung.
 

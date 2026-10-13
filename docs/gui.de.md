@@ -37,9 +37,12 @@ Die Befehle laufen im Repository-Stammordner. Die Standardwerte zeigen auf die P
 |---|---|---|
 | Dashboard | Portfolio, Allokation, Cash, External Funding, Planner-Status, geplante und zurückgestellte Entries, Blocker und Warnungen | `run_trading_orchestrator` (Detail), `database_status` |
 | Planner / Actions | Engine-Aktionen je Position, geplante und zurückgestellte Entries mit Reason Codes, Sektor- und Korrelationsrisiko, `simulation_only`, `orders_created` | `run_trading_orchestrator` (Detail) |
+| Watchlist | die gesamte Watchlist mit Strategie, Priorität, Rang, Score, Status, Datenqualität, News-Status und Bewertungsdatum; Filter und Sortierung; Hinzufügen, Entfernen und Priorität ändern | `get_watchlist`, `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority` |
 | Tasks | die sechs geplanten Trading-Tasks: Status, letzter und nächster Lauf, Ergebnis, Run now, Log-Ende | Windows Task Scheduler, Log-Dateien |
 | Chat | Fragen an ein lokales Sprachmodell, das über die READ-Tools liest; gestreamte Antwort, optionales Thinking, Tool-Status, Stop, Neuer Chat | Ollama, MCP-Tools |
 | Diagnostics / Settings | MCP-, Datenbank- und Ollama-Status, Pfade, Tool-Klassifizierung, Schema-Hash, letzter Chat-Fehler, Einstellungsformular, MCP-Neustart | `database_status`, Einstellungsdatei |
+
+Die Watchlist-Seite ändert die Watchlist nur über drei schmale Aktionen: Hinzufügen (ein Wertpapier, das bereits im Security Master steht; die optionale Prüfung löst es nur auf), Entfernen (nach einer Bestätigung, deren Standard Abbrechen ist; eine gehaltene Position bleibt unberührt) und Priorität ändern (ein ausdrücklicher Dialog). Ein Wertpapier, das nicht im Security Master steht, wird nie angelegt; der Dialog sagt das, und die Aufnahme eines neuen Wertpapiers ist ein separater Workflow. Die Aktions-Tools stehen im Chat nicht zur Verfügung.
 
 Technische Reason Codes (z. B. `STOPPED_SWING_MAX_REACHED`) werden als kurzer deutscher Text angezeigt; der Tooltip enthält die Erklärung und den Originalcode. Die Backend-Codes bleiben unverändert, und ein unbekannter Code wird lesbar aufbereitet angezeigt.
 
@@ -55,8 +58,9 @@ Technische Reason Codes (z. B. `STOPPED_SWING_MAX_REACHED`) werden als kurzer de
 
 | Klasse | Tools | GUI |
 |---|---|---|
-| READ | die 13 Lese-Tools, zum Beispiel `database_status`, `run_trading_orchestrator`, `get_opportunity_view` | erlaubt; die Seiten rufen nur `database_status` und `run_trading_orchestrator` auf, der Chat bietet dem Modell alle 13 an |
+| READ | die 14 Lese-Tools, zum Beispiel `database_status`, `run_trading_orchestrator`, `get_watchlist` | erlaubt; die Seiten rufen nur `database_status`, `run_trading_orchestrator` und `get_watchlist` auf, der Chat bietet dem Modell alle 14 an |
 | ACTION | `approve_swing_promotion`, `sql_execute` | verweigert und dem Modell nie angeboten |
+| ACTION (Watchlist) | `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority` | nur über die ausdrücklichen Schaltflächen der Watchlist-Seite (`call_action`); dem Modell nie angeboten, von `call` verweigert |
 | unbekannt | jedes Tool, das nicht in der Tabelle steht | verweigert (Deny by default) |
 
 Die Tabelle liegt in `gui/services/tool_policy.py`; ein Test verlangt, dass jedes Tool des Servers klassifiziert ist. Aktionen sind in der Oberfläche sichtbar von Lesezugriffen getrennt und stecken nie hinter einem Lesezugriff.

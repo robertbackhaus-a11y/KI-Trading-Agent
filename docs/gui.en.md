@@ -37,9 +37,12 @@ The commands run from the repository root. The defaults point to the production 
 |---|---|---|
 | Dashboard | portfolio, allocation, cash, External Funding, planner status, planned and deferred entries, blockers and warnings | `run_trading_orchestrator` (detail), `database_status` |
 | Planner / Actions | engine actions per position, planned and deferred entries with reason codes, sector and correlation risk, `simulation_only`, `orders_created` | `run_trading_orchestrator` (detail) |
+| Watchlist | the whole watchlist with strategy, priority, rank, score, status, data quality, news status and evaluation date; filters and sorting; add, remove and change priority | `get_watchlist`, `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority` |
 | Tasks | the six scheduled Trading tasks: state, last and next run, result, Run now, log tail | Windows Task Scheduler, log files |
 | Chat | questions to a local language model that reads through the READ tools; streamed answer, optional thinking, tool status, Stop, New chat | Ollama, MCP tools |
 | Diagnostics / Settings | MCP, database and Ollama status, paths, tool classification, schema hash, last chat error, settings form, MCP restart | `database_status`, settings file |
+
+The Watchlist page changes the watchlist only through three narrow actions: add (a security that is already in the Security Master; the optional check only resolves it), remove (after a confirmation whose default is Cancel; a held position stays untouched) and change priority (an explicit dialog). A security that is not in the Security Master is never created; the dialog says so, and onboarding a new security is a separate workflow. The action tools are not available in the chat.
 
 Technical reason codes (for example `STOPPED_SWING_MAX_REACHED`) are shown as a short German text; the tooltip holds the explanation and the original code. The backend codes stay unchanged, and an unknown code is shown in a readable form.
 
@@ -55,8 +58,9 @@ Technical reason codes (for example `STOPPED_SWING_MAX_REACHED`) are shown as a 
 
 | Class | Tools | GUI |
 |---|---|---|
-| READ | the 13 read tools, for example `database_status`, `run_trading_orchestrator`, `get_opportunity_view` | allowed; the pages call only `database_status` and `run_trading_orchestrator`, the chat offers all 13 to the model |
+| READ | the 14 read tools, for example `database_status`, `run_trading_orchestrator`, `get_watchlist` | allowed; the pages call only `database_status`, `run_trading_orchestrator` and `get_watchlist`, the chat offers all 14 to the model |
 | ACTION | `approve_swing_promotion`, `sql_execute` | denied, and never offered to the model |
+| ACTION (watchlist) | `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority` | only through the explicit buttons of the Watchlist page (`call_action`); never offered to the model, refused by `call` |
 | unknown | every tool that is not in the table | denied (deny by default) |
 
 The table lives in `gui/services/tool_policy.py`; a test requires that every tool of the server is classified. Actions are visibly separate from reads in the user interface and are never hidden behind a read.

@@ -259,6 +259,30 @@ class AliasIndex:
                 return Match(sid, COMPANY_NAME, str(name))
         return None
 
+    def candidates(self, kind: str, value: Any) -> frozenset[int]:
+        """Every security that one exact lookup of :meth:`resolve` finds (``resolve`` itself returns only a unique hit).
+
+        For callers that must tell *unknown* (no id) from *ambiguous* (several ids).  ``kind`` is ``SECURITY_ID``, ``ISIN``, ``WKN``, ``ALIAS``,
+        ``SYMBOL_STEM`` or ``COMPANY_NAME``; the normalization is the one of ``resolve``.  Read-only, never raises for a plain value.
+        """
+        text = str(value if value is not None else "").strip()
+        if not text:
+            return frozenset()
+        if kind == SECURITY_ID:
+            return frozenset({int(text)}) if text.isdigit() and int(text) in self._by_id else frozenset()
+        if kind == ISIN:
+            return frozenset(self._by_isin.get(text.upper(), ()))
+        if kind == WKN:
+            return frozenset(self._by_wkn.get(text.upper(), ()))
+        if kind == ALIAS:
+            return frozenset(self._by_alias.get(symbol_key(text), ()))
+        if kind == SYMBOL_STEM:
+            return frozenset(self._by_stem.get(split_symbol(text)[0], ()))
+        if kind == COMPANY_NAME:
+            tokens = name_tokens(text)
+            return frozenset(self._by_name.get(" ".join(tokens), ())) if tokens else frozenset()
+        raise ValueError(f"unknown lookup kind: {kind}")
+
     def resolve_text(self, text: str, *, allow_name: bool = True) -> list[Match]:
         """Securities a free text identifies *explicitly* (ISIN, ``EXCHANGE: TICKER``, full company-name phrase).  Never a bare ticker word."""
         found: dict[int, Match] = {}

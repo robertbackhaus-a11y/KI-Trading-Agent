@@ -17,7 +17,7 @@ The agent is MCP-based and not tied to a particular front end (any MCP-capable L
 Versioned in this repository: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) and
 `scheduler\Manage-TradingTasks.ps1` (management of the scheduled tasks).
 
-Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 15 tools)
+Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 19 tools)
 → runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
 
 This repository contains code only. The database, backups, audit/candidate JSON files,
@@ -35,7 +35,7 @@ python -m venv .venv
 The tests use only the standard library's `unittest` (plus the runtime packages above):
 `.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"`.
 
-The optional desktop GUI (`gui/`, development status, read-only cockpit with a chat to a local Ollama model that can only call READ tools) has its own environment and its own pinned
+The optional desktop GUI (`gui/`, development status, cockpit with Dashboard, Planner, Watchlist, Tasks and a chat to a local Ollama model that can only call READ tools; the Watchlist page adds, removes and re-prioritizes watchlist entries through three narrow MCP tools and never creates a security) has its own environment and its own pinned
 `requirements-gui.txt` (`PySide6-Essentials` and `mcp`); the runtime environment above does not change. See
 [docs/gui.en.md](docs/gui.en.md) (German: [docs/gui.de.md](docs/gui.de.md)).
 On the production machine it starts from the desktop shortcut "KI TA" (target `pythonw.exe -m gui` of the GUI environment).
@@ -47,7 +47,7 @@ This README, the changelog, the contributing guide and the security policy are E
 
 | Topic | English | Deutsch |
 |---|---|---|
-| Queries and examples (15 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
+| Queries and examples (19 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
 | Architecture reference | [trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) | [trading-agent-architecture.de.md](docs/trading-agent-architecture.de.md) |
 | Watchlist candidate decision status | [trading-candidate-decision.en.md](docs/trading-candidate-decision.en.md) | [trading-candidate-decision.de.md](docs/trading-candidate-decision.de.md) |
 | Watchlist strategy suggestion | [trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) | [trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md) |
