@@ -163,7 +163,7 @@ SQLite                   C:\tools\trading\data\trading.db
 ```
 
 Der MCP-Server (`server.py`) stellt jede öffentliche Methode der Klasse `Tools` in
-`trading_sqlite.py` als MCP-Tool bereit — derzeit 19 (siehe §5).
+`trading_sqlite.py` als MCP-Tool bereit — derzeit 20 (siehe §5).
 
 ---
 
@@ -401,9 +401,9 @@ Ausgabeschlüssel: `status`, `read_only`, `watchlist_written`, `orders_created`,
 
 > **Aktueller Zugangsweg:** Der Agent (über einen MCP-Client) nutzt dieses Tool über den Trading-MCP-Server (`C:\tools\trading\mcp\server.py`; Repo-Quelle `mcp-tools/`), der jede öffentliche Methode der Klasse `Tools` in `trading_sqlite.py` als MCP-Tool bereitstellt — derzeit 15. Parqet-Importe laufen über `Import-ParqetTransactions.py` (der MCP-Server hat keine Upload-Methoden).
 
-**Deploy (aktuell):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, siehe README) kopiert nach einem Datei- und Datenbank-Backup nur die in `deploy/deploy-manifest.json` aufgeführten Dateien nach `C:\tools\trading\app\`, `mcp\` und `scheduler\`, vergleicht Hashes und führt einen MCP-Smoke-Test aus (erwartet 19 Tools). Danach den MCP-Server-Prozess neu starten (im aktuellen Setup startet der MCP-Client ihn automatisch neu, wenn er beendet wird).
+**Deploy (aktuell):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, siehe README) kopiert nach einem Datei- und Datenbank-Backup nur die in `deploy/deploy-manifest.json` aufgeführten Dateien nach `C:\tools\trading\app\`, `mcp\` und `scheduler\`, vergleicht Hashes und führt einen MCP-Smoke-Test aus (erwartet 20 Tools). Danach den MCP-Server-Prozess neu starten (im aktuellen Setup startet der MCP-Client ihn automatisch neu, wenn er beendet wird).
 
-**Aktuelles Inventar der öffentlichen Methoden** (Version `1.7.0`, 19 öffentliche Methoden, jetzt `mcp-tools/trading_sqlite.py`), eingeteilt in rein lesend vs. schreibfähig:
+**Aktuelles Inventar der öffentlichen Methoden** (Version `1.7.0`, 20 öffentliche Methoden, jetzt `mcp-tools/trading_sqlite.py`), eingeteilt in rein lesend vs. schreibfähig:
 
 | Methode | Rein lesend? | Hinweise |
 |---|---|---|

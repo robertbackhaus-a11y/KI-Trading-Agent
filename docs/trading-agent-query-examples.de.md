@@ -380,7 +380,7 @@ Kurze Formulierungen, die zuverlässig auf das passende Tool führen.
 
 ## A. Technische Zuordnung
 
-Alle 19 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
+Alle 20 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
 
 | Tool | Zugriff | Zweck | Wichtige Parameter | Kapitel |
 |---|---|---|---|---|

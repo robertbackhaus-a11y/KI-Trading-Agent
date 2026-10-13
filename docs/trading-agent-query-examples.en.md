@@ -380,7 +380,7 @@ Short phrasings that reliably lead to the right tool.
 
 ## A. Technical Mapping
 
-All 19 MCP tools with their access type. Names and parameters are taken from the current code.
+All 20 MCP tools with their access type. Names and parameters are taken from the current code.
 
 | Tool | Access | Purpose | Key parameters | Chapters |
 |---|---|---|---|---|

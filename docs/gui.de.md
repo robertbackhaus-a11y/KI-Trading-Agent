@@ -2,7 +2,7 @@
 
 English version: [gui.en.md](gui.en.md)
 
-Die Desktop-GUI ist ein lesendes Cockpit für den Trading Agent. Sie zeigt, was der Trading-MCP-Server meldet, steuert die geplanten Tasks und bietet einen Chat mit einem lokalen Sprachmodell, das dieselben Daten lesen kann. Sie enthält keine Trading-Logik, keinen Datenbankzugriff und keine Orderfunktion. Entwicklungsstand: Es gibt noch keine Produktversion; die GUI meldet `dev`.
+Die Desktop-GUI ist ein überwiegend lesendes Cockpit für den Trading Agent. Sie zeigt, was der Trading-MCP-Server meldet, steuert die geplanten Tasks und bietet einen Chat mit einem lokalen Sprachmodell, das dieselben Daten lesen kann. Sie enthält keine Trading-Logik, keinen Datenbankzugriff und keine Orderfunktion. Geschrieben wird nur über vier schmale, ausdrückliche MCP-Aktionen der Watchlist-Seite (Abschnitte 3 und 5); der Chat kann nur lesen. Entwicklungsstand: Die GUI hat keine eigene Versionsnummer; sie meldet `dev`.
 
 ## 1. Architektur
 

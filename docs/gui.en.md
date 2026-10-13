@@ -2,7 +2,7 @@
 
 Deutsche Version: [gui.de.md](gui.de.md)
 
-The desktop GUI is a read-only cockpit for the Trading Agent. It shows what the Trading MCP server reports, controls the scheduled tasks and offers a chat with a local language model that can read the same data. It contains no trading logic, no database access and no order function. Development status: there is no product version yet; the GUI reports `dev`.
+The desktop GUI is a cockpit for the Trading Agent that mostly reads. It shows what the Trading MCP server reports, controls the scheduled tasks and offers a chat with a local language model that can read the same data. It contains no trading logic, no database access and no order function. It writes only through four narrow, explicit MCP actions of the Watchlist page (sections 3 and 5); the chat can only read. Development status: the GUI has no version number of its own; it reports `dev`.
 
 ## 1. Architecture
 
