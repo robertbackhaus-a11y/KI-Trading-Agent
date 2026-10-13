@@ -127,6 +127,9 @@ def main() -> None:
     parser.add_argument("--no-backup", action="store_true", help="skip the backup copy of the database (not recommended)")
     parser.add_argument("--backup-path", type=Path, default=None, help="where to put the backup copy (default: next to the database)")
     args = parser.parse_args()
+    args.db_path = args.db_path.resolve()  # a relative path must work for the read-only URI of the dry run as well
+    if args.backup_path is not None:
+        args.backup_path = args.backup_path.resolve()
     if not args.db_path.exists():
         raise FileNotFoundError(f"Trading DB not found: {args.db_path}")
     if not args.write:

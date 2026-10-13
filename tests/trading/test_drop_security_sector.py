@@ -8,6 +8,7 @@ import importlib.util
 import io
 import re
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -155,6 +156,23 @@ class MigrationTests(SectorMigrationCase):
             self.assertIn("sector", [c[1] for c in old.execute("PRAGMA table_info(security)")])  # the backup is the way back
         finally:
             old.close()
+
+    def test_the_command_line_accepts_a_relative_database_path(self) -> None:
+        script = str(TRADING / "Migrate-TradingDropSecuritySector.py")
+        before = self.state()
+        dry = subprocess.run([sys.executable, script, "--db-path", "trading.db"], cwd=self.dir, capture_output=True, text=True)
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertIn("'status': 'READY'", dry.stdout)
+        self.assertEqual(self.state(), before)  # the dry run wrote nothing
+        real = subprocess.run([sys.executable, script, "--db-path", "trading.db", "--write", "--backup-path", "backup.db"], cwd=self.dir, capture_output=True, text=True)
+        self.assertEqual(real.returncode, 0, real.stderr)
+        self.assertIn("'status': 'MIGRATED'", real.stdout)
+        self.assertTrue((self.dir / "backup.db").exists())  # the relative backup path is resolved against the same folder
+        conn = self.connect()
+        try:
+            self.assertNotIn("sector", [c[1] for c in conn.execute("PRAGMA table_info(security)")])
+        finally:
+            conn.close()
 
     def test_the_old_values_are_not_carried_anywhere(self) -> None:
         conn = self.connect(write=True)
