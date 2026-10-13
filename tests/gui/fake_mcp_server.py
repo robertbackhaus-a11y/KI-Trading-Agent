@@ -154,6 +154,30 @@ async def set_watchlist_priority(security_id: int, priority: int | None) -> str:
     return _result("set_watchlist_priority", "PRIORITY_SET", security_id=security_id, priority=priority, previous_priority=previous, changed=previous != priority)
 
 
+async def set_security_strategy(security_id: int, strategy: str | None) -> str:
+    """Action tool (fake): set or remove the strategy of one security that is not held."""
+    _calls("set_security_strategy", {"security_id": security_id, "strategy": strategy})
+    row = next((r for r in _rows() if r["security_id"] == security_id), None)
+    if row is None:
+        return _result("set_security_strategy", "NOT_FOUND", security_id=security_id)
+    if strategy not in (None, "swing", "long_term"):
+        return _result("set_security_strategy", "INVALID_STRATEGY", security_id=security_id)
+    if row.get("held"):
+        return _result("set_security_strategy", "BLOCKED_HELD_POSITION", security_id=security_id, message="held")
+    if security_id == 2:  # the fake's security with an open campaign
+        return _result("set_security_strategy", "BLOCKED_ACTIVE_CAMPAIGN", security_id=security_id, message="campaign")
+    if security_id == 3 and strategy == "long_term":  # a failing write
+        return _result("set_security_strategy", "ERROR", error="OperationalError", message="database is locked")
+    previous = row.get("strategy")
+    if previous == strategy:
+        return _result("set_security_strategy", "UNCHANGED", security_id=security_id, strategy=strategy, previous_strategy=previous)
+    if strategy is None:
+        row.pop("strategy", None)
+    else:
+        row["strategy"] = strategy
+    return _result("set_security_strategy", "STRATEGY_SET" if strategy else "STRATEGY_REMOVED", changed=True, security_id=security_id, strategy=strategy, previous_strategy=previous)
+
+
 _CREATED: dict[str, int] = {}
 
 
@@ -190,7 +214,7 @@ async def onboard_security(symbol: str, name: str, asset_type: str, isin: str | 
     return _result("onboard_security", "CREATED", changed=True, security_id=sid, symbol=key, name=name, provider_symbols=planned["provider_symbols"], watchlist=planned["watchlist"], warnings=[])
 
 
-for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security):
+for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy):
     server.tool(name=fn.__name__, description=fn.__doc__ or fn.__name__, structured_output=False)(fn)
 
 print("fake-mcp ready", file=sys.stderr, flush=True)

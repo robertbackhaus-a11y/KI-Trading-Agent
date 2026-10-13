@@ -169,6 +169,16 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "ALIAS_CONFLICT": ("Provider-Symbol vergeben", "Das Provider-Symbol ist im Security Master bereits einem anderen Wertpapier zugeordnet."),
     "INVALID_INPUT": ("Eingabe ungültig", "Mindestens eine Eingabe fehlt oder hat ein ungültiges Format; es wurde nichts angelegt."),
     "ERROR": ("Fehler", "Die Aktion ist mit einem Fehler beendet worden; alle Änderungen wurden zurückgenommen."),
+    # -- strategy edit (the answers of set_security_strategy) ----------------------------------------------------------------------
+    "STRATEGY_SET": ("Strategie gespeichert", "Die Strategie des Wertpapiers wurde gesetzt; es wurde weder eine Campaign angelegt noch eine Order erzeugt."),
+    "STRATEGY_REMOVED": ("Strategie entfernt", "Die aktive Strategiezuordnung des Wertpapiers wurde beendet; es wurde nichts sonst verändert."),
+    "UNCHANGED": ("Unverändert", "Der gewünschte Wert war bereits gesetzt; es wurde nichts geschrieben."),
+    "NOT_FOUND": ("Nicht gefunden", "Das Wertpapier oder der Eintrag wurde nicht gefunden."),
+    "INVALID_IDENTIFIER": ("Ungültige Kennung", "Die übergebene Kennung des Wertpapiers ist ungültig; es wurde nichts geschrieben."),
+    "INVALID_STRATEGY": ("Ungültige Strategie", "Erlaubt sind Swing, Long-Term oder keine Strategie; es wurde nichts geschrieben."),
+    "BLOCKED_HELD_POSITION": ("Gehaltene Position", "Bei einer aktuell gehaltenen Position hängt die Strategie am Campaign-Ablauf und wird hier nicht isoliert geändert."),
+    "BLOCKED_ACTIVE_CAMPAIGN": ("Aktive Campaign", "Für das Wertpapier läuft eine offene Swing-Campaign; ihre Strategie wird hier nicht geändert."),
+    "ASSIGNMENT_HISTORY_UNCLEAR": ("Historie unklar", "Die Strategiezuordnungen des Wertpapiers sind nicht eindeutig (zum Beispiel mehrere aktive oder zukünftige); es wurde nichts geändert."),
     # -- named explicitly for the GUI (not produced by the orchestrator / planner path) -----------------------------------------
     "BLOCKED_BY_EXISTING_POSITION": ("Position bereits vorhanden", "Ein neuer Einstieg wird nicht geplant, weil bereits eine Position in diesem Wertpapier besteht."),
     "STRATEGY_ASSIGNMENT_REQUIRED": ("Strategiezuordnung fehlt", "Für das Wertpapier ist noch nicht festgelegt, ob es als Swing- oder Long-Term-Position geführt werden soll."),

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+- Desktop GUI: the separate "change priority" dialog and button were removed; the priority is edited inline in the table (pending until the apply button saves it), so there is a single path for it. The MCP action `set_watchlist_priority` is unchanged.
+
+### Added
+- Inline editing of strategy and priority on the Watchlist page (MCP tools 20 → 21): the new ACTION `set_security_strategy` sets (`swing`, `long_term`) or removes the strategy of one security and writes only `strategy_assignment`; a held position (`BLOCKED_HELD_POSITION`) and a security with an open campaign (`BLOCKED_ACTIVE_CAMPAIGN`) are blocked without any write, and no campaign or order is created. The priority uses the existing `set_watchlist_priority`. A choice in the table is only a pending change until the apply button saves it, strategy first and the priority only if that succeeded; reloading with pending changes asks first. A not held security set to Swing is afterwards an entry candidate of the planner (simulation only). The chat and other MCP clients configured with `TRADING_EXCLUDE` do not see the action.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added

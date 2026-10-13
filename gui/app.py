@@ -28,7 +28,8 @@ from .services.tool_policy import classify
 from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.tasks import build_task_rows
-from .viewmodels.watchlist import build_watchlist, describe_action
+from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
+from .viewmodels.watchlist_edit import describe_strategy, priority_saved, strategy_saved
 from .views.chat import ChatView
 from .views.dashboard import DashboardView
 from .views.diagnostics import DiagnosticsView
@@ -94,7 +95,7 @@ class MainWindow(QMainWindow):
         self.watchlist.check_requested.connect(self.check_watchlist)
         self.watchlist.add_requested.connect(self.add_watchlist)
         self.watchlist.remove_requested.connect(self.remove_watchlist)
-        self.watchlist.priority_requested.connect(self.set_watchlist_priority)
+        self.watchlist.edit_apply_requested.connect(self.apply_watchlist_edit)
         self.watchlist.onboard_check_requested.connect(self.check_onboarding)
         self.watchlist.onboard_create_requested.connect(self.create_onboarding)
         self.watchlist.onboard_watchlist_requested.connect(self.add_existing_to_watchlist)
@@ -262,8 +263,53 @@ class MainWindow(QMainWindow):
     def remove_watchlist(self, security_id: int) -> None:
         self._watchlist_action("remove_watchlist_candidate", {"security_id": int(security_id)})
 
-    def set_watchlist_priority(self, security_id: int, priority) -> None:
-        self._watchlist_action("set_watchlist_priority", {"security_id": int(security_id), "priority": None if priority is None else int(priority)})
+    def apply_watchlist_edit(self, security_id: int, changes: dict) -> None:
+        """"Änderung übernehmen" of one row: the strategy first, the priority only if that succeeded; a failure stops the sequence.  The list is reloaded afterwards."""
+        self.log.info("Watchlist-Änderung angefordert: %s", "+".join(k for k in ("strategy", "priority") if k in changes))  # no values in the log
+        steps = []
+        if "strategy" in changes:
+            steps.append(("strategy", "set_security_strategy", {"security_id": int(security_id), "strategy": changes["strategy"]}))
+        if "priority" in changes:
+            steps.append(("priority", "set_watchlist_priority", {"security_id": int(security_id), "priority": changes["priority"]}))
+        saved: set[str] = set()
+        lines: list[str] = []
+
+        def finish(failure: ActionMessage | None) -> None:
+            if failure is None:
+                message = ActionMessage("info", "\n".join(lines) or "Nichts zu speichern.", True)
+            else:
+                text = "\n".join([*lines, failure.text])
+                message = ActionMessage(failure.level, text, False, failure.result, failure.tip)
+            self.watchlist.edit_finished(int(security_id), saved, message)
+            self.statusBar().showMessage(message.text.splitlines()[0], 8000)
+            self.refresh_watchlist()
+
+        def run(index: int) -> None:
+            if index >= len(steps):
+                finish(None)
+                return
+            field, tool, arguments = steps[index]
+
+            def done(res: McpResult) -> None:
+                if field == "strategy":
+                    ok, message = strategy_saved(res.tool_ok, res.data), describe_strategy(res.tool_ok, res.data, res.message)
+                else:
+                    ok, message = priority_saved(res.tool_ok, res.data), describe_action(res.tool_ok, res.data, res.message)
+                    if ok:
+                        message = ActionMessage("info", "Priorität gespeichert.", True, "PRIORITY_SET")
+                    else:
+                        message = ActionMessage(message.level, f"Die Priorität wurde nicht gespeichert: {message.text}", False, message.result, message.tip)
+                self.log.info("Watchlist-Änderung %s: %s", field, res.data.get("result") if isinstance(res.data, dict) and res.data.get("result") else res.kind)
+                if not ok:
+                    finish(message)  # the next step is not run blindly
+                    return
+                saved.add(field)
+                lines.append(message.text)
+                run(index + 1)
+
+            self.mcp.call_action(tool, arguments, timeout=30, on_done=done)
+
+        run(0)
 
     def _onboarding_action(self, arguments: dict, create: bool) -> None:
         """``onboard_security`` for an explicit click: a check (dry run) or, after a clean check, the creation; the list is reloaded after a creation."""

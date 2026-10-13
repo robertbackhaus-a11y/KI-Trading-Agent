@@ -163,7 +163,7 @@ SQLite                   C:\tools\trading\data\trading.db
 ```
 
 The MCP server (`server.py`) exposes every public method of the `Tools` class in
-`trading_sqlite.py` as an MCP tool — currently 20 (see §5).
+`trading_sqlite.py` as an MCP tool — currently 21 (see §5).
 
 ---
 
@@ -401,9 +401,9 @@ Output keys: `status`, `read_only`, `watchlist_written`, `orders_created`, `eval
 
 > **Current access path:** the agent (through an MCP client) uses this tool through the Trading MCP server (`C:\tools\trading\mcp\server.py`; repo source `mcp-tools/`), which exposes every public method of the `Tools` class in `trading_sqlite.py` as an MCP tool — currently 15. Parqet imports run via `Import-ParqetTransactions.py` (there are no upload methods in the MCP server).
 
-**Deploy (current):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, see the README) copies only the files listed in `deploy/deploy-manifest.json` to `C:\tools\trading\app\`, `mcp\` and `scheduler\` after a file and database backup, compares hashes and runs an MCP smoke test (expects 20 tools). Afterwards restart the MCP server process (in the current setup the MCP client restarts it automatically when it is ended).
+**Deploy (current):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, see the README) copies only the files listed in `deploy/deploy-manifest.json` to `C:\tools\trading\app\`, `mcp\` and `scheduler\` after a file and database backup, compares hashes and runs an MCP smoke test (expects 21 tools). Afterwards restart the MCP server process (in the current setup the MCP client restarts it automatically when it is ended).
 
-**Current public method inventory** (version `1.7.0`, 20 public methods, now `mcp-tools/trading_sqlite.py`), classified read-only vs. write-capable:
+**Current public method inventory** (version `1.7.0`, 21 public methods, now `mcp-tools/trading_sqlite.py`), classified read-only vs. write-capable:
 
 | Method | Read-only? | Notes |
 |---|---|---|
@@ -426,8 +426,9 @@ Output keys: `status`, `read_only`, `watchlist_written`, `orders_created`, `eval
 | `remove_watchlist_candidate(security_id)` | **No — writes** (deletes) one `watchlist` row | Dynamically loads `watchlist_admin.py`; touches no position, strategy assignment, campaign or transaction; results `REMOVED`, `NOT_FOUND`, `INVALID_IDENTIFIER`, `ERROR` |
 | `set_watchlist_priority(security_id, priority)` | **No — writes** `watchlist.priority` and `updated_at` of one row | Dynamically loads `watchlist_admin.py`; a whole number (higher ranks first, as in the planner tie-break) or null; the schema defines no range; results `PRIORITY_SET`, `NOT_FOUND`, `INVALID_IDENTIFIER`, `INVALID_PRIORITY`, `ERROR` |
 | `onboard_security(symbol, name, asset_type, isin=None, wkn=None, exchange=None, currency=None, country=None, provider_symbols=None, add_to_watchlist=False, watchlist_priority=None, dry_run=True)` | **No — writes** `security`, optionally `source_symbols` and `watchlist` | Dynamically loads `security_onboarding.py` (uses `security_aliases.py` and `watchlist_admin.py`); creates exactly one new security from explicitly supplied values and researches or guesses nothing (no ISIN, WKN, exchange suffix, Yahoo symbol, sector or CIK). The default is the check (`dry_run=true`, writes nothing); `dry_run=false` repeats the check under the write lock and creates the security, the provider symbols (Yahoo Finance and FMP only) and optionally the watchlist entry in **one** transaction (`BEGIN IMMEDIATE`, any error undoes everything). Results `READY`, `CREATED`, `ALREADY_EXISTS`, `ISIN_CONFLICT`, `SYMBOL_CONFLICT`, `WKN_CONFLICT`, `ALIAS_CONFLICT`, `INVALID_INPUT`, `ERROR`; all conflicts are listed. An existing security is never changed; no position, strategy, campaign, order, market data, fundamentals or news |
+| `set_security_strategy(security_id, strategy)` | **No — writes** only `strategy_assignment` | Dynamically loads `strategy_admin.py`; sets (`swing`, `long_term`) or removes (`null`) the strategy of **one** security that is not held. Order of the checks: the security exists, the strategy is valid, **not held** (`BLOCKED_HELD_POSITION`), **no open campaign** (`BLOCKED_ACTIVE_CAMPAIGN`), value already equal (`UNCHANGED`), then write; a block writes nothing. An open assignment that started before today is closed yesterday and the new one starts today (the history is kept); one that started today is corrected or deleted unless a campaign refers to it; otherwise `ASSIGNMENT_HISTORY_UNCLEAR` without any write. One transaction (`BEGIN IMMEDIATE`). No campaign, position, watchlist row, promotion or order is touched. A not held security with `swing` is afterwards treated as an entry candidate by the planner (simulation only) |
 
-**Client-specific visibility.** The server registers every public method of `trading_sqlite.py`; the environment variable `TRADING_EXCLUDE` (comma-separated tool names) keeps tools out of one client's process without making the server code client-specific. A front end that must not change the watchlist starts the server with `TRADING_EXCLUDE=add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority,onboard_security` and therefore sees the earlier tools plus `get_watchlist` (16 tools); the desktop GUI starts it without an exclude (20 tools) and offers only the READ tools to its chat.
+**Client-specific visibility.** The server registers every public method of `trading_sqlite.py`; the environment variable `TRADING_EXCLUDE` (comma-separated tool names) keeps tools out of one client's process without making the server code client-specific. A front end that must not change the watchlist starts the server with `TRADING_EXCLUDE=add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority,onboard_security,set_security_strategy` and therefore sees the earlier tools plus `get_watchlist` (16 tools); the desktop GUI starts it without an exclude (21 tools) and offers only the READ tools to its chat.
 
 Both new methods follow the exact same pattern as `run_trading_orchestrator`/`evaluate_swing_candidates`: `_load_runtime_trading_module()` loads the deployed module from `C:\tools\trading\app\`, `_readonly_import_connection()` opens a strict `PRAGMA query_only=ON` connection.
 

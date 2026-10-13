@@ -174,7 +174,7 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(tp.is_read("get_watchlist"))
 
     def test_ag_the_new_actions_are_actions(self) -> None:
-        for name in ("add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"):
+        for name in ("add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"):
             self.assertEqual(tp.classify(name), tp.ACTION, name)
             self.assertFalse(tp.is_read(name), name)
             self.assertTrue(tp.is_gui_action(name), name)
@@ -182,7 +182,7 @@ class PolicyTests(unittest.TestCase):
                 tp.require_read(name)
 
     def test_ah_nothing_else_may_be_triggered_by_the_gui(self) -> None:
-        self.assertEqual(tp.GUI_ACTIONS, {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"})
+        self.assertEqual(tp.GUI_ACTIONS, {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"})
         for name in ("sql_execute", "approve_swing_promotion", "brand_new_tool", "get_watchlist", "database_status", "", "ADD_WATCHLIST_CANDIDATE"):
             self.assertFalse(tp.is_gui_action(name), name)
         self.assertEqual(tp.classify("brand_new_tool"), tp.ACTION)
@@ -255,7 +255,7 @@ class WatchlistWindowTests(unittest.TestCase):
     def test_t_the_table_loads_with_the_columns_and_readable_values(self) -> None:
         self.open_page()
         table = self.view.table
-        self.assertEqual([table.horizontalHeaderItem(c).text() for c in range(table.columnCount())], vw.HEADERS)
+        self.assertEqual([table.horizontalHeaderItem(c).text() for c in range(table.columnCount())], [*vw.HEADERS, "Änderung"])
         self.assertEqual(self.view.summary.text(), "3 Einträge · davon 1 im Bestand")
         self.assertEqual(sorted(self.texts()), ["AAA", "BBB", "CCC"])
         row = self.row_of("AAA")
@@ -427,41 +427,34 @@ class WatchlistWindowTests(unittest.TestCase):
         self.assertNotIn("BBB", self.texts())
         self.assertIn("wurde von der Watchlist entfernt", self.view.message.text())
 
-    def test_the_context_menu_offers_the_two_row_actions_and_the_buttons_follow_the_selection(self) -> None:
+    def test_the_context_menu_and_the_buttons_follow_the_selection(self) -> None:
         self.open_page()
         self.view.table.clearSelection()
-        self.assertFalse(self.view.remove_button.isEnabled() or self.view.priority_button.isEnabled())
+        self.assertFalse(self.view.remove_button.isEnabled())
         self.view.table.selectRow(0)
-        self.assertTrue(self.view.remove_button.isEnabled() and self.view.priority_button.isEnabled())
+        self.assertTrue(self.view.remove_button.isEnabled())
         self.assertEqual(self.view.table.contextMenuPolicy(), Qt.ContextMenuPolicy.CustomContextMenu)
 
     # AD
-    def test_ad_a_priority_change_is_an_explicit_action_and_shows_the_new_value(self) -> None:
+    def test_ad_priority_has_exactly_one_gui_path_inline_edit_pending_apply(self) -> None:
+        import gui.views.watchlist as view_module
+
         self.open_page()
+        texts = [b.text() for b in self.view.findChildren(QPushButton)]
+        self.assertFalse([t for t in texts if "Priorität ändern" in t], texts)  # no second, immediately writing path
+        self.assertFalse(hasattr(view_module, "PriorityDialog"))
+        for name in ("priority_button", "ask_priority", "priority_requested", "_on_priority"):
+            self.assertFalse(hasattr(self.view, name), name)
+        self.assertFalse(hasattr(self.window, "set_watchlist_priority"))
         self.view.table.selectRow(self.row_of("BBB"))
-        self.view.ask_priority = lambda row: (False, None)  # cancelled: nothing happens
-        self.view.priority_button.click()
-        pump(0.5)
-        self.assertEqual(self.actions(), [])
-        self.view.ask_priority = lambda row: (True, 77)
-        self.view.priority_button.click()
-        self.assertTrue(pump(15, lambda: self.view.table.item(self.row_of("BBB"), 3).text() == "77"))
-        self.assertEqual(self.actions(), [{"tool": "set_watchlist_priority", "arguments": {"security_id": 2, "priority": 77}}])
+        pump(0.2)
+        self.assertEqual(self.actions(), [])  # selecting a row writes nothing
+        # the one remaining path: the priority cell has an editor, the value stays pending until "Änderung übernehmen" (see test_watchlist_edit)
+        delegate = self.view.table.itemDelegateForColumn(3)
+        index = self.view.table.model().index(self.row_of("BBB"), 3)
+        from PySide6.QtWidgets import QLineEdit, QStyleOptionViewItem
 
-    def test_the_priority_can_be_cleared_and_the_dialog_offers_the_current_value(self) -> None:
-        from gui.views.watchlist import PriorityDialog
-
-        dialog = PriorityDialog("AAA", 50)
-        self.assertEqual((dialog.value(), dialog.cancel.isDefault()), (50, True))
-        dialog.clear.setChecked(True)
-        self.assertIsNone(dialog.value())
-        self.assertIsNone(PriorityDialog("CCC", None).value())  # no priority yet: "Keine Priorität" is preselected
-        self.open_page()
-        self.view.table.selectRow(self.row_of("AAA"))
-        self.view.ask_priority = lambda row: (True, None)
-        self.view.priority_button.click()
-        self.assertTrue(pump(15, lambda: self.view.table.item(self.row_of("AAA"), 3).text() == "—"))
-        self.assertEqual(self.actions()[-1]["arguments"], {"security_id": 1, "priority": None})
+        self.assertIsInstance(delegate.createEditor(self.view.table.viewport(), QStyleOptionViewItem(), index), QLineEdit)
 
     # AE, AH
     def test_ae_the_chat_is_never_offered_an_action_tool(self) -> None:
@@ -489,7 +482,7 @@ class WatchlistWindowTests(unittest.TestCase):
     def test_the_planner_and_dashboard_still_have_no_action_buttons_and_the_watchlist_has_exactly_these(self) -> None:
         self.open_page()
         texts = sorted(b.text() for b in self.view.findChildren(QPushButton))
-        self.assertEqual(texts, ["Aktualisieren", "Kandidat hinzufügen …", "Priorität ändern …", "Von der Watchlist entfernen …"])
+        self.assertEqual(texts, ["Aktualisieren", "Kandidat hinzufügen …", "Von der Watchlist entfernen …", "Änderung verwerfen", "Änderung übernehmen"])
         for word in ("kaufen", "verkaufen", "order", "approve", "promote", "sql"):
             self.assertFalse(any(word in t.lower() for t in texts), word)
 

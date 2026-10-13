@@ -38,6 +38,7 @@ class WatchRow:
     sort_keys: list[Any] = field(default_factory=list)
     search: str = ""
     level: str = ""  # "", "warning" (needs a look) -- only a colour, never a decision
+    strategy_value: Optional[str] = None  # the backend value (swing / long_term / ...), None = no active strategy; the table shows strategy_text of it
 
 
 @dataclass
@@ -57,6 +58,7 @@ class ActionMessage:
     text: str
     done: bool  # the operation did what was asked (the list is refreshed)
     result: str = ""  # set where the dialog offers a follow-up: "SECURITY_NOT_FOUND" shows the button "Neues Wertpapier aufnehmen"
+    tip: str = ""  # the original code and its explanation (tooltip only)
 
 
 def _d(value: Any) -> dict:
@@ -110,7 +112,8 @@ def build_row(item: dict) -> WatchRow:
     sort_keys[3], sort_keys[4], sort_keys[5] = priority, rank, score
     needs_a_look = item.get("news_status") in ("NEWS_ATTENTION", "NEWS_HIGH_ATTENTION")
     return WatchRow(sid, symbol, name, held, bool(item.get("annotated")), priority, str(status), strategy, str(quality), cells, sort_keys,
-                    " ".join(str(x) for x in (item.get("symbol"), item.get("name"), item.get("isin")) if x).lower(), "warning" if needs_a_look else "")
+                    " ".join(str(x) for x in (item.get("symbol"), item.get("name"), item.get("isin")) if x).lower(), "warning" if needs_a_look else "",
+                    item.get("strategy") if isinstance(item.get("strategy"), str) else None)
 
 
 def _notes(payload: dict) -> list[str]:

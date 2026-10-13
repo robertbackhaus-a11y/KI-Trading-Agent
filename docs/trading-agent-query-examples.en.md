@@ -380,7 +380,7 @@ Short phrasings that reliably lead to the right tool.
 
 ## A. Technical Mapping
 
-All 20 MCP tools with their access type. Names and parameters are taken from the current code.
+All 21 MCP tools with their access type. Names and parameters are taken from the current code.
 
 | Tool | Access | Purpose | Key parameters | Chapters |
 |---|---|---|---|---|
@@ -400,6 +400,7 @@ All 20 MCP tools with their access type. Names and parameters are taken from the
 | `rank_watchlist` | Read | Technical momentum/trend ranking of the watchlist | – | 3 |
 | `remove_watchlist_candidate` | Write (watchlist only) | Remove one security from the watchlist; positions, strategies and campaigns stay untouched | `security_id` | – |
 | `run_trading_orchestrator` | Read | Portfolio status with actions, allocation, capital and entry plan | `as_of`, `detail` | 1, 2, 9, 10, 11, 14 |
+| `set_security_strategy` | Write (strategy assignment only, desktop GUI only) | Set or remove the strategy of a security that is not held (`swing`, `long_term` or `null`); blocked without any write for a held position or an open campaign; creates no campaign and no order | `security_id`, `strategy` | – |
 | `set_watchlist_priority` | Write (watchlist only) | Set or clear the priority of one watchlist entry | `security_id`, `priority` | – |
 | `sql_execute` | Write possible (unrestricted) | Arbitrary SQL on the local database | `sql` | 7, 11, 12 |
 | `suggest_strategy_assignments` | Read | Suggestion swing, long_term or unknown per watchlist entry without assignment | `as_of` | 13 |
@@ -410,7 +411,7 @@ All 20 MCP tools with their access type. Names and parameters are taken from the
 Status values and tool names are not translated.
 
 - `PROMOTE` is not a `BUY`; `DISCOVERY` is not `PROMOTE`; `NEWS` is not a signal. No orders are created.
-- Only `approve_swing_promotion` (after explicit approval), `sql_execute` and the three narrow watchlist tools `add_watchlist_candidate`, `remove_watchlist_candidate` and `set_watchlist_priority` can write data, and so can `onboard_security` (creates one new security in the Security Master) (the watchlist tools only the watchlist table; only explicit buttons of the desktop GUI call them and the chat never offers them); all other tools only read.
+- Only `approve_swing_promotion` (after explicit approval), `sql_execute` and the three narrow watchlist tools `add_watchlist_candidate`, `remove_watchlist_candidate` and `set_watchlist_priority` can write data, and so can `onboard_security` (creates one new security in the Security Master) and `set_security_strategy` (sets or removes the strategy of a security that is not held) (the watchlist tools only the watchlist table; only explicit buttons of the desktop GUI call them and the chat never offers them); all other tools only read.
 - The discovery and news readers read the last finished report and run neither a scan nor a web request. State and age are always returned.
 - Compact is the default. `detail=true` returns large raw data and should only be requested explicitly. Answers stay below the MCP size limit (40,000 characters).
 - The engine computes, the front end displays: totals, counts and rankings are not recomputed or guessed.

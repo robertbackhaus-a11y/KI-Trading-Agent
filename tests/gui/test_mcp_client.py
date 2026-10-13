@@ -20,7 +20,7 @@ if HAVE_QT:
     from gui.services.settings import Settings
 
 FAKE_TOOLS = {"database_status", "run_trading_orchestrator", "rank_watchlist", "slow", "crash", "broken", "failing", "sql_execute",
-              "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"}
+              "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"}
 
 
 def make_core(tmp: Path, **kw):

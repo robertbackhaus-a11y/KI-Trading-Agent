@@ -1143,6 +1143,31 @@ class Tools:
         """
         return await self._watchlist_write("set_watchlist_priority", security_id, priority)
 
+    def _set_security_strategy_sync(self, security_id, strategy) -> dict:
+        admin = self._load_runtime_trading_module("strategy_admin")
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000;")  # the scheduled collectors write too; wait a few seconds instead of failing at once
+            return admin.set_security_strategy(conn, security_id, strategy)
+        finally:
+            conn.close()
+
+    async def set_security_strategy(self, security_id: int, strategy: str | None) -> dict:
+        """ACTION (writes only strategy_assignment; for the desktop GUI only): set the strategy of ONE security that is not held, or remove it.
+
+        strategy is swing, long_term or null (= remove the active assignment). Blocked without any write: a currently held position
+        (BLOCKED_HELD_POSITION) and a security with an open swing campaign (BLOCKED_ACTIVE_CAMPAIGN). Other results: STRATEGY_SET, STRATEGY_REMOVED,
+        UNCHANGED (already so), NOT_FOUND, INVALID_IDENTIFIER, INVALID_STRATEGY, ASSIGNMENT_HISTORY_UNCLEAR, ERROR. No campaign is opened or closed,
+        no position, watchlist row, promotion or order is touched. A not held swing security becomes an entry candidate of the planner (simulation only).
+
+        :param security_id: the security_id of the Security Master
+        :param strategy: swing, long_term or null to remove the strategy
+        """
+        try:
+            return await asyncio.to_thread(self._set_security_strategy_sync, security_id, strategy)
+        except Exception as exc:
+            return {"ok": False, "operation": "set_security_strategy", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
     def _onboard_security_sync(self, **arguments) -> dict:
         onboarding = self._load_runtime_trading_module("security_onboarding")
         conn = self._connect()

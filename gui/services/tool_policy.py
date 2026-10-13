@@ -38,10 +38,12 @@ POLICY: dict[str, str] = {
     "set_watchlist_priority": ACTION,
     # action: creates one new security in the Security Master (explicit dialog of the Watchlist page, dry run first); never offered to the chat
     "onboard_security": ACTION,
+    # action: sets or removes the strategy of ONE security that is not held (strategy_assignment only); explicit "Übernehmen" of the Watchlist page, never the chat
+    "set_security_strategy": ACTION,
 }
 
 # the ACTIONs the GUI itself may call (explicit button + confirmation where destructive); everything else is denied
-GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security"})
+GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy"})
 
 
 class ToolDenied(Exception):
