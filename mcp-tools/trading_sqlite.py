@@ -1144,10 +1144,10 @@ class Tools:
         ETF (holdings, equity weight, matched, other/cash, as-of date, source) and reconciliation checks. Use the figures as they are.
 
         :param as_of: evaluation date YYYY-MM-DD (default: current)
-        :param top: number of companies returned, largest effective exposure first (default 25)
+        :param top: number of companies returned, largest effective exposure first (default 25, at most 40)
         """
         try:
-            return await asyncio.to_thread(self._get_effective_exposure_sync, as_of, max(1, min(int(top), 200)))
+            return await asyncio.to_thread(self._get_effective_exposure_sync, as_of, max(1, min(int(top), 40)))
         except Exception as exc:
             return {"ok": False, "operation": "get_effective_exposure", "error": "EFFECTIVE_EXPOSURE_FAILED", "message": str(exc)}
 

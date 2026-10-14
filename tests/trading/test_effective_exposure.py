@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 for path in (ROOT / "tools" / "trading", Path(__file__).resolve().parent):
@@ -136,6 +137,13 @@ class SumTests(ExposureCase):
         etf = next(e for e in result["etfs"] if e["symbol"] == "ETF")
         self.assertAlmostEqual(etf["other_weight_pct"], 2.5)  # 100 - 97.5
         self.assertTrue(result["checks"]["reconciles"])
+
+    def test_top_is_capped_so_that_the_answer_stays_below_the_mcp_size_limit(self) -> None:
+        self.assertEqual(ee.MAX_TOP, 40)
+        with mock.patch.object(ee, "MAX_TOP", 2):
+            result = self.run_ee(top=500)
+        self.assertEqual((len(result["top"]), result["top_count"]), (2, 2))
+        self.assertEqual(len(self.run_ee(top=0)["top"]), 1)  # at least one row
 
     def test_top_limits_the_list_but_not_the_checks(self) -> None:
         result = self.run_ee(top=3)

@@ -30,6 +30,7 @@ OPERATION = "get_effective_exposure"
 MATCH_ISIN, MATCH_ALIAS, MATCH_TICKER, STANDALONE, AMBIGUOUS, NAME_ONLY = "isin", "alias", "ticker_exchange", "standalone", "ambiguous", "name_only"
 DIRECT_MATCHED, ETF_ONLY, AMBIGUOUS_UNMATCHED = "direct_matched", "etf_only", "ambiguous_unmatched"  # the three classes of a company / a holding
 DEFAULT_TOP = 25
+MAX_TOP = 40  # the MCP server refuses results above 40,000 characters; 25 companies are about 19,000, 200 would be about 120,000
 _EPS = 1e-9
 
 
@@ -81,8 +82,10 @@ def build_effective_exposure(
     universe_dir: Optional[Path] = None,
     top: int = DEFAULT_TOP,
 ) -> dict[str, Any]:
-    """The effective exposure of every company (direct + ETF holdings) of the open positions.  Read-only."""
+    """The effective exposure of every company (direct + ETF holdings) of the open positions.  Read-only.  At most ``MAX_TOP`` companies are listed."""
     import analysis_engine
+
+    top = max(1, min(int(top), MAX_TOP))
 
     context = analysis_engine.build_portfolio_context(as_of=as_of, connection=conn)
     evaluation = str(context.evaluation_as_of)[:10]
