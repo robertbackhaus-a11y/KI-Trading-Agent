@@ -75,19 +75,48 @@ def company_key(holding: eh.Holding, security_id: Optional[int], groups: Optiona
     return f"tk:{holding.ticker.upper()}|{eh.norm(holding.exchange)}|{eh.norm(holding.name)}"
 
 
+def guard_inputs(etfs: list[dict[str, Any]], companies: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the single-name guard may use: the ETF value of every company that is a security of the database, and whether that information is complete.
+
+    ``usable`` only if EVERY held ETF has holdings that are present and not stale (``APPLIED``); an ETF with stale, missing or invalid holdings makes the effective exposure incomplete, and the
+    guard must then say so instead of treating the direct exposure as complete (``status`` ``stale`` / ``partial`` / ``unavailable``; no ETF held: ``not_applicable``).  The map is only
+    given when it is usable.  The rounding drift is not part of any company, so it cannot appear here.
+    """
+    if not etfs:
+        return {"usable": True, "status": "not_applicable", "details": ["no ETF held"], "etf_value_by_security_id": {}}
+    problems = [e for e in etfs if e["status"] != eh.APPLIED]
+    details = [f"ETF_HOLDINGS_{e['status']}:{e['symbol']}" + (f" (as of {e['as_of']})" if e.get("as_of") else "") for e in problems]
+    if not problems:
+        status = "available"
+    elif all(e["status"] == eh.STALE for e in problems):
+        status = "stale"
+    elif len(problems) < len(etfs):
+        status = "partial"
+    else:
+        status = "unavailable"
+    values: dict[str, float] = {}
+    if not problems:
+        for c in companies:
+            if c.get("security_id") is not None and c["etf_value_eur"] > 0:
+                values[str(int(c["security_id"]))] = values.get(str(int(c["security_id"])), 0.0) + c["etf_value_eur"]
+    return {"usable": not problems, "status": status, "details": details, "etf_value_by_security_id": values}
+
+
 def build_effective_exposure(
     conn: sqlite3.Connection,
     *,
     as_of: Optional[str] = None,
     universe_dir: Optional[Path] = None,
     top: int = DEFAULT_TOP,
+    context: Optional[Any] = None,
 ) -> dict[str, Any]:
     """The effective exposure of every company (direct + ETF holdings) of the open positions.  Read-only.  At most ``MAX_TOP`` companies are listed."""
     import analysis_engine
 
     top = max(1, min(int(top), MAX_TOP))
 
-    context = analysis_engine.build_portfolio_context(as_of=as_of, connection=conn)
+    if context is None:  # the orchestrator hands in the portfolio context it already computed: one valuation, one set of figures
+        context = analysis_engine.build_portfolio_context(as_of=as_of, connection=conn)
     evaluation = str(context.evaluation_as_of)[:10]
     warnings: list[str] = []
     try:
@@ -233,6 +262,7 @@ def build_effective_exposure(
     buckets = {DIRECT_MATCHED: bucket(DIRECT_MATCHED), ETF_ONLY: bucket(ETF_ONLY), AMBIGUOUS_UNMATCHED: unclear,
                "other": {"value_eur": other_eur, "pct_of_total": other_eur / total * 100.0 if total > _EPS else 0.0},
                "rounding_drift": {"value_eur": drift_eur, "pct_of_total": drift_eur / total * 100.0 if total > _EPS else 0.0}}
+    guard = guard_inputs(etfs, rows)
     reconciled = abs(sum(b["value_eur"] for b in buckets.values()) - total) <= 0.01 and abs(sum_companies + other_eur + drift_eur + unresolved_eur - total) <= 0.01
     return {
         "ok": True, "operation": OPERATION, "as_of": evaluation, "base_currency": "EUR", "total_market_value_eur": total, "limit_note": "no limit is applied here; the risk guard is unchanged",
@@ -244,7 +274,7 @@ def build_effective_exposure(
                      "unresolved_etf_value_eur": unresolved_eur, "other_value_eur": other_eur, "other_pct_of_total": other_eur / total * 100.0 if total > _EPS else 0.0,
                      "rounding_drift_eur": drift_eur, "equity_holdings": sum(e["equity_count"] for e in etfs),
                      **{f"{k}_holdings": sum(e[f"{k}_count"] for e in etfs) for k in (DIRECT_MATCHED, ETF_ONLY, AMBIGUOUS_UNMATCHED)}},
-        "buckets": buckets,
+        "buckets": buckets, "guard": guard,
         "unvalued": unvalued,
         "checks": {"companies_eur": sum_companies, "other_eur": other_eur, "rounding_drift_eur": drift_eur, "unresolved_eur": unresolved_eur, "context_total_eur": context_total, "reconciles": reconciled and (context_total is None or abs(context_total - total) <= 0.01)},
         "warnings": warnings,

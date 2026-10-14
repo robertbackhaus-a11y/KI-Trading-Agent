@@ -12,6 +12,7 @@ from analysis_contracts import (
     PortfolioContext,
     StrategyType,
 )
+from single_name_exposure import resolve
 from strategy_config import StrategyConfig
 
 
@@ -34,6 +35,13 @@ class EntryRecommendation:
     # EUR of the purchase funded from cash above the reserve / from external funding (only differs from 0 when external funding is available).
     internal_capital_eur: Optional[float] = None
     external_funding_eur: Optional[float] = None
+    # Single-name guard: ``current_security_weight`` / ``projected_security_weight`` are the DIRECT weights; these add the ETF share, the effective weight (direct + ETF share of the same
+    # company) and the basis the limit was applied to (see ``single_name_exposure``).  ``direct_only`` means the effective exposure is NOT assessed (the notes say why).
+    current_etf_security_weight: Optional[float] = None
+    current_effective_security_weight: Optional[float] = None
+    projected_effective_security_weight: Optional[float] = None
+    single_name_basis: Optional[str] = None
+    single_name_notes: tuple[str, ...] = ()
 
 
 def internal_external_split(*, cash: float, reserve: float, purchase: float, buying_power: Optional[float] = None) -> tuple[float, float]:
@@ -55,7 +63,14 @@ def _blocked(
     security_weight: Optional[float] = None,
     swing_allocation: Optional[float] = None,
     cash: Optional[float] = None,
+    single_name: Optional[tuple] = None,
 ) -> EntryRecommendation:
+    """``single_name`` = ``(SingleName, total)``: the weight figures of the guard, filled in when the limit was the reason."""
+    extra = {}
+    if single_name is not None:
+        sn, denominator = single_name
+        extra = dict(current_etf_security_weight=sn.etf_value / denominator if denominator > 0 else None, current_effective_security_weight=sn.effective_value / denominator if denominator > 0 else None,
+                     single_name_basis=sn.basis, single_name_notes=sn.notes)
     return EntryRecommendation(
         eligible=False,
         recommended_quantity=0.0,
@@ -69,6 +84,7 @@ def _blocked(
         cash_before=cash,
         cash_after=cash,
         block_reasons=(reason,),
+        **extra,
     )
 
 
@@ -187,13 +203,16 @@ def evaluate_entry_recommendation(
     total = float(portfolio.total_market_value)
     swing_value = float(portfolio.swing_market_value)
     security_value = float(portfolio.current_security_market_value_eur or 0.0)
+    single = resolve(portfolio, snapshot.security_id, security_value)  # direct + ETF share when the holdings are usable, else direct only and said so
+    effective_value = single.effective_value
+    guard = (single, total)
     available_capital = float(cash)
     buying_power = None
     if portfolio.buying_power_quality.status is AvailabilityStatus.AVAILABLE and portfolio.buying_power is not None:
         buying_power = float(portfolio.buying_power)
         available_capital = min(available_capital, buying_power)
     initial_cap = _weight_cap_value(total=total, current=security_value, maximum=policy.max_initial_swing_weight)
-    security_cap = _weight_cap_value(total=total, current=security_value, maximum=policy.max_security_weight)
+    security_cap = _weight_cap_value(total=total, current=effective_value, maximum=policy.max_security_weight)
     swing_cap = _weight_cap_value(total=total, current=swing_value, maximum=config.portfolio.swing_max_pct)
     # Weight and Swing ceilings are cash independent (percent of the invested value); only the cash cap is lifted by external funding.
     cash_cap = float("inf") if external else max(0.0, available_capital - float(policy.minimum_cash_reserve))
@@ -207,15 +226,16 @@ def evaluate_entry_recommendation(
             else "ENTRY_SWING_ALLOCATION_LIMIT" if swing_cap <= 0
             else "ENTRY_QUANTITY_ZERO"
         )
-        return _blocked(reason, current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
+        return _blocked(reason, current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash, single_name=guard)
     purchase = quantity * current_eur
     projected_total = total + purchase
-    projected_security = (security_value + purchase) / projected_total
+    projected_security = (security_value + purchase) / projected_total  # the direct weight after the purchase
+    projected_effective = (effective_value + purchase) / projected_total  # direct + ETF share: this is what the limit is applied to
     projected_swing = (swing_value + purchase) / projected_total
     initial_weight = purchase / projected_total
     # Final post-rounding verification preserves every declared ceiling.
-    if projected_security > policy.max_security_weight + 1e-12:
-        return _blocked("ENTRY_SECURITY_WEIGHT_LIMIT", current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
+    if projected_effective > policy.max_security_weight + 1e-12:
+        return _blocked("ENTRY_SECURITY_WEIGHT_LIMIT", current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash, single_name=guard)
     if initial_weight > policy.max_initial_swing_weight + 1e-12:
         return _blocked("ENTRY_INITIAL_WEIGHT_LIMIT", current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
     if projected_swing > config.portfolio.swing_max_pct + 1e-12:
@@ -237,4 +257,9 @@ def evaluate_entry_recommendation(
         cash_after=float(cash) - internal,
         internal_capital_eur=internal,
         external_funding_eur=external_eur,
+        current_etf_security_weight=single.etf_value / total if total > 0 else None,
+        current_effective_security_weight=effective_value / total if total > 0 else None,
+        projected_effective_security_weight=projected_effective,
+        single_name_basis=single.basis,
+        single_name_notes=single.notes,
     )

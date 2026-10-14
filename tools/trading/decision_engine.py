@@ -431,6 +431,11 @@ def _with_add_recommendation(
         "add_cash_before": add.cash_before,
         "add_cash_after": add.cash_after,
         "add_block_reasons": add.block_reasons,
+        "add_current_etf_security_weight": add.current_etf_security_weight,
+        "add_current_effective_security_weight": add.current_effective_security_weight,
+        "add_projected_effective_security_weight": add.projected_effective_security_weight,
+        "add_single_name_basis": add.single_name_basis,
+        "add_single_name_notes": add.single_name_notes,
     }
     if not add.eligible or not add.recommended_quantity:
         return replace(result, **fields)
@@ -468,6 +473,11 @@ def _entry_decision(
         "entry_cash_before": entry.cash_before,
         "entry_cash_after": entry.cash_after,
         "entry_block_reasons": entry.block_reasons,
+        "entry_current_etf_security_weight": entry.current_etf_security_weight,
+        "entry_current_effective_security_weight": entry.current_effective_security_weight,
+        "entry_projected_effective_security_weight": entry.projected_effective_security_weight,
+        "entry_single_name_basis": entry.single_name_basis,
+        "entry_single_name_notes": entry.single_name_notes,
     }
     if not entry.eligible or not entry.recommended_quantity:
         return DecisionResult(

@@ -12,6 +12,7 @@ from analysis_contracts import (
     PortfolioContext,
     StrategyType,
 )
+from single_name_exposure import resolve
 from entry_sizing import internal_external_split
 from strategy_config import StrategyConfig
 
@@ -36,6 +37,12 @@ class AddRecommendation:
     # EUR of the purchase funded from cash above the reserve / from external funding (see entry_sizing.internal_external_split).
     internal_capital_eur: Optional[float] = None
     external_funding_eur: Optional[float] = None
+    # Single-name guard (see ``entry_sizing.EntryRecommendation``): the weights above are DIRECT; these add the ETF share, the effective weight and the basis the limit was applied to.
+    current_etf_security_weight: Optional[float] = None
+    current_effective_security_weight: Optional[float] = None
+    projected_effective_security_weight: Optional[float] = None
+    single_name_basis: Optional[str] = None
+    single_name_notes: tuple[str, ...] = ()
 
 
 def _result(
@@ -47,7 +54,13 @@ def _result(
     security_weight: Optional[float] = None,
     swing_allocation: Optional[float] = None,
     cash: Optional[float] = None,
+    single_name: Optional[tuple] = None,
 ) -> AddRecommendation:
+    extra = {}
+    if single_name is not None:
+        sn, denominator = single_name
+        extra = dict(current_etf_security_weight=sn.etf_value / denominator if denominator > 0 else None, current_effective_security_weight=sn.effective_value / denominator if denominator > 0 else None,
+                     single_name_basis=sn.basis, single_name_notes=sn.notes)
     return AddRecommendation(
         eligible=False,
         base_quantity=base,
@@ -62,6 +75,7 @@ def _result(
         cash_before=cash,
         cash_after=cash,
         block_reasons=tuple(reasons),
+        **extra,
     )
 
 
@@ -230,8 +244,10 @@ def evaluate_add_recommendation(
     # External funding lifts only the cash/reserve cap; position, Swing and campaign-size ceilings stay binding.
     external = bool(portfolio.external_funding_available)
     cash_cap = float("inf") if external else max(0, floor((capital - policy.minimum_cash_reserve) / current_eur))
+    single = resolve(portfolio, snapshot.security_id, float(portfolio.current_security_market_value_eur))  # direct + ETF share when the holdings are usable, else direct only and said so
+    guard = (single, float(portfolio.total_market_value))
     security_cap = _cap_quantity(
-        current_value=float(portfolio.current_security_market_value_eur),
+        current_value=single.effective_value,
         total_value=float(portfolio.total_market_value),
         price=current_eur,
         maximum_weight=policy.max_security_weight,
@@ -250,11 +266,12 @@ def evaluate_add_recommendation(
             reason = "ADD_SECURITY_WEIGHT_LIMIT"
         else:
             reason = "ADD_SWING_ALLOCATION_LIMIT"
-        return _result([reason], base=base, reference=reference_eur, current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash)
+        return _result([reason], base=base, reference=reference_eur, current=current_eur, security_weight=security_weight, swing_allocation=swing_allocation, cash=cash, single_name=guard)
 
     purchase = quantity * current_eur
     total = float(portfolio.total_market_value) + purchase
-    projected_security = (float(portfolio.current_security_market_value_eur) + purchase) / total
+    projected_security = (float(portfolio.current_security_market_value_eur) + purchase) / total  # direct
+    projected_effective = (single.effective_value + purchase) / total  # direct + ETF share: what the limit is applied to
     projected_swing = (float(portfolio.swing_market_value) + purchase) / total
     internal, external_eur = internal_external_split(cash=float(cash), reserve=float(policy.minimum_cash_reserve), purchase=purchase, buying_power=buying_power)
     if not external:
@@ -275,4 +292,9 @@ def evaluate_add_recommendation(
         block_reasons=(),
         internal_capital_eur=internal,
         external_funding_eur=external_eur,
+        current_etf_security_weight=single.etf_value / float(portfolio.total_market_value),
+        current_effective_security_weight=single.effective_value / float(portfolio.total_market_value),
+        projected_effective_security_weight=projected_effective,
+        single_name_basis=single.basis,
+        single_name_notes=single.notes,
     )

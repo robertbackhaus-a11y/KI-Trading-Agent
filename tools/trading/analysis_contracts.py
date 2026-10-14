@@ -291,6 +291,11 @@ class PortfolioContext:
     exposures: tuple[PortfolioSecurityExposure, ...] = ()
     # True: low internal cash alone must not block BUY/ADD sizing; allocation, weight, data and campaign guards stay binding.
     external_funding_available: bool = False
+    # Input of the single-name guard (see ``single_name_exposure``): the EUR value of every company held through ETFs, by the security_id of the company, and the quality of that
+    # information.  ``None`` = not evaluated; ``available`` = every held ETF has usable (present, not stale) holdings; ``not_applicable`` = the portfolio holds no ETF; anything else =
+    # the effective exposure is NOT assessed (the map is then empty) and the guard says so.
+    etf_exposure_by_security: tuple[tuple[int, float], ...] = ()
+    etf_exposure_quality: Optional[DataQuality] = None
 
 
 @dataclass(frozen=True)
@@ -326,6 +331,12 @@ class DecisionResult:
     add_cash_before: Optional[float] = None
     add_cash_after: Optional[float] = None
     add_block_reasons: tuple[str, ...] = ()
+    # Single-name guard of the ADD: direct weight above is ``add_current_security_weight``; the ETF share and the effective weight (direct + ETF) are added, plus the basis used.
+    add_current_etf_security_weight: Optional[float] = None
+    add_current_effective_security_weight: Optional[float] = None
+    add_projected_effective_security_weight: Optional[float] = None
+    add_single_name_basis: Optional[str] = None
+    add_single_name_notes: tuple[str, ...] = ()
     # Phase 3B.7 initial-entry recommendation context.  Weights are decimal
     # fractions, values/prices are EUR, and these fields describe a proposal
     # only: no campaign, transaction, or capital-state mutation is implied.
@@ -345,6 +356,11 @@ class DecisionResult:
     entry_cash_before: Optional[float] = None
     entry_cash_after: Optional[float] = None
     entry_block_reasons: tuple[str, ...] = ()
+    entry_current_etf_security_weight: Optional[float] = None
+    entry_current_effective_security_weight: Optional[float] = None
+    entry_projected_effective_security_weight: Optional[float] = None
+    entry_single_name_basis: Optional[str] = None
+    entry_single_name_notes: tuple[str, ...] = ()
 
 
 def to_primitive(value: Any) -> Any:

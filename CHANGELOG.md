@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Single-name guard on the effective exposure: the 20 % limit of the ADD and the initial BUY (`ADD_SECURITY_WEIGHT_LIMIT` / `ENTRY_SECURITY_WEIGHT_LIMIT`, limit and reason codes unchanged) now applies to the direct position plus the share of the same company in the held ETFs (TSMC ADR 6.2 % + 1.1 % through an ETF = 7.3 %), reusing `effective_exposure` (calculated once per run and handed to the sizing in the portfolio context; no second calculation). A company is counted once even through several ETFs or share classes; a company held only through ETFs is visible as a single-name risk. The sizing results, the decisions and the plan carry the direct weight (unchanged), the ETF share, the effective weight and the basis (`effective` / `direct` / `direct_only`); the plan has a new section `single_name_exposure` (largest companies, companies above the limit, status of the holdings). Data quality: the effective basis is used only if every held ETF has present holdings that are at most 120 days old; otherwise the direct limit still applies but the result, the plan (`SINGLE_NAME_EFFECTIVE_EXPOSURE_NOT_ASSESSED`) and the global issues (`EFFECTIVE_EXPOSURE_NOT_ASSESSED`) say that the effective exposure is not assessed - no silent fallback. The rounding drift never counts. The sector and correlation guards are unchanged; no orders, no new tool.
+
 ## [0.5.0] - 2026-10-14
 
 ### Highlights

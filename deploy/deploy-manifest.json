@@ -63,6 +63,7 @@
         "sector_overview.py",
         "security_aliases.py",
         "security_onboarding.py",
+        "single_name_exposure.py",
         "strategy_admin.py",
         "strategy_config.py",
         "strategy_suggestion.py",

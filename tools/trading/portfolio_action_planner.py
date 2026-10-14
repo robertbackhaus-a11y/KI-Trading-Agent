@@ -419,7 +419,11 @@ def _sizing_view(rec) -> dict[str, Any]:
         "proposed_quantity": float(rec.recommended_quantity),
         "price_eur": float(rec.current_price_eur),
         "resulting_position_value_eur": purchase,
-        "resulting_portfolio_weight_pct": float(rec.projected_security_weight) * 100.0,
+        "resulting_portfolio_weight_pct": float(rec.projected_security_weight) * 100.0,  # the direct weight after the purchase
+        "resulting_effective_weight_pct": None if rec.projected_effective_security_weight is None else float(rec.projected_effective_security_weight) * 100.0,
+        "etf_share_before_pct": None if rec.current_etf_security_weight is None else float(rec.current_etf_security_weight) * 100.0,
+        "single_name_basis": rec.single_name_basis,
+        "single_name_notes": list(rec.single_name_notes),
         "resulting_swing_allocation_pct": float(rec.projected_swing_allocation) * 100.0,
         "cash_after_eur": _float(rec.cash_after),
     }
@@ -594,6 +598,7 @@ def build_portfolio_action_plan(
     config: Optional[StrategyConfig] = None,
     position_cost_basis: Optional[Mapping[int, Mapping[str, Any]]] = None,
     risk_inputs: Optional[RiskInputs] = None,
+    single_name_exposure: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """Build the deterministic ``portfolio_action_plan``. Inputs are never mutated.
 
@@ -610,6 +615,11 @@ def build_portfolio_action_plan(
     external = bool(portfolio.external_funding_available)  # lifts only the cash/reserve shortage; every other guard stays binding
     guards_active = risk_inputs is not None and risk_inputs.sector_map_available
     warnings: list[str] = [] if guards_active else ["CONCENTRATION_SINGLE_SECURITY_LIMITS_ONLY"]
+    if single_name_exposure is not None:
+        if single_name_exposure.get("basis") == "direct_only":  # the effective exposure is not assessed: said once, with the reasons in the section
+            warnings.append("SINGLE_NAME_EFFECTIVE_EXPOSURE_NOT_ASSESSED")
+        if single_name_exposure.get("breaches"):
+            warnings.append(f"SINGLE_NAME_LIMIT_EXCEEDED:{len(single_name_exposure['breaches'])}")
     if risk_inputs is not None and not risk_inputs.sector_map_available:
         warnings.append("RISK_SECTOR_MAP_UNAVAILABLE")
     initial = _initial_state(portfolio)
@@ -791,8 +801,14 @@ def build_portfolio_action_plan(
         "tax_estimate": tax_estimate,
         "entry_summary": summary,
         "methodology": _methodology(cfg.tax, net_basis=net_basis),
+        "single_name_exposure": dict(single_name_exposure) if single_name_exposure is not None else None,
         "warnings": warnings,
     }
+    plan["methodology"]["single_name_guard"] = (
+        f"weight of the company after the purchase <= {(cfg.sizing.max_security_weight or 0.0) * 100:g} % of the invested value (ENTRY_SECURITY_WEIGHT_LIMIT / ADD_SECURITY_WEIGHT_LIMIT); basis: direct position + the share of the same "
+        "company in the held ETFs (effective exposure) when the holdings of every held ETF are present and not stale, otherwise the direct position only and the effective exposure is reported as "
+        "not assessed (SINGLE_NAME_EFFECTIVE_EXPOSURE_NOT_ASSESSED); the rounding drift of a published index list never counts"
+    )
     plan["methodology"]["risk_guards"] = (
         {
             "active": True,

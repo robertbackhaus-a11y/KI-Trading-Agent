@@ -7,7 +7,7 @@ from datetime import date
 import sqlite3
 from typing import Any, Optional
 
-from analysis_contracts import Action, AvailabilityStatus, to_primitive
+from analysis_contracts import Action, AvailabilityStatus, DataQuality, to_primitive
 from analysis_engine import build_analysis_snapshot, build_portfolio_context
 from decision_engine import decide
 from orchestrator_presentation import build_presentation_summary, format_orchestrator_summary
@@ -144,6 +144,46 @@ def _portfolio_context_for_security(portfolio, security_id: int):
     )
 
 
+SINGLE_NAME_LARGEST = 5  # companies listed in the plan's single_name_exposure section
+
+
+def _with_etf_exposure(conn: sqlite3.Connection, portfolio, as_of: Optional[str], config: StrategyConfig):
+    """The portfolio context with the ETF share of each company (input of the single-name guard) and a summary for the plan.
+
+    The calculation is ``effective_exposure`` (run once, on the portfolio context of this run); nothing is recomputed elsewhere.  A portfolio without an ETF needs nothing
+    (``not_applicable``).  Missing, stale or invalid holdings, or any error, give a context WITHOUT the map and a quality that says why: the guard then keeps its direct limit and reports
+    that the effective exposure is not assessed (never a silent fallback).
+    """
+    limit = config.sizing.max_security_weight
+    limit_pct = None if limit is None else limit * 100.0
+    try:
+        held = [int(e.security_id) for e in portfolio.exposures if e.quantity is not None and float(e.quantity) > 0]
+        types = {int(r[0]): r[1] for r in conn.execute(f"SELECT id, asset_type FROM security WHERE id IN ({','.join('?' * len(held))})", held)} if held else {}
+        if not any(str(kind or "").lower() == "etf" for kind in types.values()):
+            quality = DataQuality(AvailabilityStatus.NOT_APPLICABLE, ("no ETF held",))
+            return replace(portfolio, etf_exposure_by_security=(), etf_exposure_quality=quality), {"basis": "direct", "status": "not_applicable", "details": ["no ETF held"],
+                                                                                              "limit_pct": limit_pct, "largest": [], "breaches": []}
+        import effective_exposure
+
+        result = effective_exposure.build_effective_exposure(conn, as_of=as_of, context=portfolio, top=SINGLE_NAME_LARGEST)
+        guard = result["guard"]
+        status = AvailabilityStatus(guard["status"])
+        quality = DataQuality(status, tuple(guard["details"]), result.get("as_of"))
+        pairs = tuple(sorted((int(k), float(v)) for k, v in guard["etf_value_by_security_id"].items()))
+        largest = [{"name": c["name"], "ticker": c["ticker"], "security_id": c["security_id"], "category": c["category"], "direct_weight_pct": c["direct_weight_pct"],
+                    "etf_weight_pct": c["etf_weight_pct"], "effective_weight_pct": c["effective_weight_pct"], "etfs": [x["etf"] for x in c["contributors"]]} for c in result["top"]]
+        breaches = [c["name"] for c in result["top"] if limit_pct is not None and c["effective_weight_pct"] > limit_pct + 1e-9]
+        basis = "effective" if guard["usable"] else "direct_only"
+        summary = {"basis": basis, "status": status.value, "details": list(guard["details"]), "limit_pct": limit_pct, "complete": guard["usable"], "largest": largest, "breaches": breaches,
+                   "etfs": [{"symbol": e["symbol"], "status": e["status"], "as_of": e["as_of"]} for e in result["etfs"]], "holdings_as_of": result.get("as_of")}
+        return replace(portfolio, etf_exposure_by_security=pairs, etf_exposure_quality=quality), summary
+    except Exception as exc:  # noqa: BLE001 - the guard keeps its direct limit and says that the effective exposure is not assessed
+        detail = f"EFFECTIVE_EXPOSURE_ERROR:{type(exc).__name__}"
+        quality = DataQuality(AvailabilityStatus.UNAVAILABLE, (detail,))
+        return replace(portfolio, etf_exposure_by_security=(), etf_exposure_quality=quality), {"basis": "direct_only", "status": "unavailable", "details": [detail], "limit_pct": limit_pct,
+                                                                                         "complete": False, "largest": [], "breaches": []}
+
+
 def _issue(scope: str, code: str, severity: str, *, security_id: Optional[int] = None, symbol: Optional[str] = None, details: tuple[str, ...] = ()) -> dict[str, Any]:
     return {"scope": scope, "code": code, "severity": severity, "security_id": security_id, "symbol": symbol, "details": list(details)}
 
@@ -234,6 +274,9 @@ def run_trading_orchestrator(
         presentation_summary, rendered_summary_de = _degenerate_presentation(evaluation_as_of, issues)
         return OrchestratorResult(evaluation_as_of, None, {}, {}, "GLOBAL_BLOCKING", issues, (), (), (), {key: 0 for key in ("SELL", "TRIM", "ADD", "BUY", "PROMOTE", "HOLD", "KEEP_WATCHING", "DATA_INSUFFICIENT")}, {"global_blocking": 1, "security_blocking": 0}, {}, (), (), presentation_summary, rendered_summary_de, portfolio_action_plan=unavailable_plan("ORCHESTRATOR_GLOBAL_BLOCKING", evaluation_as_of=evaluation_as_of))
 
+    portfolio, single_name_exposure = _with_etf_exposure(conn, portfolio, as_of, strategy_config)
+    if single_name_exposure["basis"] == "direct_only":
+        global_issues.append(_issue("GLOBAL", "EFFECTIVE_EXPOSURE_NOT_ASSESSED", "NON_BLOCKING_WARNING", details=tuple(single_name_exposure["details"])))
     if portfolio.valuation_quality.status is not AvailabilityStatus.AVAILABLE:
         global_issues.append(_issue("GLOBAL", "PORTFOLIO_VALUATION_UNAVAILABLE", "GLOBAL_BLOCKING", details=portfolio.valuation_quality.details))
     if portfolio.allocation_quality.status is not AvailabilityStatus.AVAILABLE:
@@ -307,6 +350,7 @@ def run_trading_orchestrator(
             risk_inputs = None
         portfolio_action_plan = build_portfolio_action_plan(
             risk_inputs=risk_inputs,
+            single_name_exposure=single_name_exposure,
             portfolio=portfolio,
             existing_position_results=existing,
             entry_candidate_results=entry_results,

@@ -125,6 +125,9 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "VALUATION_FX_UNAVAILABLE": ("Wechselkurs fehlt", "Der Wechselkurs für die Bewertung ist veraltet oder nicht verfügbar; die Position ist blockiert."),
     # -- planner notes --------------------------------------------------------------------------------------------------------
     "CONCENTRATION_SINGLE_SECURITY_LIMITS_ONLY": ("Nur Einzelwert-Limits aktiv", "Sektor- und Korrelationsprüfung sind nicht aktiv; es gelten nur die Limits je Einzelwert."),
+    "EFFECTIVE_EXPOSURE_NOT_ASSESSED": ("Effective Exposure nicht beurteilt", "Die ETF-Holdings fehlen, sind veraltet oder unvollständig; das Einzelwert-Limit gilt nur für die direkte Position und ist nicht vollständig."),
+    "SINGLE_NAME_EFFECTIVE_EXPOSURE_NOT_ASSESSED": ("Effective Exposure nicht beurteilt", "Die ETF-Holdings fehlen, sind veraltet oder unvollständig; das Einzelwert-Limit gilt nur für die direkte Position und ist nicht vollständig."),
+    "SINGLE_NAME_LIMIT_EXCEEDED": ("Einzelwert-Limit überschritten", "Die in Klammern genannte Anzahl von Firmen liegt mit direkter Position plus ETF-Anteil über dem Einzelwert-Limit; bestehende Positionen werden dadurch nicht verkauft."),
     "RISK_SECTOR_MAP_UNAVAILABLE": ("Sektorzuordnung fehlt", "Die Sektorzuordnung ist nicht verfügbar, daher entfällt die Sektorprüfung."),
     "RISK_EXPOSURE_VALUE_INCOMPLETE": ("Positionswerte unvollständig", "Nicht für alle Positionen liegt ein Wert vor; die Risikoprüfung ist eingeschränkt."),
     "RISK_SECTOR_UNKNOWN": ("Sektor unbekannt", "Für die in Klammern genannte Anzahl von Wertpapieren ist kein Sektor hinterlegt; sie werden bei der Sektorprüfung nicht bewertet."),
