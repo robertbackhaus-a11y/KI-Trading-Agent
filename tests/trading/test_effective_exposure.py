@@ -270,6 +270,34 @@ class SyntheticAndDataTests(ExposureCase):
         self.assertAlmostEqual((largest - scaled) / largest, 1 - 100.0 / published)  # an error of the size of the drift, pushed into the name that matters most
         self.assertTrue(result["checks"]["reconciles"])
 
+    def test_the_rounding_drift_is_reconciliation_only(self) -> None:
+        large = [holding("Pos Corp", 40.0, isin="US0000POS001"), holding("Big Inc", 30.0, isin="US0000BIG001"), holding("Mid Inc", 20.0, isin="US0000MID001")]
+        exact = large + [holding("Rest", 10.0, isin="US0000RST001")]  # adds up to 100 %: no drift
+        inflated = large + [holding("Rest", 10.0, isin="US0000RST001"), holding("Tiny A", 1.2, isin="US0000TNA001"), holding("Tiny B", 1.2, isin="US0000TNB001")]  # 102.4 %: drift
+        results = []
+        for index in (exact, inflated):
+            self.write({ETF1: etf_entry(index, kind="synthetic_index"), ETF2: etf_entry([holding("Other Inc", 100.0, isin="US0000OTH001")])})
+            results.append(self.run_ee())
+        clean, drifted = results
+        self.assertEqual(clean["buckets"]["rounding_drift"]["value_eur"], 0.0)
+        drift = drifted["buckets"]["rounding_drift"]["value_eur"]
+        self.assertAlmostEqual(drift, -400 * 0.024)
+        # no company carries the drift: every company that exists in both runs has exactly the same values and the ranking of those companies is unchanged
+        for name in ("Position Corp", "Big Inc", "Mid Inc", "Rest", "Other Inc"):
+            for field in ("direct_value_eur", "etf_value_eur", "effective_value_eur", "effective_weight_pct"):
+                self.assertAlmostEqual(self.by_name(clean, name)[field], self.by_name(drifted, name)[field], msg=f"{name}.{field}")
+        order = lambda result: [r["name"] for r in result["top"] if r["name"] in ("Position Corp", "Big Inc", "Mid Inc", "Rest", "Other Inc")]  # noqa: E731
+        self.assertEqual(order(clean), order(drifted))
+        # the drift is neither a company, nor "other", nor part of a contribution; it only makes the sums reconcile
+        self.assertTrue(all("drift" not in json.dumps(r["contributors"]) for r in drifted["top"]))
+        self.assertEqual(drifted["checks"]["other_eur"], clean["checks"]["other_eur"])
+        self.assertAlmostEqual(drifted["checks"]["companies_eur"] + drifted["checks"]["other_eur"] + drifted["checks"]["rounding_drift_eur"] + drifted["checks"]["unresolved_eur"],
+                               drifted["total_market_value_eur"])
+        self.assertAlmostEqual(drifted["checks"]["companies_eur"] - clean["checks"]["companies_eur"], -drift)  # the two tiny rows are real companies; the drift offsets exactly them
+        self.assertTrue(drifted["checks"]["reconciles"])
+        # the share of the top list is the share of real companies, not reduced by the drift
+        self.assertAlmostEqual(drifted["top_share_pct"], sum(r["effective_value_eur"] for r in drifted["top"]) / drifted["total_market_value_eur"] * 100.0)
+
     def test_the_buckets_partition_the_invested_value(self) -> None:
         self.write({ETF1: etf_entry([holding("Pos Corp", 10.0, isin="US0000POS001"), holding("Only In Etf", 60.0, isin="US0000OTH001"), holding("USD CASH", 5.0, asset="Cash"),
                                      holding("Dup One", 20.0, ticker="DUP", exchange="NYSE"), holding("Nameless", 5.0)]),
