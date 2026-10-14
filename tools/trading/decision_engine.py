@@ -436,6 +436,7 @@ def _with_add_recommendation(
         "add_projected_effective_security_weight": add.projected_effective_security_weight,
         "add_single_name_basis": add.single_name_basis,
         "add_single_name_notes": add.single_name_notes,
+        "add_current_other_class_security_weight": add.current_other_class_security_weight,
     }
     if not add.eligible or not add.recommended_quantity:
         return replace(result, **fields)
@@ -478,6 +479,7 @@ def _entry_decision(
         "entry_projected_effective_security_weight": entry.projected_effective_security_weight,
         "entry_single_name_basis": entry.single_name_basis,
         "entry_single_name_notes": entry.single_name_notes,
+        "entry_current_other_class_security_weight": entry.current_other_class_security_weight,
     }
     if not entry.eligible or not entry.recommended_quantity:
         return DecisionResult(

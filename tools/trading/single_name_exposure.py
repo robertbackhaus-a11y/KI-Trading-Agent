@@ -1,5 +1,8 @@
 """The exposure basis of the single-name guard (the per-security weight limit of the ADD and BUY sizing): direct position + the share of the same company in the held ETFs.
 
+The company is the unit: other directly held share classes of the same issuer (a reviewed issuer group such as Alphabet A and C) count with the direct position, whatever the state of
+the ETF holdings.
+
 The weight limit (``SizingPolicyConfig.max_security_weight``, 20 % of the invested value) used to look at the direct position only.  A company that is also inside an ETF the portfolio
 holds carries more risk than its direct position shows (a 6.2 % direct TSMC position plus 1.1 % through an ETF is 7.3 % of the portfolio).  The effective figures come from
 ``effective_exposure`` (one calculation, run once per orchestrator run and handed in through ``PortfolioContext.etf_exposure_by_security``); this module only decides **which basis a
@@ -33,6 +36,7 @@ class SingleName:
     effective_value: float  # direct + etf (equal to direct for the bases ``direct`` and ``direct_only``)
     basis: str
     notes: tuple[str, ...] = ()
+    other_class_value: float = 0.0  # direct value of the other share classes of the same issuer (already inside ``effective_value``)
 
     @property
     def complete(self) -> bool:
@@ -43,13 +47,16 @@ class SingleName:
 def resolve(portfolio: Optional[Any], security_id: Optional[int], direct_value: float) -> SingleName:
     """The basis for ``security_id``.  ``portfolio`` is a ``PortfolioContext`` (``None`` or without ETF information: not evaluated)."""
     quality = getattr(portfolio, "etf_exposure_quality", None) if portfolio is not None else None
+    # the other share classes of the issuer are direct positions: they count whatever the state of the ETF holdings
+    other = float(dict(getattr(portfolio, "other_class_direct_by_security", ()) or ()).get(int(security_id), 0.0)) if portfolio is not None and security_id is not None else 0.0
+    base = direct_value + other
     if quality is None:
-        return SingleName(direct_value, 0.0, direct_value, DIRECT_ONLY, (NOT_EVALUATED,))
+        return SingleName(direct_value, 0.0, base, DIRECT_ONLY, (NOT_EVALUATED,), other)
     if quality.status is AvailabilityStatus.NOT_APPLICABLE:
-        return SingleName(direct_value, 0.0, direct_value, DIRECT, ())
+        return SingleName(direct_value, 0.0, base, DIRECT, (), other)
     if quality.status is not AvailabilityStatus.AVAILABLE:
         notes = (f"EFFECTIVE_EXPOSURE_{quality.status.name}", *quality.details)
-        return SingleName(direct_value, 0.0, direct_value, DIRECT_ONLY, tuple(notes))
+        return SingleName(direct_value, 0.0, base, DIRECT_ONLY, tuple(notes), other)
     by_security = dict(getattr(portfolio, "etf_exposure_by_security", ()) or ())
     etf_value = float(by_security.get(int(security_id), 0.0)) if security_id is not None else 0.0
-    return SingleName(direct_value, etf_value, direct_value + etf_value, EFFECTIVE, ())
+    return SingleName(direct_value, etf_value, base + etf_value, EFFECTIVE, (), other)

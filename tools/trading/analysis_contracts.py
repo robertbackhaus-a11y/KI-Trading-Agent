@@ -296,6 +296,8 @@ class PortfolioContext:
     # the effective exposure is NOT assessed (the map is then empty) and the guard says so.
     etf_exposure_by_security: tuple[tuple[int, float], ...] = ()
     etf_exposure_quality: Optional[DataQuality] = None
+    # Direct EUR value of the OTHER share classes of the same issuer (reviewed issuer group), by security_id; independent of the ETF holdings.  The company is the unit of the limit.
+    other_class_direct_by_security: tuple[tuple[int, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -337,6 +339,7 @@ class DecisionResult:
     add_projected_effective_security_weight: Optional[float] = None
     add_single_name_basis: Optional[str] = None
     add_single_name_notes: tuple[str, ...] = ()
+    add_current_other_class_security_weight: Optional[float] = None
     # Phase 3B.7 initial-entry recommendation context.  Weights are decimal
     # fractions, values/prices are EUR, and these fields describe a proposal
     # only: no campaign, transaction, or capital-state mutation is implied.
@@ -361,6 +364,7 @@ class DecisionResult:
     entry_projected_effective_security_weight: Optional[float] = None
     entry_single_name_basis: Optional[str] = None
     entry_single_name_notes: tuple[str, ...] = ()
+    entry_current_other_class_security_weight: Optional[float] = None
 
 
 def to_primitive(value: Any) -> Any:

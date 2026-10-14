@@ -32,8 +32,9 @@ from test_swing_entry_recommendation import candidate_snapshot, context as entry
 AVAILABLE = DataQuality(AvailabilityStatus.AVAILABLE, as_of="2026-09-23")
 
 
-def with_etf(ctx, values, status=AvailabilityStatus.AVAILABLE, details=()):
-    return replace(ctx, etf_exposure_by_security=tuple(sorted(values.items())), etf_exposure_quality=DataQuality(status, tuple(details)))
+def with_etf(ctx, values, status=AvailabilityStatus.AVAILABLE, details=(), other=None):
+    return replace(ctx, etf_exposure_by_security=tuple(sorted(values.items())), etf_exposure_quality=DataQuality(status, tuple(details)),
+                   other_class_direct_by_security=tuple(sorted((other or {}).items())))
 
 
 class BasisTests(unittest.TestCase):
@@ -236,8 +237,116 @@ class OrchestratorSummaryTests(GuardCase):
     def test_a_portfolio_without_an_etf_is_not_applicable(self) -> None:
         self.conn.execute("DELETE FROM positions WHERE security_id IN (3, 4)")
         ctx, summary = self.summary()
-        self.assertEqual((summary["basis"], summary["status"], summary["largest"]), ("direct", "not_applicable", []))
+        self.assertEqual((summary["basis"], summary["status"], summary["complete"]), ("direct", "not_applicable", True))
         self.assertEqual(sn.resolve(ctx, 1, 5.0).basis, sn.DIRECT)
+        self.assertEqual(ctx.other_class_direct_by_security, ())  # no issuer group: nothing changes
+
+
+GROUP = [{"name": "Pos Group", "isins": ["US0000POS001", "US0000WCH001"], "reason": "two share classes of one issuer"}]  # securities 1 (600) and 2 (300) of the base case
+
+
+class IssuerGroupTests(GuardCase):
+    """Companies are aggregated at company level: several directly held share classes, ETF shares and any mix of them are ONE exposure; the single positions stay visible."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write({ETF1: etf_entry([holding("Pos Corp", 10.0, isin="US0000POS001"), holding("Watch Corp", 20.0, isin="US0000WCH001"), holding("Rest", 70.0, isin="US0000RST001")]),
+                    ETF2: etf_entry([holding("Pos Corp", 5.0, isin="US0000POS001"), holding("Rest", 95.0, isin="US0000RST001")])}, groups=GROUP)
+
+    def group(self, result=None):
+        result = result or self.run_ee()
+        return next(c for c in result["top"] if c["key"].startswith("grp:"))
+
+    def summary_with_groups(self):
+        import analysis_engine
+
+        ctx = analysis_engine.build_portfolio_context(as_of=AS_OF, connection=self.conn)
+        with mock.patch.object(eh, "DEFAULT_UNIVERSE", self.universe):
+            return orch._with_etf_exposure(self.conn, ctx, AS_OF, StrategyConfig())
+
+    def test_two_directly_held_classes_are_one_company_and_both_positions_stay_visible(self) -> None:
+        self.write({ETF1: etf_entry([holding("Rest", 100.0, isin="US0000RST001")]), ETF2: etf_entry([holding("Rest", 100.0, isin="US0000RST001")])}, groups=GROUP)
+        result = self.run_ee()
+        g = self.group(result)
+        self.assertEqual((g["name"], g["direct_value_eur"], g["etf_value_eur"], g["effective_value_eur"]), ("Pos Group", 900.0, 0.0, 900.0))
+        self.assertEqual([(p["security_id"], p["value_eur"]) for p in g["direct_positions"]], [(1, 600.0), (2, 300.0)])  # the detail is still there, largest first
+        self.assertAlmostEqual(g["direct_positions"][0]["weight_pct"], 40.0)
+        self.assertEqual(g["security_ids"], [1, 2])
+        self.assertAlmostEqual(g["direct_weight_pct"], 60.0)
+        self.assertEqual(sum(1 for c in result["top"] if c["direct_value_eur"] > 0), 1)
+        self.assertTrue(result["checks"]["reconciles"])
+
+    def test_several_direct_classes_plus_several_etfs_count_once(self) -> None:
+        result = self.run_ee()
+        g = self.group(result)
+        self.assertAlmostEqual(g["etf_value_eur"], 400 * 0.30 + 200 * 0.05)  # both classes in ETF1 add up, ETF2 on top
+        self.assertAlmostEqual(g["effective_value_eur"], 900 + 130)
+        self.assertEqual(g["etf_count"], 2)
+        self.assertEqual(len([c for c in result["top"] if c["key"].startswith("grp:")]), 1)  # not one row per class
+        self.assertTrue(result["checks"]["reconciles"])
+        self.assertAlmostEqual(sum(c["effective_value_eur"] for c in result["top"]) + result["buckets"]["other"]["value_eur"] + result["buckets"]["rounding_drift"]["value_eur"], 1500.0)  # no double count
+
+    def test_the_guard_gets_the_company_values_for_every_class(self) -> None:
+        guard = self.guard()
+        self.assertEqual(guard["etf_value_by_security_id"]["1"], guard["etf_value_by_security_id"]["2"])  # one ETF value for the company
+        self.assertAlmostEqual(guard["etf_value_by_security_id"]["1"], 130.0)
+        self.assertEqual(guard["other_class_direct_by_security_id"], {"1": 300.0, "2": 600.0})  # what the OTHER class holds
+
+    def test_a_class_not_held_is_part_of_the_company_too(self) -> None:
+        self.conn.execute("INSERT INTO security(id, symbol, name, asset_type, isin, exchange) VALUES (5, 'POSC', 'Pos Corp C', 'stock', 'US0000POS003', 'NASDAQ')")
+        self.write({ETF1: etf_entry([holding("Rest", 100.0, isin="US0000RST001")]), ETF2: etf_entry([holding("Rest", 100.0, isin="US0000RST001")])},
+                   groups=[{"name": "Pos Group", "isins": ["US0000POS001", "US0000WCH001", "US0000POS003"], "reason": "three classes"}])
+        guard = self.guard()
+        self.assertEqual(guard["other_class_direct_by_security_id"]["5"], 900.0)  # a candidate in the group starts with the whole group's direct value
+        self.assertEqual(self.group()["security_ids"], [1, 2, 5])
+
+    def test_without_an_issuer_group_nothing_changes(self) -> None:
+        self.write({ETF1: etf_entry([holding("Pos Corp", 10.0, isin="US0000POS001"), holding("Rest", 90.0, isin="US0000RST001")]),
+                    ETF2: etf_entry([holding("Pos Corp", 5.0, isin="US0000POS001"), holding("Rest", 95.0, isin="US0000RST001")])})
+        result = self.run_ee()
+        self.assertEqual(result["guard"]["other_class_direct_by_security_id"], {})
+        self.assertEqual(sorted(c["security_ids"] for c in result["top"] if c["direct_value_eur"] > 0), [[1], [2]])
+        self.assertAlmostEqual(result["guard"]["etf_value_by_security_id"]["1"], 50.0)
+
+    def test_the_other_classes_count_in_the_limit_with_every_basis(self) -> None:
+        config = StrategyConfig()
+        # ADD of class 1 (10 % direct) while the other class is another 10 % -> 20 %: blocked; alone it would be allowed
+        alone = evaluate_add_recommendation(swing_snapshot(), add_portfolio(security_value=1_000, total=10_000), config)
+        grouped = evaluate_add_recommendation(swing_snapshot(), with_etf(add_portfolio(security_value=1_000, total=10_000), {}, AvailabilityStatus.NOT_APPLICABLE, other={1: 1_000.0}), config)
+        self.assertTrue(alone.eligible)
+        self.assertEqual(grouped.block_reasons, ("ADD_SECURITY_WEIGHT_LIMIT",))
+        self.assertAlmostEqual(grouped.current_other_class_security_weight, 0.10)
+        self.assertAlmostEqual(grouped.current_effective_security_weight, 0.20)
+        # the same with stale ETF holdings: the other class is a direct position, it still counts, and the effective exposure is still reported as not assessed
+        stale = evaluate_add_recommendation(swing_snapshot(), with_etf(add_portfolio(security_value=1_000, total=10_000), {}, AvailabilityStatus.STALE, ("ETF_HOLDINGS_STALE:X",), other={1: 1_000.0}), config)
+        self.assertEqual(stale.block_reasons, ("ADD_SECURITY_WEIGHT_LIMIT",))
+        self.assertEqual(stale.single_name_basis, sn.DIRECT_ONLY)
+        # a BUY of a class that is not held yet starts from the company's value: other class + ETF share are one total
+        entry = evaluate_entry_recommendation(candidate_snapshot(), with_etf(entry_context(security=0.0), {1: 5_000.0}, other={1: 14_900.0}), config)
+        self.assertTrue(entry.eligible)
+        self.assertLessEqual(entry.projected_effective_security_weight, 0.20 + 1e-9)
+        self.assertAlmostEqual(entry.current_effective_security_weight, 0.199)
+        blocked = evaluate_entry_recommendation(candidate_snapshot(), with_etf(entry_context(security=0.0), {1: 5_000.0}, other={1: 15_000.0}), config)
+        self.assertEqual(blocked.block_reasons, ("ENTRY_SECURITY_WEIGHT_LIMIT",))
+
+    def test_orchestrator_reports_the_company_with_its_direct_positions_even_without_an_etf(self) -> None:
+        self.conn.execute("DELETE FROM positions WHERE security_id IN (3, 4)")
+        ctx, summary = self.summary_with_groups()
+        self.assertEqual((summary["basis"], summary["status"]), ("direct", "not_applicable"))
+        company = next(x for x in summary["largest"] if x["name"] == "Pos Group")
+        self.assertEqual([p["security_id"] for p in company["direct_positions"]], [1, 2])
+        self.assertAlmostEqual(company["direct_weight_pct"], 100.0)  # only the two stocks are left
+        self.assertEqual(dict(ctx.other_class_direct_by_security), {1: 300.0, 2: 600.0})
+        self.assertEqual(summary["breaches"], ["Pos Group"])
+        self.assertEqual(sn.resolve(ctx, 1, 600.0).effective_value, 900.0)
+
+    def test_stale_holdings_keep_the_other_classes_and_still_say_not_assessed(self) -> None:
+        old = (MARKET_END - timedelta(days=200)).isoformat()
+        self.write({ETF1: etf_entry([holding("Rest", 100.0, isin="US0000RST001")], as_of=old), ETF2: etf_entry([holding("Rest", 100.0, isin="US0000RST001")], as_of=old)}, groups=GROUP)
+        ctx, summary = self.summary_with_groups()
+        self.assertEqual((summary["basis"], summary["status"]), ("direct_only", "stale"))
+        r = sn.resolve(ctx, 1, 600.0)
+        self.assertEqual((r.basis, r.effective_value, r.other_class_value), (sn.DIRECT_ONLY, 900.0, 300.0))
 
 
 class UntouchedTests(unittest.TestCase):

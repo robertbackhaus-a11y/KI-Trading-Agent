@@ -42,6 +42,7 @@ class EntryRecommendation:
     projected_effective_security_weight: Optional[float] = None
     single_name_basis: Optional[str] = None
     single_name_notes: tuple[str, ...] = ()
+    current_other_class_security_weight: Optional[float] = None  # direct weight of the other share classes of the same issuer (inside the effective weight)
 
 
 def internal_external_split(*, cash: float, reserve: float, purchase: float, buying_power: Optional[float] = None) -> tuple[float, float]:
@@ -70,7 +71,8 @@ def _blocked(
     if single_name is not None:
         sn, denominator = single_name
         extra = dict(current_etf_security_weight=sn.etf_value / denominator if denominator > 0 else None, current_effective_security_weight=sn.effective_value / denominator if denominator > 0 else None,
-                     single_name_basis=sn.basis, single_name_notes=sn.notes)
+                     single_name_basis=sn.basis, single_name_notes=sn.notes,
+                     current_other_class_security_weight=sn.other_class_value / denominator if denominator > 0 else None)
     return EntryRecommendation(
         eligible=False,
         recommended_quantity=0.0,
@@ -262,4 +264,5 @@ def evaluate_entry_recommendation(
         projected_effective_security_weight=projected_effective,
         single_name_basis=single.basis,
         single_name_notes=single.notes,
+        current_other_class_security_weight=single.other_class_value / total if total > 0 else None,
     )

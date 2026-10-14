@@ -422,6 +422,7 @@ def _sizing_view(rec) -> dict[str, Any]:
         "resulting_portfolio_weight_pct": float(rec.projected_security_weight) * 100.0,  # the direct weight after the purchase
         "resulting_effective_weight_pct": None if rec.projected_effective_security_weight is None else float(rec.projected_effective_security_weight) * 100.0,
         "etf_share_before_pct": None if rec.current_etf_security_weight is None else float(rec.current_etf_security_weight) * 100.0,
+        "other_share_classes_direct_before_pct": None if rec.current_other_class_security_weight is None else float(rec.current_other_class_security_weight) * 100.0,
         "single_name_basis": rec.single_name_basis,
         "single_name_notes": list(rec.single_name_notes),
         "resulting_swing_allocation_pct": float(rec.projected_swing_allocation) * 100.0,

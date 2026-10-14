@@ -76,14 +76,22 @@ def company_key(holding: eh.Holding, security_id: Optional[int], groups: Optiona
 
 
 def guard_inputs(etfs: list[dict[str, Any]], companies: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the single-name guard may use: the ETF value of every company that is a security of the database, and whether that information is complete.
+    """What the single-name guard may use: for every security of a company (all share classes of an issuer group, held or not) the ETF value of the company and the direct value of
+    its OTHER share classes, and whether the ETF information is complete.  The company is the unit: two directly held classes of one issuer, or one class plus ETFs, are one exposure.
 
     ``usable`` only if EVERY held ETF has holdings that are present and not stale (``APPLIED``); an ETF with stale, missing or invalid holdings makes the effective exposure incomplete, and the
-    guard must then say so instead of treating the direct exposure as complete (``status`` ``stale`` / ``partial`` / ``unavailable``; no ETF held: ``not_applicable``).  The map is only
-    given when it is usable.  The rounding drift is not part of any company, so it cannot appear here.
+    guard must then say so instead of treating the direct exposure as complete (``status`` ``stale`` / ``partial`` / ``unavailable``; no ETF held: ``not_applicable``).  The ETF map is only
+    given when it is usable; the direct values of the other classes do not depend on any holdings file and are always given.  The rounding drift is not part of any company.
     """
+    siblings: dict[str, float] = {}
+    for c in companies:
+        own = {p["security_id"]: p["value_eur"] for p in c["direct_positions"]}
+        for sid in c["security_ids"]:
+            other = c["direct_value_eur"] - own.get(sid, 0.0)
+            if other > _EPS:
+                siblings[str(int(sid))] = other
     if not etfs:
-        return {"usable": True, "status": "not_applicable", "details": ["no ETF held"], "etf_value_by_security_id": {}}
+        return {"usable": True, "status": "not_applicable", "details": ["no ETF held"], "etf_value_by_security_id": {}, "other_class_direct_by_security_id": siblings}
     problems = [e for e in etfs if e["status"] != eh.APPLIED]
     details = [f"ETF_HOLDINGS_{e['status']}:{e['symbol']}" + (f" (as of {e['as_of']})" if e.get("as_of") else "") for e in problems]
     if not problems:
@@ -97,9 +105,10 @@ def guard_inputs(etfs: list[dict[str, Any]], companies: list[dict[str, Any]]) ->
     values: dict[str, float] = {}
     if not problems:
         for c in companies:
-            if c.get("security_id") is not None and c["etf_value_eur"] > 0:
-                values[str(int(c["security_id"]))] = values.get(str(int(c["security_id"])), 0.0) + c["etf_value_eur"]
-    return {"usable": not problems, "status": status, "details": details, "etf_value_by_security_id": values}
+            if c["etf_value_eur"] > 0:
+                for sid in c["security_ids"]:  # one company, one ETF value, whichever class is looked at
+                    values[str(int(sid))] = c["etf_value_eur"]
+    return {"usable": not problems, "status": status, "details": details, "etf_value_by_security_id": values, "other_class_direct_by_security_id": siblings}
 
 
 def build_effective_exposure(
@@ -151,7 +160,8 @@ def build_effective_exposure(
             name = layers.issuer_groups.get((isin or "").upper(), name) if isin else name
         if key not in companies:
             companies[key] = {"key": key, "name": name, "security_id": security_id, "ticker": ticker, "isin": isin or None, "matched": security_id is not None,
-                              "direct_value_eur": 0.0, "etf_value_eur": 0.0, "contributors": [], "match_bases": []}
+                              "direct_value_eur": 0.0, "etf_value_eur": 0.0, "contributors": [], "match_bases": [],
+                              "direct_positions": [], "security_ids": []}
         return companies[key]
 
     for p in held:
@@ -159,6 +169,8 @@ def build_effective_exposure(
             c = company(company_key(eh.Holding(p["name"] or "", p["symbol"], p["isin"] or "", 0.0, eh.EQUITY), p["security_id"], layers.issuer_groups, p["isin"] or ""), p["name"] or p["symbol"],
                         p["security_id"], p["symbol"], p["isin"] or "")
             c["direct_value_eur"] += p["value"]
+            c["direct_positions"].append({"security_id": p["security_id"], "symbol": p["symbol"], "name": p["name"], "isin": p["isin"], "value_eur": p["value"]})  # every directly held class stays visible
+            c["security_ids"].append(p["security_id"])
     etfs: list[dict[str, Any]] = []
     other_eur = 0.0
     drift_eur = 0.0
@@ -216,6 +228,8 @@ def build_effective_exposure(
                 c["matched"] = c["matched"] or security_id is not None
                 c["security_id"] = c["security_id"] if c["security_id"] is not None else security_id
             c["etf_value_eur"] += value
+            if security_id is not None and security_id not in c["security_ids"]:
+                c["security_ids"].append(security_id)
             c["contributors"].append({"etf": p["symbol"], "etf_security_id": p["security_id"], "value_eur": value, "weight_in_etf_pct": w, "match": basis,
                                       "holding_name": h.name, "etf_as_of": data.as_of})
             if basis not in c["match_bases"]:
@@ -231,8 +245,17 @@ def build_effective_exposure(
         for klass, (count, weight) in classes.items():
             report[f"{klass}_count"], report[f"{klass}_weight_pct"] = count, weight
 
+    for s in securities:  # every security of a reviewed issuer group belongs to that company, held or not (a candidate in the group is limited by what the group already is)
+        group = layers.issuer_groups.get(str(s.get("isin") or "").upper())
+        company_row = companies.get("grp:" + eh.norm(group)) if group else None
+        if company_row is not None and s["id"] not in company_row["security_ids"]:
+            company_row["security_ids"].append(s["id"])
     rows = []
     for c in companies.values():
+        c["security_ids"] = sorted(set(c["security_ids"]))
+        for position in c["direct_positions"]:
+            position["weight_pct"] = position["value_eur"] / total * 100.0 if total > _EPS else 0.0
+        c["direct_positions"].sort(key=lambda x: -x["value_eur"])
         effective = c["direct_value_eur"] + c["etf_value_eur"]
         c["effective_value_eur"] = effective
         c["category"] = DIRECT_MATCHED if c["direct_value_eur"] > 0 else AMBIGUOUS_UNMATCHED if c.get("identity_unclear") else ETF_ONLY
