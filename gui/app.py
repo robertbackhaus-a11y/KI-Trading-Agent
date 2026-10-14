@@ -27,6 +27,7 @@ from .services.tool_loop import offered_tools, schema_hash
 from .services.tool_policy import classify
 from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
+from .viewmodels.effective import build_effective
 from .viewmodels.sectors import build_sectors
 from .viewmodels.tasks import build_task_rows, summarize
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self._watchlist_at: Optional[datetime] = None
         self._sectors = None
         self._sectors_at: Optional[datetime] = None
+        self._effective = None
         self.setWindowTitle(f"Trading Agent – Desktop GUI ({GUI_VERSION})")
         self.resize(1200, 760)
         if settings.window_geometry:
@@ -272,6 +274,22 @@ class MainWindow(QMainWindow):
         self._inflight.add("sectors")
         self.sectors.show_loading()
         self.mcp.call("get_sector_overview", timeout=90, on_done=self._on_sectors)
+        if "effective" not in self._inflight:
+            self._inflight.add("effective")
+            self.sectors.show_effective_loading()
+            self.mcp.call("get_effective_exposure", {"top": 25}, timeout=90, on_done=self._on_effective)
+
+    def _on_effective(self, res: McpResult) -> None:
+        self._inflight.discard("effective")
+        error = ""
+        if res.tool_ok:
+            self._effective = res.data
+        else:
+            error = res.message or "Unbekannter Fehler"
+        envelope = self._effective if self._effective is not None else {"ok": False, "message": error or "Noch keine Daten"}
+        self.sectors.show_effective(build_effective(envelope, self._sectors_at))
+        if error and self._effective is not None:
+            self.sectors.effective_message.setText(f"Aktualisierung fehlgeschlagen ({error}); gezeigt wird der letzte Stand.")
 
     def _on_sectors(self, res: McpResult) -> None:
         self._inflight.discard("sectors")

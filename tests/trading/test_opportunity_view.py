@@ -828,8 +828,8 @@ class ToolSurfaceTests(unittest.TestCase):
 
     def test_nineteen_tools_and_the_fourteen_existing_ones_are_unchanged(self):
         names = self.public()
-        self.assertEqual(len(names), 24)  # the 15 tools of before, the four watchlist tools, onboard_security, set_security_strategy and set_security_sector
-        self.assertEqual(sorted(set(names) - {"get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector", "get_sector_overview", "get_data_freshness"}), sorted([*self.ORIGINAL, "get_candidate_discovery", "get_market_intelligence"]))
+        self.assertEqual(len(names), 25)  # the 15 tools of before, the four watchlist tools, onboard_security, set_security_strategy and set_security_sector
+        self.assertEqual(sorted(set(names) - {"get_opportunity_view", "get_watchlist", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector", "get_sector_overview", "get_data_freshness", "get_effective_exposure"}), sorted([*self.ORIGINAL, "get_candidate_discovery", "get_market_intelligence"]))
 
     def test_existing_signatures_are_unchanged(self):
         t = Tools()

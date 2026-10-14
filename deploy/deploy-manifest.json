@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "description": "Explicit list of the runtime files deployed to the production root. Nothing outside this list is ever copied, overwritten or deleted. Keep it in sync with the repo: tests/trading/test_deploy_manifest.py fails if a runtime file is neither listed here nor in not_deployed.",
-  "expected_tool_count": 24,
+  "expected_tool_count": 25,
   "groups": [
     {
       "name": "app",
@@ -46,7 +46,9 @@
         "data_freshness.py",
         "decision_engine.py",
         "discovery_report.py",
+        "effective_exposure.py",
         "entry_sizing.py",
+        "etf_holdings.py",
         "etf_lookthrough.py",
         "fx_resolver.py",
         "intelligence_report.py",
@@ -137,6 +139,7 @@
       "files": [
         "__init__.py",
         "chat.py",
+        "effective.py",
         "onboarding.py",
         "portfolio.py",
         "reason_codes.py",
@@ -176,7 +179,8 @@
   ],
   "protected": [
     "app/universe/sector_map_local.json",
-    "app/universe/etf_lookthrough_local.json"
+    "app/universe/etf_lookthrough_local.json",
+    "app/universe/etf_holdings_local.json"
   ],
   "not_deployed": [
     "tools/Add-TradingWatchlist.py",

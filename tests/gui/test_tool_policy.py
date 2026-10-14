@@ -9,7 +9,7 @@ import support
 from gui.services import tool_policy as tp
 
 READ = {"database_schema", "database_status", "database_tables", "table_info", "evaluate_swing_candidate", "evaluate_swing_candidates", "evaluate_watchlist_candidates",
-        "get_candidate_discovery", "get_data_freshness", "get_market_intelligence", "get_opportunity_view", "get_sector_overview", "get_watchlist", "rank_watchlist", "run_trading_orchestrator", "suggest_strategy_assignments"}
+        "get_candidate_discovery", "get_data_freshness", "get_effective_exposure", "get_market_intelligence", "get_opportunity_view", "get_sector_overview", "get_watchlist", "rank_watchlist", "run_trading_orchestrator", "suggest_strategy_assignments"}
 ACTION = {"approve_swing_promotion", "sql_execute", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"}
 
 
@@ -24,7 +24,7 @@ class ToolPolicyTests(unittest.TestCase):
     # C
     def test_c_every_tool_of_the_server_is_classified(self) -> None:
         names = server_tool_names()
-        self.assertEqual(len(names), 24)
+        self.assertEqual(len(names), 25)
         self.assertEqual(tp.unclassified(names), [])
         self.assertEqual({n for n in names if tp.classify(n) == tp.READ}, READ)
         self.assertEqual({n for n in names if tp.classify(n) == tp.ACTION}, ACTION)

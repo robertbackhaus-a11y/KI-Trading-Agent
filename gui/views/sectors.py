@@ -6,9 +6,10 @@ from typing import Optional
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSplitter, QToolTip, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSplitter, QTabWidget, QToolTip, QVBoxLayout, QWidget
 
 from ..viewmodels import treemap
+from ..viewmodels.effective import COMPANY_HEADERS, EffectiveVM, ETF_HEADERS as EFFECTIVE_ETF_HEADERS
 from ..viewmodels.portfolio import DASH, fmt_eur
 from ..viewmodels.sectors import ETF_HEADERS, GUARD_TIP, KIND_SECTOR, POSITION_HEADERS, SECTOR_HEADERS, SectorsVM, fmt_signed_pct
 from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows
@@ -132,8 +133,13 @@ class SectorsView(QWidget):
         self.message = QLabel("")
         self.message.setWordWrap(True)
         outer.addWidget(self.message)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs, 1)
+        page = QWidget()  # tab 1: the sectors
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 4, 0, 0)
         self.summary = QHBoxLayout()
-        outer.addLayout(self.summary)
+        page_layout.addLayout(self.summary)
         self.treemap = TreemapWidget()
         box = QGroupBox("Exposure nach Sektoren (Fläche = Marktwert, Farbe = Tagesperformance, grau = keine Daten, gestrichelter Rand = Anteil aus ETF-Look-through)")
         inner = QVBoxLayout(box)
@@ -166,10 +172,71 @@ class SectorsView(QWidget):
         split.addWidget(lower)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
-        outer.addWidget(split, 1)
+        page_layout.addWidget(split, 1)
         self.notes = QLabel("")
         self.notes.setWordWrap(True)
-        outer.addWidget(self.notes)
+        page_layout.addWidget(self.notes)
+        self.tabs.addTab(page, "Sektoren")
+        self._build_effective_tab()
+
+    def _build_effective_tab(self) -> None:
+        """Tab 2: "Einzelwertrisiko / Effective Exposure" -- the largest companies with direct and ETF share separated, and the ETF holdings coverage."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        self.effective_message = QLabel("")
+        self.effective_message.setWordWrap(True)
+        layout.addWidget(self.effective_message)
+        self.effective_summary = QHBoxLayout()
+        layout.addLayout(self.effective_summary)
+        self.company_table = make_table(COMPANY_HEADERS)
+        self.effective_etf_table = make_table(EFFECTIVE_ETF_HEADERS)
+        self.effective_etf_table.setMaximumHeight(140)
+        split = QSplitter(Qt.Orientation.Vertical)
+        for caption, table in (("Größte effektive Firmen-Exposure (direkt + Anteil aus den gehaltenen ETFs; eine Firma zählt einmal)", self.company_table),
+                               ("ETF-Holdings: Abdeckung und Verknüpfung", self.effective_etf_table)):
+            box = QGroupBox(caption)
+            inner = QVBoxLayout(box)
+            inner.addWidget(table)
+            split.addWidget(box)
+        split.setStretchFactor(0, 4)
+        split.setStretchFactor(1, 1)
+        layout.addWidget(split, 1)
+        self.effective_notes = QLabel("")
+        self.effective_notes.setWordWrap(True)
+        layout.addWidget(self.effective_notes)
+        self.tabs.addTab(page, "Einzelwertrisiko")
+
+    def show_effective_loading(self) -> None:
+        self.effective_message.setText("Lade Daten …")
+
+    def show_effective(self, vm: EffectiveVM) -> None:
+        if not vm.available:
+            self.effective_message.setText(f"<span style='color:{LEVEL_COLORS['blocker']}'>Keine Daten: {vm.error}</span>")
+            fill_table(self.company_table, COMPANY_HEADERS, [])
+            fill_table(self.effective_etf_table, EFFECTIVE_ETF_HEADERS, [])
+            return
+        self.effective_message.setText("")
+        while self.effective_summary.count():
+            old = self.effective_summary.takeAt(0).widget()
+            if old is not None:
+                old.deleteLater()
+        for caption, value in vm.summary:
+            self.effective_summary.addWidget(QLabel(f"<small>{caption}</small><br><b>{value}</b>"))
+        self.effective_summary.addStretch(1)
+        fill_table(self.company_table, COMPANY_HEADERS, vm.company_rows, vm.company_levels)
+        for r, company in enumerate(vm.companies):
+            for c in range(len(COMPANY_HEADERS)):
+                item = self.company_table.item(r, c)
+                if item is not None:
+                    item.setToolTip(company.tip)
+        fill_table(self.effective_etf_table, EFFECTIVE_ETF_HEADERS, vm.etf_rows, vm.etf_levels)
+        for r, tip in enumerate(vm.etf_tips):
+            for c in range(len(EFFECTIVE_ETF_HEADERS)):
+                item = self.effective_etf_table.item(r, c)
+                if item is not None:
+                    item.setToolTip(tip)
+        self.effective_notes.setText("<small>" + "<br>".join(vm.notes) + "</small>")
 
     def show_loading(self) -> None:
         self.button.setEnabled(False)

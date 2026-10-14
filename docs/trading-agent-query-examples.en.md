@@ -380,7 +380,7 @@ Short phrasings that reliably lead to the right tool.
 
 ## A. Technical Mapping
 
-All 24 MCP tools with their access type. Names and parameters are taken from the current code.
+All 25 MCP tools with their access type. Names and parameters are taken from the current code.
 
 | Tool | Access | Purpose | Key parameters | Chapters |
 |---|---|---|---|---|
@@ -398,6 +398,7 @@ All 24 MCP tools with their access type. Names and parameters are taken from the
 | `get_watchlist` | Read | Whole watchlist with strategy, priority, rank, score, data quality, decision, entry status and news status; default: compact answer with a summary (chat clients), `table=true` the table shape of the desktop GUI, `detail=true` at most 10 complete entries | `status`, `strategy`, `symbol`, `limit`, `detail`, `table` | 3 |
 | `get_sector_overview` | Read | Open positions by sector: EUR market value, share of the invested value, number of positions, value-weighted daily change, limit and status of the sector guard; positions without a sector entry as their own group (`sector` = null); ETFs with an official sector allocation are split into sector contributions (look-through, `origin` per entry), otherwise one position | `as_of`, `lookthrough` | – |
 | `get_data_freshness` | Read | Stand of the data the scheduled tasks produce: market data, FX, news/events, fundamentals and the stand of the last discovery and intelligence reports; facts only, with the existing age rules | – | – |
+| `get_effective_exposure` | Read | Effective single-name exposure: direct position + the share of the same company in every held ETF (provider holdings, synthetic ETFs by index composition), largest companies with the direct / ETF share, coverage per ETF; applies no limit | `as_of`, `top` | – |
 | `onboard_security` | Write (Security Master, desktop GUI only) | Create one new security from explicitly supplied values; the default is the check (`dry_run=true`), optionally provider symbols and a watchlist entry in the same transaction; nothing is researched or guessed | `symbol`, `name`, `asset_type`, `isin`, `wkn`, `exchange`, `currency`, `country`, `provider_symbols`, `add_to_watchlist`, `watchlist_priority`, `dry_run` | – |
 | `rank_watchlist` | Read | Technical momentum/trend ranking of the watchlist | – | 3 |
 | `remove_watchlist_candidate` | Write (watchlist only) | Remove one security from the watchlist; positions, strategies and campaigns stay untouched | `security_id` | – |

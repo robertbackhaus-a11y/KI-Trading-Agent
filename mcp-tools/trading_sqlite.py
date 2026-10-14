@@ -1127,6 +1127,30 @@ class Tools:
         except Exception as exc:
             return {"ok": False, "operation": "get_sector_overview", "error": "SECTOR_OVERVIEW_FAILED", "message": str(exc)}
 
+    def _get_effective_exposure_sync(self, as_of: str | None, top: int) -> dict:
+        exposure = self._load_runtime_trading_module("effective_exposure")
+        conn = self._readonly_import_connection(self.valves.database_path)
+        try:
+            return exposure.build_effective_exposure(conn, as_of=as_of, top=top)
+        finally:
+            conn.close()
+
+    async def get_effective_exposure(self, as_of: str | None = None, top: int = 25) -> dict:
+        """Effective single-name exposure of the open positions (read-only: no web, no DB write, no order, no change to any guard).
+
+        Per company: direct EUR value and weight + the share of the same company in every held ETF (the provider's holdings; a synthetic ETF uses its index
+        composition) = effective value and weight, and which ETFs contribute. A company held directly and in ETFs is counted once. Holdings are matched to
+        securities by ISIN, a reviewed alias or an exact ticker and exchange (never fuzzy); unmatched holdings stay companies of their own. Also the coverage per
+        ETF (holdings, equity weight, matched, other/cash, as-of date, source) and reconciliation checks. Use the figures as they are.
+
+        :param as_of: evaluation date YYYY-MM-DD (default: current)
+        :param top: number of companies returned, largest effective exposure first (default 25)
+        """
+        try:
+            return await asyncio.to_thread(self._get_effective_exposure_sync, as_of, max(1, min(int(top), 200)))
+        except Exception as exc:
+            return {"ok": False, "operation": "get_effective_exposure", "error": "EFFECTIVE_EXPOSURE_FAILED", "message": str(exc)}
+
     def _get_data_freshness_sync(self) -> dict:
         freshness = self._load_runtime_trading_module("data_freshness")
         discovery = self._load_runtime_trading_module("discovery_report")

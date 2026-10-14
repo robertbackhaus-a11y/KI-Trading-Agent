@@ -258,7 +258,16 @@ async def get_data_freshness() -> str:
     return _text({"ok": True, "operation": "get_data_freshness", "now": "2026-10-14T12:00:00+00:00", "sources": {}, "rules": {}})
 
 
-for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, get_sector_overview, get_data_freshness, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector):
+async def get_effective_exposure(as_of: str | None = None, top: int = 25) -> str:
+    """Effective exposure (fake, READ)."""
+    _calls("get_effective_exposure", {"as_of": as_of, "top": top})
+    path = os.environ.get("FAKE_EFFECTIVE_FILE")
+    if path and Path(path).exists():
+        return Path(path).read_text(encoding="utf-8")
+    return _text({"ok": True, "operation": "get_effective_exposure", "as_of": "2026-10-13", "total_market_value_eur": 0.0, "top": [], "etfs": [], "coverage": {}, "checks": {}, "warnings": []})
+
+
+for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, get_sector_overview, get_data_freshness, get_effective_exposure, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector):
     server.tool(name=fn.__name__, description=fn.__doc__ or fn.__name__, structured_output=False)(fn)
 
 print("fake-mcp ready", file=sys.stderr, flush=True)

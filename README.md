@@ -17,7 +17,7 @@ The agent is MCP-based and not tied to a particular front end (any MCP-capable L
 Versioned in this repository: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) and
 `scheduler\Manage-TradingTasks.ps1` (management of the scheduled tasks).
 
-Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 24 tools)
+Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 25 tools)
 → runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
 
 This repository contains code only. The database, backups, audit/candidate JSON files,
@@ -47,7 +47,7 @@ This README, the changelog, the contributing guide and the security policy are E
 
 | Topic | English | Deutsch |
 |---|---|---|
-| Queries and examples (24 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
+| Queries and examples (25 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
 | Architecture reference | [trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) | [trading-agent-architecture.de.md](docs/trading-agent-architecture.de.md) |
 | Watchlist candidate decision status | [trading-candidate-decision.en.md](docs/trading-candidate-decision.en.md) | [trading-candidate-decision.de.md](docs/trading-candidate-decision.de.md) |
 | Watchlist strategy suggestion | [trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) | [trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md) |
@@ -71,7 +71,7 @@ powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\
 - **Backups:** replaced files go to `backup\deploy-<timestamp>\` (with `backup-manifest.json`); the database copy is made through the SQLite backup API to `data\trading.db.bak-deploy-<timestamp>`.
 - **Rollback:** copies back only the files saved there; the database is restored only with an explicit `-RestoreDb` (a safety copy `trading.db.bak-pre-rollback-<timestamp>` is made first).
 - **After every deploy** restart running MCP processes or the front end (Python modules are cached per process). The scheduler is not re-registered, no collector is started, and there is no schema migration.
-- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched by the deploy (only the GUI action `set_security_sector` writes it), and so is `app\universe\etf_lookthrough_local.json` (the private ETF sector allocations of the sector overview, git-ignored, maintained by hand); if it is missing, only a warning is printed.
+- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched by the deploy (only the GUI action `set_security_sector` writes it), and so is `app\universe\etf_lookthrough_local.json` (the private ETF sector allocations of the sector overview, git-ignored, maintained by hand) and `app\universe\etf_holdings_local.json` (the private ETF holdings of the effective single-name exposure, git-ignored, from the providers' holdings files); if it is missing, only a warning is printed.
 - **Desktop GUI:** the manifest groups `gui*` copy the package `gui\` and `requirements-gui.txt` to the production root; the GUI environment `.venv-gui` is not copied but created from `requirements-gui.txt` (see [docs/gui.en.md](docs/gui.en.md)).
 
 ## Architecture
