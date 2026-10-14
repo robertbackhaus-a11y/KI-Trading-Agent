@@ -27,6 +27,7 @@ from .services.tool_loop import offered_tools, schema_hash
 from .services.tool_policy import classify
 from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
+from .viewmodels.sectors import build_sectors
 from .viewmodels.tasks import build_task_rows
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
 from .viewmodels.watchlist_edit import describe_sector, describe_strategy, priority_saved, sector_saved, strategy_saved
@@ -34,12 +35,14 @@ from .views.chat import ChatView
 from .views.dashboard import DashboardView
 from .views.diagnostics import DiagnosticsView
 from .views.planner import PlannerView
+from .views.sectors import SectorsView
 from .views.tasks import TasksView
 from .views.watchlist import WatchlistView
 
-PAGES = ("Dashboard", "Planner / Actions", "Watchlist", "Tasks", "Chat", "Diagnostics / Settings")
-WATCHLIST_PAGE, TASKS_PAGE, CHAT_PAGE, DIAGNOSTICS_PAGE = 2, 3, 4, 5
+PAGES = ("Dashboard", "Planner / Actions", "Watchlist", "Sektoren", "Tasks", "Chat", "Diagnostics / Settings")
+WATCHLIST_PAGE, SECTORS_PAGE, TASKS_PAGE, CHAT_PAGE, DIAGNOSTICS_PAGE = 2, 3, 4, 5, 6
 WATCHLIST_STALE_S = 60  # opening the page reloads a list older than this; there is no polling
+SECTORS_STALE_S = 60  # the same for the sector overview
 STATE_TEXT = {"CONNECTED": "verbunden", "CONNECTING": "verbindet …", "DISCONNECTED": "getrennt", "ERROR": "Fehler"}
 
 
@@ -62,6 +65,8 @@ class MainWindow(QMainWindow):
         self._tasks_at: Optional[datetime] = None
         self._watchlist = None
         self._watchlist_at: Optional[datetime] = None
+        self._sectors = None
+        self._sectors_at: Optional[datetime] = None
         self.setWindowTitle(f"Trading Agent – Desktop GUI ({GUI_VERSION})")
         self.resize(1200, 760)
         if settings.window_geometry:
@@ -73,10 +78,10 @@ class MainWindow(QMainWindow):
         self.sidebar.setFixedWidth(190)
         self.sidebar.addItems(PAGES)
         self.stack = QStackedWidget()
-        self.dashboard, self.planner, self.watchlist, self.tasks = DashboardView(), PlannerView(), WatchlistView(), TasksView()
+        self.dashboard, self.planner, self.watchlist, self.sectors, self.tasks = DashboardView(), PlannerView(), WatchlistView(), SectorsView(), TasksView()
         self.chat = ChatView(settings.ollama_model, settings.think_enabled)
         self.diagnostics = DiagnosticsView(settings)
-        for page in (self.dashboard, self.planner, self.watchlist, self.tasks, self.chat, self.diagnostics):
+        for page in (self.dashboard, self.planner, self.watchlist, self.sectors, self.tasks, self.chat, self.diagnostics):
             self.stack.addWidget(page)
         layout.addWidget(self.sidebar)
         layout.addWidget(self.stack, 1)
@@ -99,6 +104,7 @@ class MainWindow(QMainWindow):
         self.watchlist.onboard_check_requested.connect(self.check_onboarding)
         self.watchlist.onboard_create_requested.connect(self.create_onboarding)
         self.watchlist.onboard_watchlist_requested.connect(self.add_existing_to_watchlist)
+        self.sectors.refresh_requested.connect(self.refresh_sectors)
         self.tasks.refresh_requested.connect(self.refresh_tasks)
         self.tasks.run_requested.connect(self.run_task)
         self.tasks.log_requested.connect(self.show_task_log)
@@ -146,6 +152,8 @@ class MainWindow(QMainWindow):
         self.refresh_tasks()
         if self.stack.currentIndex() == WATCHLIST_PAGE:  # reconnected while the page is open
             self.refresh_watchlist()
+        elif self.stack.currentIndex() == SECTORS_PAGE:
+            self.refresh_sectors()
 
     def _tick(self) -> None:
         self.refresh_status()
@@ -238,6 +246,26 @@ class MainWindow(QMainWindow):
         self.watchlist.show_vm(build_watchlist(envelope, self._watchlist_at))
         if error and self._watchlist is not None:  # keep the last good list and say so
             self.watchlist.message.setText(f"Aktualisierung fehlgeschlagen ({error}); gezeigt wird der Stand von {fmt_time(self._watchlist_at)}.")
+
+    def refresh_sectors(self) -> None:
+        if "sectors" in self._inflight:
+            return
+        self._inflight.add("sectors")
+        self.sectors.show_loading()
+        self.mcp.call("get_sector_overview", timeout=90, on_done=self._on_sectors)
+
+    def _on_sectors(self, res: McpResult) -> None:
+        self._inflight.discard("sectors")
+        error = ""
+        if res.tool_ok:
+            self._sectors, self._sectors_at = res.data, datetime.now()
+            self._mark_refresh()
+        else:
+            error = res.message or "Unbekannter Fehler"
+        envelope = self._sectors if self._sectors is not None else {"ok": False, "message": error or "Noch keine Daten"}
+        self.sectors.show_vm(build_sectors(envelope, self._sectors_at))
+        if error and self._sectors is not None:  # keep the last good overview and say so
+            self.sectors.message.setText(f"Aktualisierung fehlgeschlagen ({error}); gezeigt wird der Stand von {fmt_time(self._sectors_at)}.")
 
     def _watchlist_action(self, tool: str, arguments: dict, to_dialog: bool = False) -> None:
         """One watchlist ACTION for an explicit user action; the outcome is shown and, if something changed, the list is reloaded."""
@@ -467,6 +495,9 @@ class MainWindow(QMainWindow):
         if row == WATCHLIST_PAGE:
             if self._watchlist_at is None or (datetime.now() - self._watchlist_at).total_seconds() > WATCHLIST_STALE_S:
                 self.refresh_watchlist()
+        elif row == SECTORS_PAGE:
+            if self._sectors_at is None or (datetime.now() - self._sectors_at).total_seconds() > SECTORS_STALE_S:
+                self.refresh_sectors()
         elif row == TASKS_PAGE and (self._tasks_at is None or (datetime.now() - self._tasks_at).total_seconds() > 30):
             self.refresh_tasks()
         elif row == CHAT_PAGE:

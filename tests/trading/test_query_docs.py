@@ -66,7 +66,7 @@ class QueryDocsParityTests(unittest.TestCase):
 
     def test_all_mcp_tools_are_documented_once_in_the_mapping_and_in_both_languages(self) -> None:
         names = tool_names()
-        self.assertEqual(len(names), 22)
+        self.assertEqual(len(names), 23)
         for label, text in (("de", DE), ("en", EN)):
             mapping = chapters(text)[16][1]
             rows = re.findall(r"^\| `([a-z_]+)` \|", mapping, flags=re.M)

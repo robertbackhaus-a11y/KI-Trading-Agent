@@ -25,6 +25,7 @@ POLICY: dict[str, str] = {
     "get_candidate_discovery": READ,
     "get_market_intelligence": READ,
     "get_opportunity_view": READ,
+    "get_sector_overview": READ,
     "get_watchlist": READ,
     "rank_watchlist": READ,
     "run_trading_orchestrator": READ,

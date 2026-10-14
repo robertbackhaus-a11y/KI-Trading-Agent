@@ -77,7 +77,7 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual([m["role"] for m in self.chat.history], ["user", "assistant", "tool", "assistant"])
         self.assertEqual(self.busy_log, [True, False])
         sent = [t["function"]["name"] for t in self.fake.chat_requests[0]["tools"]]
-        self.assertEqual(len(sent), 4)  # the fake server's READ-class names; its other tools (sql_execute, slow, crash ...) are never offered
+        self.assertEqual(len(sent), 5)  # the fake server's READ-class names; its other tools (sql_execute, slow, crash ...) are never offered
         self.assertTrue(set(sent) <= {n for n in self.mcp.tools if tp.is_read(n)})
 
     def test_the_tools_offered_are_the_discovered_read_tools_only(self) -> None:
@@ -86,7 +86,7 @@ class ChatServiceTests(unittest.TestCase):
         self.chat.send("x")
         self.idle()
         sent = {t["function"]["name"] for t in self.fake.chat_requests[0]["tools"]}
-        self.assertEqual(sent, {"database_status", "run_trading_orchestrator", "rank_watchlist", "get_watchlist"})  # the fake's READ names; sql_execute (ACTION) and the made-up ones are not offered
+        self.assertEqual(sent, {"database_status", "run_trading_orchestrator", "rank_watchlist", "get_watchlist", "get_sector_overview"})  # the fake's READ names; sql_execute (ACTION) and the made-up ones are not offered
         self.assertNotIn("sql_execute", sent)
 
     def test_m_n_o_an_action_call_never_reaches_the_mcp_server(self) -> None:
@@ -347,17 +347,17 @@ class ChatViewTests(unittest.TestCase):
 class RealServerToolSurfaceTests(unittest.IsolatedAsyncioTestCase):
     """The tool surface of the REAL Trading MCP server (repository copy; it only lists tools, no database is touched)."""
 
-    async def test_v_w_the_22_real_tools_map_to_14_offered_ones(self) -> None:
+    async def test_v_w_the_23_real_tools_map_to_15_offered_ones(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         core = mc.McpClientCore(sys.executable, str(support.ROOT / "mcp-tools" / "server.py"), str(Path(tmp.name) / "none.db"), Path(tmp.name) / "e.log")
         try:
             self.assertTrue(await core.start(), core.detail)
             catalog = core.tools
-            self.assertEqual(len(catalog), 22)
+            self.assertEqual(len(catalog), 23)
             tools, schemas = tl.offered_tools(catalog)
             names = [t["function"]["name"] for t in tools]
-            self.assertEqual(len(names), 14)  # the 13 READ tools of before and get_watchlist
+            self.assertEqual(len(names), 15)  # the 13 READ tools of before, get_watchlist and get_sector_overview
             self.assertEqual(sorted(names), sorted(n for n in catalog if tp.is_read(n)))
             self.assertFalse({"sql_execute", "approve_swing_promotion", "add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"} & set(names))
             for tool in tools:

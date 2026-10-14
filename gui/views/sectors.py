@@ -1,0 +1,189 @@
+"""Sektoren page: treemap (area = market value, grouped by sector, colour = daily change) plus the sector and position tables (read-only)."""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSplitter, QToolTip, QVBoxLayout, QWidget
+
+from ..viewmodels import treemap
+from ..viewmodels.portfolio import DASH
+from ..viewmodels.sectors import GUARD_TIP, UNASSIGNED, POSITION_HEADERS, SECTOR_HEADERS, SectorsVM, fmt_signed_pct
+from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows
+
+PAD, CAPTION = 2.0, 18.0
+MIN_LABEL_W, MIN_LABEL_H = 46.0, 30.0
+
+
+def _text_color(background: QColor) -> QColor:
+    return QColor("#111111") if background.lightness() > 150 else QColor("#ffffff")
+
+
+class TreemapWidget(QWidget):
+    """Draws ``treemap.layout`` of a :class:`SectorsVM`; no data of its own, no interaction beyond tooltips."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.vm: Optional[SectorsVM] = None
+        self.tiles: list[treemap.Tile] = []
+        self.setMinimumSize(420, 260)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMouseTracking(True)
+
+    def set_vm(self, vm: Optional[SectorsVM]) -> None:
+        self.vm = vm
+        self.relayout()
+        self.update()
+
+    def relayout(self) -> None:
+        self.tiles = []
+        if self.vm is not None and self.vm.available and self.vm.sectors:
+            self.tiles = treemap.layout(self.vm.treemap_groups(), (2.0, 2.0, max(0.0, self.width() - 4.0), max(0.0, self.height() - 4.0)), pad=PAD, caption=CAPTION)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.relayout()
+        super().resizeEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.fillRect(self.rect(), self.palette().window())
+        if not self.tiles or self.vm is None:
+            painter.setPen(self.palette().text().color())
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Keine Daten" if self.vm is None or not self.vm.available else "Keine Positionen")
+            return
+        font = QFont(self.font())
+        small = QFont(font)
+        small.setPointSizeF(max(7.0, font.pointSizeF() - 1.0))
+        for group_tile in self.tiles:
+            group = self.vm.sectors[int(group_tile.key)]
+            gx, gy, gw, gh = group_tile.rect
+            outer = QRectF(gx, gy, gw, gh)
+            painter.fillRect(outer, QColor("#e4e8ec" if group.sector is not None else "#d5d9de"))
+            pen = QPen(QColor("#6b7580"), 1, Qt.PenStyle.SolidLine if group.sector is not None else Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(outer.adjusted(0, 0, -1, -1))
+            if group_tile.caption_height:
+                painter.setFont(font)
+                painter.setPen(QColor("#1c2530"))
+                painter.drawText(QRectF(gx + 4, gy + 1, gw - 8, group_tile.caption_height), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                                 painter.fontMetrics().elidedText(f"{group.title} · {group.weight_pct:.1f} %".replace(".", ","), Qt.TextElideMode.ElideRight, int(gw - 8)))
+            for child in group_tile.children:
+                position = group.positions[int(child.key)]
+                x, y, w, h = child.rect
+                box = QRectF(x, y, w, h)
+                color = QColor(position.color)
+                painter.fillRect(box, color)
+                painter.setPen(QPen(QColor("#ffffff"), 1, Qt.PenStyle.DashLine if position.is_etf else Qt.PenStyle.SolidLine))
+                painter.drawRect(box.adjusted(0, 0, -1, -1))
+                if w >= MIN_LABEL_W and h >= MIN_LABEL_H:
+                    painter.setFont(small)
+                    painter.setPen(_text_color(color))
+                    lines = [position.label, DASH if position.change_pct is None else fmt_signed_pct(position.change_pct, 1)]
+                    painter.drawText(box.adjusted(3, 2, -3, -2), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft, "\n".join(lines))
+        painter.end()
+
+    def tile_at(self, point: QPointF) -> Optional[str]:
+        """The tooltip text of the position (or sector) under ``point``."""
+        if self.vm is None:
+            return None
+        for group_tile in self.tiles:
+            gx, gy, gw, gh = group_tile.rect
+            if not (gx <= point.x() < gx + gw and gy <= point.y() < gy + gh):
+                continue
+            group = self.vm.sectors[int(group_tile.key)]
+            for child in group_tile.children:
+                x, y, w, h = child.rect
+                if x <= point.x() < x + w and y <= point.y() < y + h:
+                    return group.positions[int(child.key)].tip
+            return f"{group.title}\n{group.count} Positionen, {group.weight_pct:.1f} % des investierten Werts".replace(".", ",")
+        return None
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        text = self.tile_at(event.position())
+        if text:
+            QToolTip.showText(event.globalPosition().toPoint(), text, self)
+        else:
+            QToolTip.hideText()
+
+
+class SectorsView(QWidget):
+    refresh_requested = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        outer = QVBoxLayout(self)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("<h2>Sektoren</h2>"))
+        top.addStretch(1)
+        self.refreshed = QLabel("Letzte Aktualisierung: " + DASH)
+        self.button = QPushButton("Aktualisieren")
+        self.button.setToolTip("Lesende Abfrage: get_sector_overview")
+        self.button.clicked.connect(self.refresh_requested.emit)
+        top.addWidget(self.refreshed)
+        top.addWidget(self.button)
+        outer.addLayout(top)
+        self.message = QLabel("")
+        self.message.setWordWrap(True)
+        outer.addWidget(self.message)
+        self.summary = QHBoxLayout()
+        outer.addLayout(self.summary)
+        self.treemap = TreemapWidget()
+        box = QGroupBox("Portfolio nach Sektoren (Fläche = Marktwert, Farbe = Tagesperformance, grau = keine Daten, gestrichelt = ETF)")
+        inner = QVBoxLayout(box)
+        inner.addWidget(self.treemap)
+        legend = QLabel("<span style='color:#c0392b'>■</span> −3 % und tiefer &nbsp; <span style='color:#7a828a'>■</span> 0 % &nbsp; <span style='color:#1f8c4c'>■</span> +3 % und höher &nbsp; "
+                        "<span style='color:#b4bcc6'>■</span> keine Tagesperformance")
+        inner.addWidget(legend)
+        split = QSplitter(Qt.Orientation.Vertical)
+        split.addWidget(box)
+        lower = QWidget()
+        row = QHBoxLayout(lower)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.sector_table = make_table(SECTOR_HEADERS)
+        self.position_table = make_table(POSITION_HEADERS)
+        for caption, table in (("Sektoren", self.sector_table), ("Positionen", self.position_table)):
+            group = QGroupBox(caption)
+            layout = QVBoxLayout(group)
+            layout.addWidget(table)
+            row.addWidget(group, 1)
+        split.addWidget(lower)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        outer.addWidget(split, 1)
+        self.notes = QLabel("")
+        self.notes.setWordWrap(True)
+        outer.addWidget(self.notes)
+
+    def show_loading(self) -> None:
+        self.button.setEnabled(False)
+        self.message.setText("Lade Daten …")
+
+    def show_vm(self, vm: SectorsVM) -> None:
+        self.button.setEnabled(True)
+        self.refreshed.setText("Letzte Aktualisierung: " + vm.refreshed)
+        if not vm.available:
+            self.message.setText(f"<span style='color:{LEVEL_COLORS['blocker']}'>Keine Daten: {vm.error}</span>")
+            self.treemap.set_vm(None)
+            fill_table(self.sector_table, SECTOR_HEADERS, [])
+            fill_table(self.position_table, POSITION_HEADERS, [])
+            return
+        self.message.setText("")
+        while self.summary.count():
+            old = self.summary.takeAt(0).widget()
+            if old is not None:
+                old.deleteLater()
+        for caption, value in vm.summary:
+            label = QLabel(f"<small>{caption}</small><br><b>{value}</b>")
+            self.summary.addWidget(label)
+        self.summary.addStretch(1)
+        self.treemap.set_vm(vm)
+        fill_table(self.sector_table, SECTOR_HEADERS, vm.sector_rows, vm.sector_levels)
+        for r, group in enumerate(vm.sectors):
+            item = self.sector_table.item(r, 5)
+            if item is not None:
+                item.setToolTip(GUARD_TIP.get(group.guard, ""))
+        fill_table(self.position_table, POSITION_HEADERS, vm.position_rows)
+        self.notes.setText("<small>" + "<br>".join(vm.notes) + "</small>")

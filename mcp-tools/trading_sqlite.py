@@ -1102,6 +1102,28 @@ class Tools:
         except Exception as exc:
             return {"ok": False, "operation": "get_watchlist", "error": "WATCHLIST_VIEW_FAILED", "message": str(exc)}
 
+    def _get_sector_overview_sync(self, as_of: str | None) -> dict:
+        overview = self._load_runtime_trading_module("sector_overview")
+        conn = self._readonly_import_connection(self.valves.database_path)
+        try:
+            return overview.build_sector_overview(conn, as_of=as_of)
+        finally:
+            conn.close()
+
+    async def get_sector_overview(self, as_of: str | None = None) -> dict:
+        """The open positions grouped by sector (read-only: no web, no DB write, no order, no change to any guard).
+
+        Per sector: EUR market value, share of the invested value, number of positions, value-weighted daily change, the sector-guard limit and status
+        (OK / OVER_LIMIT / NOT_ASSESSED); per position: value, weight, daily change, ETF flag. Positions without a sector entry form their own
+        group (sector null, "not assigned"). ETFs are one position each (no look-through). Use the figures as they are.
+
+        :param as_of: evaluation date YYYY-MM-DD (default: current)
+        """
+        try:
+            return await asyncio.to_thread(self._get_sector_overview_sync, as_of)
+        except Exception as exc:
+            return {"ok": False, "operation": "get_sector_overview", "error": "SECTOR_OVERVIEW_FAILED", "message": str(exc)}
+
     def _watchlist_write_sync(self, operation: str, *args, **kwargs) -> dict:
         admin = self._load_runtime_trading_module("watchlist_admin")
         conn = self._connect()

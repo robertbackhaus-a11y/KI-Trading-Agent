@@ -62,7 +62,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(names[:4], ["app", "app-universe", "mcp", "scheduler"])  # the existing runtime groups come first and keep their names
         self.assertEqual(names[4:], ["gui", "gui-services", "gui-viewmodels", "gui-views", "gui-requirements"])
         gui = [(g["source"], n) for g in MANIFEST["groups"] if g["name"].startswith("gui") for n in g["files"]]
-        self.assertEqual(len(gui), 3 + 9 + 8 + 10 + 1)
+        self.assertEqual(len(gui), 3 + 9 + 10 + 11 + 1)
         self.assertEqual([f for s, f in gui if not f.endswith(".py") and f != "requirements-gui.txt"], [])  # no tests, docs, venv, logs or data
         self.assertIn((".", "requirements-gui.txt"), gui)
         self.assertNotIn(".venv-gui", json.dumps(MANIFEST["groups"]))  # the GUI venv is created from requirements-gui.txt, never copied
@@ -84,7 +84,7 @@ class ManifestTests(unittest.TestCase):
         spec.loader.exec_module(module)
         public = [name for name, _f in inspect.getmembers(module.Tools, inspect.isfunction) if not name.startswith("_")]
         self.assertEqual(MANIFEST["expected_tool_count"], len(public))
-        self.assertEqual(MANIFEST["expected_tool_count"], 22)  # the 15 earlier tools, the four watchlist tools, onboard_security, set_security_strategy and set_security_sector
+        self.assertEqual(MANIFEST["expected_tool_count"], 23)  # the 15 earlier tools, the four watchlist tools, onboard_security, set_security_strategy, set_security_sector and get_sector_overview
 
     def test_script_never_registers_tasks_runs_collectors_or_migrates(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
@@ -217,7 +217,7 @@ class DeployScriptBehaviourTests(unittest.TestCase):
             for name in group["files"]:
                 self.assertEqual((self.root / group["target"] / name).read_bytes(), (ROOT / group["source"] / name).read_bytes(), name)
         gui_files = sorted(p.relative_to(self.root).as_posix() for p in (self.root / "gui").rglob("*") if p.is_file())
-        self.assertEqual(len(gui_files), 3 + 9 + 8 + 10)  # exactly the listed package files, no tests, docs or caches
+        self.assertEqual(len(gui_files), 3 + 9 + 10 + 11)  # exactly the listed package files, no tests, docs or caches
         self.assertTrue((self.root / "requirements-gui.txt").is_file())
         self.assertEqual((self.root / ".venv-gui" / "marker.txt").read_text(encoding="utf-8"), "venv stays untouched")
         # the already identical runtime files, the database and the private file are not rewritten
@@ -225,7 +225,7 @@ class DeployScriptBehaviourTests(unittest.TestCase):
         self.assertEqual({k: v for k, v in runtime_before.items() if k in runtime_after}, runtime_after)
         record = json.loads(next((self.root / "backup").glob("deploy-*")).joinpath("backup-manifest.json").read_text(encoding="utf-8-sig"))
         gui_rels = [f["rel"] for f in record["files"] if f["rel"].startswith(("gui", "requirements-gui"))]
-        self.assertEqual(len(gui_rels), 3 + 9 + 8 + 10 + 1)
+        self.assertEqual(len(gui_rels), 3 + 9 + 10 + 11 + 1)
         self.assertIn("requirements-gui.txt", gui_rels)  # plain name at the production root, not ".\\requirements-gui.txt"
 
     def test_second_deploy_finds_nothing_to_do(self) -> None:

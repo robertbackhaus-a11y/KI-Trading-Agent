@@ -240,7 +240,16 @@ async def onboard_security(symbol: str, name: str, asset_type: str, isin: str | 
     return _result("onboard_security", "CREATED", changed=True, security_id=sid, symbol=key, name=name, provider_symbols=planned["provider_symbols"], watchlist=planned["watchlist"], warnings=[])
 
 
-for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector):
+async def get_sector_overview(as_of: str | None = None) -> str:
+    """Sector overview (fake, READ)."""
+    _calls("get_sector_overview", {"as_of": as_of})
+    path = os.environ.get("FAKE_SECTORS_FILE")
+    if path and Path(path).exists():
+        return Path(path).read_text(encoding="utf-8")
+    return _text({"ok": True, "operation": "get_sector_overview", "as_of": "2026-10-13", "total_market_value_eur": 0.0, "limit_pct": 30.0, "sectors": [], "unvalued": [], "warnings": []})
+
+
+for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, get_sector_overview, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector):
     server.tool(name=fn.__name__, description=fn.__doc__ or fn.__name__, structured_output=False)(fn)
 
 print("fake-mcp ready", file=sys.stderr, flush=True)

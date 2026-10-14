@@ -380,7 +380,7 @@ Kurze Formulierungen, die zuverlässig auf das passende Tool führen.
 
 ## A. Technische Zuordnung
 
-Alle 22 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
+Alle 23 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
 
 | Tool | Zugriff | Zweck | Wichtige Parameter | Kapitel |
 |---|---|---|---|---|
@@ -396,6 +396,7 @@ Alle 22 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen
 | `get_market_intelligence` | Lesen | Letzter News-Report: klassifizierte Makro- und Unternehmensnachrichten | `scope`, `category`, `importance`, `symbol`, `sector`, `limit`, `detail` | 5, 7, 14 |
 | `get_opportunity_view` | Lesen | Kandidaten aus Engine und Discovery mit News-Kontext, Plan-Status und Kapital | `source`, `status`, `news_status`, `symbol`, `limit`, `detail` | 2, 6, 7, 8, 9, 14 |
 | `get_watchlist` | Lesen | Gesamte Watchlist mit Strategie, Priorität, Rang, Score, Datenqualität, Einstufung, Entry-Status und News-Status; Standard: kompakte Antwort mit Zusammenfassung (Chat-Clients), `table=true` die Tabellenform der Desktop-GUI, `detail=true` höchstens 10 vollständige Einträge | `status`, `strategy`, `symbol`, `limit`, `detail`, `table` | 3 |
+| `get_sector_overview` | Lesen | Offene Positionen nach Sektor: Marktwert in EUR, Anteil am investierten Wert, Anzahl Positionen, wertgewichtete Tagesperformance, Limit und Status des Sector Guards; Positionen ohne Sektor-Eintrag als eigene Gruppe (`sector` = null); ETFs sind je eine Position (keine Zerlegung) | `as_of` | – |
 | `onboard_security` | Schreiben (Security Master, nur Desktop-GUI) | Ein neues Wertpapier aus ausdrücklich angegebenen Werten anlegen; Standard ist die Prüfung (`dry_run=true`), optional Provider-Symbole und Watchlist-Eintrag in derselben Transaktion; nichts wird recherchiert oder geraten | `symbol`, `name`, `asset_type`, `isin`, `wkn`, `exchange`, `currency`, `country`, `provider_symbols`, `add_to_watchlist`, `watchlist_priority`, `dry_run` | – |
 | `rank_watchlist` | Lesen | Technischer Momentum-/Trend-Rang der Watchlist | – | 3 |
 | `remove_watchlist_candidate` | Schreiben (nur Watchlist) | Ein Wertpapier von der Watchlist entfernen; Positionen, Strategien und Kampagnen bleiben unberührt | `security_id` | – |

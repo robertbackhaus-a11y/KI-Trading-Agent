@@ -71,16 +71,16 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(pump(40, lambda: self.window._orch is not None), "dashboard data did not arrive")
 
     # R
-    def test_r_the_window_builds_with_six_pages_including_watchlist_and_chat_and_a_status_bar(self) -> None:
+    def test_r_the_window_builds_with_seven_pages_including_watchlist_and_chat_and_a_status_bar(self) -> None:
         w = self.window
         w.show()
-        self.assertEqual(w.sidebar.count(), 6)
-        self.assertEqual([w.sidebar.item(i).text() for i in range(6)], list(PAGES))
-        self.assertEqual((PAGES[WATCHLIST_PAGE], PAGES[3], PAGES[4]), ("Watchlist", "Tasks", "Chat"))
-        self.assertEqual(w.stack.count(), 6)
+        self.assertEqual(w.sidebar.count(), 7)
+        self.assertEqual([w.sidebar.item(i).text() for i in range(7)], list(PAGES))
+        self.assertEqual((PAGES[WATCHLIST_PAGE], PAGES[3], PAGES[4], PAGES[5]), ("Watchlist", "Sektoren", "Tasks", "Chat"))
+        self.assertEqual(w.stack.count(), 7)
         self.assertEqual((w.lbl_mcp.text(), w.lbl_tools.text(), w.lbl_db.text(), w.lbl_refresh.text()), ("MCP: getrennt", "Tools: —", "DB: —", "Letzter Refresh: —"))
         self.assertIn("Desktop GUI (dev)", w.windowTitle())
-        for row in range(6):
+        for row in range(7):
             w.sidebar.setCurrentRow(row)
             self.assertEqual(w.stack.currentIndex(), row)
         pixmap = w.grab()

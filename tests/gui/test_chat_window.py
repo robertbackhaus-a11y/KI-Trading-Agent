@@ -70,8 +70,8 @@ class ChatWindowTests(unittest.TestCase):
     # X
     def test_x_the_window_has_the_chat_page_between_tasks_and_diagnostics(self) -> None:
         w = self.window
-        self.assertEqual(PAGES, ("Dashboard", "Planner / Actions", "Watchlist", "Tasks", "Chat", "Diagnostics / Settings"))
-        self.assertEqual((CHAT_PAGE, DIAGNOSTICS_PAGE), (4, 5))
+        self.assertEqual(PAGES, ("Dashboard", "Planner / Actions", "Watchlist", "Sektoren", "Tasks", "Chat", "Diagnostics / Settings"))
+        self.assertEqual((CHAT_PAGE, DIAGNOSTICS_PAGE), (5, 6))
         w.sidebar.setCurrentRow(CHAT_PAGE)
         self.assertIs(w.stack.currentWidget(), w.chat)
         self.assertIn("fake-model:latest", w.chat.model_label.text())
