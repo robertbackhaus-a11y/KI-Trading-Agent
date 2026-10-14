@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import sqlite3
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -34,7 +35,22 @@ from typing import Optional
 DB_PATH = Path(r"C:\tools\trading\data\trading.db")
 
 # SEC fair access: set SEC_USER_AGENT to "<name> <your e-mail>"; the default below is only a placeholder.
-SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "Trading-Agent contact@example.com")
+# The SEC answers HTTP 403 to every request whose User-Agent carries a GitHub noreply contact ("...@users.noreply.github.com"), so such a value is
+# not used: the placeholder applies instead (and a warning says so).  Use a real, reachable contact address.
+SEC_DEFAULT_USER_AGENT = "Trading-Agent contact@example.com"
+SEC_REJECTED_CONTACTS = ("noreply.github.com",)
+
+
+def resolve_sec_user_agent(configured: Optional[str] = None) -> str:
+    value = os.environ.get("SEC_USER_AGENT", SEC_DEFAULT_USER_AGENT) if configured is None else configured
+    if any(bad in value.lower() for bad in SEC_REJECTED_CONTACTS):
+        print("WARNING: SEC_USER_AGENT carries a GitHub noreply contact, which the SEC rejects with HTTP 403; using the placeholder. "
+              "Set SEC_USER_AGENT to \"<name> <real e-mail>\".", file=sys.stderr)
+        return SEC_DEFAULT_USER_AGENT
+    return value
+
+
+SEC_USER_AGENT = resolve_sec_user_agent()
 SEC_HEADERS = {"User-Agent": SEC_USER_AGENT, "Accept": "application/json"}
 YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0"}
 

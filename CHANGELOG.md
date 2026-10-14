@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- SEC requests of the events/news and the SEC fundamentals collectors answered HTTP 403 (no SEC events were stored since 2026-10-09): the SEC rejects every User-Agent that carries a GitHub noreply contact ("...@users.noreply.github.com"), and that was the configured `SEC_USER_AGENT`. Both scripts now refuse such a value, use the placeholder instead and print a warning; the real fix is to set `SEC_USER_AGENT` to "<name> <real e-mail>". No retry, proxy or header architecture was added.
 - Desktop GUI, Watchlist page: the ISIN column was pushed far out of the visible area by the wide columns to its left (it sat behind the name, entry status and news columns); it is now displayed right behind the name and no column is wider than 260 px (the full text stays in the tooltip). Column model, editors, sorting and filters are unchanged.
 
 ### Removed
