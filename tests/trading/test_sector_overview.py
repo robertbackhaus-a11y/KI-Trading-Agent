@@ -191,7 +191,7 @@ class ReadOnlyTests(OverviewCase):
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
-        self.assertEqual(list(inspect.signature(module.Tools.get_sector_overview).parameters), ["self", "as_of"])
+        self.assertEqual(list(inspect.signature(module.Tools.get_sector_overview).parameters), ["self", "as_of", "lookthrough"])
         source = (ROOT / "tools" / "trading" / "sector_overview.py").read_text(encoding="utf-8")
         for forbidden in ("INSERT", "UPDATE ", "DELETE", "write_text", "os.replace", "commit("):
             self.assertNotIn(forbidden, source)

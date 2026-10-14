@@ -46,6 +46,7 @@
         "decision_engine.py",
         "discovery_report.py",
         "entry_sizing.py",
+        "etf_lookthrough.py",
         "fx_resolver.py",
         "intelligence_report.py",
         "market_intelligence.py",
@@ -76,6 +77,7 @@
       "source": "tools/trading/universe",
       "target": "app/universe",
       "files": [
+        "etf_sector_mapping_v1.json",
         "news_feeds_v1.json",
         "sector_map_v1.json",
         "swing_large_cap_v1.json"
@@ -171,7 +173,8 @@
     }
   ],
   "protected": [
-    "app/universe/sector_map_local.json"
+    "app/universe/sector_map_local.json",
+    "app/universe/etf_lookthrough_local.json"
   ],
   "not_deployed": [
     "tools/Add-TradingWatchlist.py",

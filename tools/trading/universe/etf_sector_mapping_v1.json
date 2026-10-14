@@ -1,0 +1,24 @@
+{
+  "map_id": "etf_sector_mapping_v1",
+  "version": 1,
+  "description": "Maps the sector names that ETF providers publish (GICS sectors; matched case-insensitively) to the sector groups of sector_map_v1.json, for the ETF look-through of the sector overview. A provider sector is mapped only where it fits exactly one group. A sector that spans several groups, fits none, or is not a sector (cash, derivatives, other) is listed under not_mapped with the reason and stays its own unmapped category in the overview - it is never put into a group by name or size. Change an entry here only on the basis of provider data that splits the sector (for example sub-industry weights).",
+  "mapping": {
+    "Financials": "FINANCIALS",
+    "Health Care": "HEALTHCARE_PHARMA",
+    "Energy": "ENERGY",
+    "Utilities": "UTILITIES",
+    "Materials": "MATERIALS_CHEMICALS",
+    "Consumer Staples": "CONSUMER"
+  },
+  "not_mapped": {
+    "Information Technology": "spans SEMICONDUCTORS, SOFTWARE_AI and TECH_HARDWARE",
+    "Communication": "INTERNET_MEDIA or TELECOM",
+    "Communication Services": "INTERNET_MEDIA or TELECOM",
+    "Consumer Discretionary": "CONSUMER or AUTOMOTIVE",
+    "Industrials": "INDUSTRIALS or DEFENSE_AEROSPACE",
+    "Real Estate": "no sector group for real estate",
+    "Cash and/or Derivatives": "not a sector",
+    "Other": "not a sector",
+    "Others": "not a sector (the provider does not say which sectors)"
+  }
+}

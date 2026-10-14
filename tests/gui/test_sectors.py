@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import random
 import sys
@@ -28,25 +29,38 @@ if HAVE_QT:
 QT = unittest.skipUnless(HAVE_QT, "PySide6 not installed (GUI venv only)")
 
 
-def position(sid, symbol, value, change, etf=False, strategy="long_term", sector="X"):
+def position(sid, symbol, value, change, etf=False, strategy="long_term", sector="X", origin="direct", category=None, etf_weight=None, etf_value=None):
     return {"security_id": sid, "symbol": symbol, "name": symbol + " Corp", "asset_type": "etf" if etf else "stock", "is_etf": etf, "strategy": strategy,
-            "sector": sector, "market_value_eur": value, "day_change_pct": change, "weight_pct": value / 10.0}
+            "sector": sector, "market_value_eur": value, "day_change_pct": change, "weight_pct": value / 10.0, "origin": origin, "category": category,
+            "etf_weight_pct": etf_weight, "etf_value_eur": etf_value, "etf_as_of": "2026-07-31" if origin == "etf_lookthrough" else None}
 
 
-def group(sector, positions, status="OK", limit=30.0):
+def group(sector, positions, status="OK", limit=30.0, kind=None, label=None):
+    kind = kind or ("sector" if sector is not None else "unassigned")
     value = sum(p["market_value_eur"] for p in positions)
+    direct = sum(p["market_value_eur"] for p in positions if p["origin"] == "direct")
     changed = [p for p in positions if p["day_change_pct"] is not None]
     change = (sum(p["market_value_eur"] * p["day_change_pct"] for p in changed) / sum(p["market_value_eur"] for p in changed)) if changed else None
-    return {"sector": sector, "assigned": sector is not None, "market_value_eur": value, "weight_pct": value / 10.0, "position_count": len(positions), "day_change_pct": change,
-            "day_coverage_pct": sum(p["market_value_eur"] for p in changed) / value * 100 if value else None, "guard_status": status,
-            "limit_pct": None if sector is None else limit, "headroom_pct": None if sector is None else limit - value / 10.0, "etf_count": sum(1 for p in positions if p["is_etf"]), "positions": positions}
+    assessed = kind == "sector"
+    return {"sector": sector, "kind": kind, "label": label or sector or "", "assigned": assessed, "market_value_eur": value, "weight_pct": value / 10.0,
+            "direct_value_eur": direct, "etf_value_eur": value - direct, "direct_weight_pct": direct / 10.0, "etf_weight_pct": (value - direct) / 10.0,
+            "position_count": len({p["security_id"] for p in positions}), "direct_count": len({p["security_id"] for p in positions if p["origin"] == "direct"}),
+            "day_change_pct": change, "day_coverage_pct": sum(p["market_value_eur"] for p in changed) / value * 100 if value else None, "guard_status": status,
+            "limit_pct": limit if assessed else None, "headroom_pct": limit - value / 10.0 if assessed else None, "etf_count": len({p["security_id"] for p in positions if p["is_etf"]}),
+            "positions": positions}
 
 
 ENVELOPE = {
     "ok": True, "operation": "get_sector_overview", "as_of": "2026-10-13", "base_currency": "EUR", "total_market_value_eur": 1000.0, "position_count": 4, "limit_pct": 30.0,
-    "day_change_pct": 0.5, "day_coverage_pct": 90.0, "assigned_value_eur": 600.0, "unassigned_value_eur": 400.0, "unvalued": [], "warnings": [],
-    "sectors": [group("ALPHA", [position(1, "AAA", 400.0, 2.0, sector="ALPHA"), position(2, "BBB", 200.0, -1.0, sector="ALPHA")], "OVER_LIMIT"),
-                group(None, [position(3, "WORLD", 300.0, None, etf=True, sector=None), position(4, "CCC", 100.0, 0.0, sector=None)], "NOT_ASSESSED")],
+    "day_change_pct": 0.5, "day_coverage_pct": 90.0, "lookthrough_enabled": True, "assigned_value_eur": 700.0, "direct_value_eur": 700.0, "etf_value_eur": 300.0,
+    "etf_category_value_eur": 150.0, "unassigned_value_eur": 150.0, "unvalued": [], "warnings": [],
+    "lookthrough": {"etf_count": 1, "etf_value_eur": 300.0, "covered_value_eur": 300.0, "coverage_pct": 100.0, "mapped_value_eur": 150.0, "mapped_pct": 50.0},
+    "etfs": [{"security_id": 3, "symbol": "WORLD", "name": "World ETF", "market_value_eur": 300.0, "status": "APPLIED", "as_of": "2026-07-31", "provider": "Provider", "mapped_pct": 50.0}],
+    "sectors": [group("ALPHA", [position(1, "AAA", 400.0, 2.0, sector="ALPHA"), position(2, "BBB", 200.0, -1.0, sector="ALPHA"),
+                                position(3, "WORLD", 150.0, None, etf=True, sector="ALPHA", origin="etf_lookthrough", category="Financials", etf_weight=50.0, etf_value=300.0)], "OVER_LIMIT"),
+                group(None, [position(3, "WORLD", 150.0, None, etf=True, sector=None, origin="etf_lookthrough", category="Information Technology", etf_weight=50.0, etf_value=300.0)],
+                      "NOT_ASSESSED", kind="etf_category", label="Information Technology"),
+                group(None, [position(4, "CCC", 100.0, 0.0, sector=None)], "NOT_ASSESSED")],
 }
 
 
@@ -125,26 +139,59 @@ class GeometryTests(unittest.TestCase):
 
 
 class ViewModelTests(unittest.TestCase):
-    def test_the_table_rows_and_the_unassigned_area(self) -> None:
+    def test_the_table_rows_show_exposure_direct_etf_and_the_guard(self) -> None:
         vm = vs.build_sectors(ENVELOPE)
         self.assertTrue(vm.available)
-        self.assertEqual([r[0] for r in vm.sector_rows], ["ALPHA", "Nicht zugeordnet"])
-        alpha, unassigned = vm.sector_rows
-        self.assertEqual(alpha[:4], ["ALPHA", "600 €", "60,0 %", "2"])
-        self.assertEqual(alpha[5], "Über Limit (Limit 30 %, über um 30,0 %)")
-        self.assertEqual(unassigned[3], "2 (davon 1 ETF)")
-        self.assertEqual(unassigned[5], "nicht bewertet")
-        self.assertIn("des Werts", unassigned[4])  # partial coverage is said
-        self.assertEqual(vm.sector_levels, ["blocker", "info"])
-        self.assertEqual(vs.SECTOR_HEADERS, ["Sektor", "Marktwert €", "Anteil %", "Positionen", "Tagesperformance", "Guard / Limit"])
+        self.assertEqual([r[0] for r in vm.sector_rows], ["ALPHA", "Information Technology (ETF, nicht zuordenbar)", "Nicht zugeordnet"])
+        alpha, category, unassigned = vm.sector_rows
+        self.assertEqual(alpha[:5], ["ALPHA", "750 €", "75,0 %", "600 €", "150 €"])
+        self.assertEqual(alpha[5], "2 direkt, 1 ETF")
+        self.assertEqual(alpha[7], "Über Limit (Limit 30 %, über um 45,0 %)")
+        self.assertEqual((category[3], category[4], category[7]), (vs.DASH, "150 €", "nicht bewertet"))
+        self.assertEqual((unassigned[3], unassigned[4], unassigned[5]), ("100 €", vs.DASH, "1 direkt"))
+        self.assertEqual(vm.sector_levels, ["blocker", "info", "info"])
+        self.assertEqual(vs.SECTOR_HEADERS, ["Sektor", "Exposure €", "Exposure %", "Direkt €", "ETF-Look-through €", "Positionen / ETF-Beiträge", "Tagesperformance", "Guard / Limit"])
+
+    def test_the_position_table_says_where_every_entry_comes_from(self) -> None:
+        vm = vs.build_sectors(ENVELOPE)
+        origins = {row[0]: row[2] for row in vm.position_rows}
+        self.assertEqual(origins["AAA"], "direkt")
+        self.assertEqual(origins["WORLD ETF · Financials"], "ETF-Look-through (Financials, 50,0 % des ETF)")
+        self.assertEqual(origins["WORLD ETF · Information Technology"], "ETF-Look-through (Information Technology, 50,0 % des ETF)")
+        self.assertEqual(len(vm.position_rows), 5)
+
+    def test_the_tooltip_tells_direct_from_look_through(self) -> None:
+        vm = vs.build_sectors(ENVELOPE)
+        direct = vm.sectors[0].positions[0]
+        part = vm.sectors[0].positions[2]
+        self.assertIn("Direkte Position (Einzelaktie)", direct.tip)
+        self.assertIn("Beitrag aus ETF-Look-through", part.tip)
+        self.assertIn("Financials", part.tip)
+        self.assertIn("31.07.2026", part.tip)
+        self.assertEqual((direct.lookthrough, part.lookthrough), (False, True))
 
     def test_the_totals_match_the_portfolio_value(self) -> None:
         vm = vs.build_sectors(ENVELOPE)
-        self.assertAlmostEqual(sum(s.value for s in vm.sectors), ENVELOPE["total_market_value_eur"])
-        self.assertAlmostEqual(sum(p.value for s in vm.sectors for p in s.positions), ENVELOPE["total_market_value_eur"])
+        self.assertAlmostEqual(sum(s.value for s in vm.sectors), 750.0 + 150.0 + 100.0)
+        self.assertAlmostEqual(sum(p.value for s in vm.sectors for p in s.positions), 1000.0)
         self.assertEqual(sum(len(s.positions) for s in vm.sectors), len(vm.position_rows))
-        self.assertEqual(dict(vm.summary)["Investierter Wert"], "1.000 €")
-        self.assertEqual(dict(vm.summary)["Nicht zugeordnet"], "400 € (40,0 %)")
+        summary = dict(vm.summary)
+        self.assertEqual(summary["Investierter Wert"], "1.000 €")
+        self.assertEqual(summary["Direkt"], "700 € (70,0 %)")
+        self.assertEqual(summary["Über ETF-Look-through"], "300 € (30,0 %)")
+        self.assertEqual(summary["ETF-Kategorien nicht zuordenbar"], "150 € (15,0 %)")
+        self.assertEqual(summary["Nicht zugeordnet"], "150 € (15,0 %)")
+        self.assertEqual(summary["Look-through-Abdeckung"], "100 % des ETF-Werts (1 ETFs), davon 50 % einer Sektor-Gruppe zugeordnet")
+
+    def test_the_etf_table_shows_status_stand_provider_and_mapped_share(self) -> None:
+        vm = vs.build_sectors(ENVELOPE)
+        self.assertEqual(vm.etf_rows, [["WORLD", "300 €", "angewendet", "31.07.2026", "Provider", "50 %"]])
+        self.assertEqual(vm.etf_levels, [""])
+        missing = copy.deepcopy(ENVELOPE)
+        missing["etfs"] = [{"symbol": "WORLD", "market_value_eur": 300.0, "status": "NO_DATA", "as_of": None, "provider": None, "mapped_pct": None}]
+        gap = vs.build_sectors(missing)
+        self.assertEqual(gap.etf_rows, [["WORLD", "300 €", "keine Daten", vs.DASH, vs.DASH, vs.DASH]])
+        self.assertEqual(gap.etf_levels, ["warning"])  # missing look-through data stays visible
 
     def test_a_missing_change_is_a_dash_and_neutral(self) -> None:
         vm = vs.build_sectors(ENVELOPE)
@@ -152,24 +199,25 @@ class ViewModelTests(unittest.TestCase):
         self.assertIsNone(world.change_pct)
         self.assertEqual(world.color, treemap.NEUTRAL)
         row = next(r for r in vm.position_rows if r[0].startswith("WORLD"))
-        self.assertEqual((row[0], row[4], row[5]), ("WORLD ETF", "—", "ETF"))
+        self.assertEqual((row[5], row[6]), ("—", "ETF"))
         flat = next(p for s in vm.sectors for p in s.positions if p.symbol == "CCC")
         self.assertEqual(vs.fmt_signed_pct(flat.change_pct), "0,00 %")  # 0 % is not "no data"
         self.assertNotEqual(flat.color, treemap.NEUTRAL)
         self.assertEqual(vs.fmt_signed_pct(2.0), "+2,00 %")
         self.assertEqual(vs.fmt_signed_pct(None), "—")
 
-    def test_etfs_are_marked_in_the_tooltip_and_not_decomposed(self) -> None:
-        vm = vs.build_sectors(ENVELOPE)
-        world = next(p for s in vm.sectors for p in s.positions if p.symbol == "WORLD")
-        self.assertIn("ETF (als eine Position, ohne Zerlegung)", world.tip)
-        self.assertEqual(len([p for s in vm.sectors for p in s.positions]), 4)
+    def test_an_etf_without_look_through_data_is_a_direct_position_marked_as_etf(self) -> None:
+        env = copy.deepcopy(ENVELOPE)
+        env["sectors"] = [group(None, [position(3, "WORLD", 300.0, None, etf=True, sector=None)], "NOT_ASSESSED")]
+        world = vs.build_sectors(env).sectors[0].positions[0]
+        self.assertEqual((world.lookthrough, world.label), (False, "WORLD ETF"))
+        self.assertIn("ETF ohne Look-through-Daten", world.tip)
 
     def test_treemap_groups_have_the_group_values(self) -> None:
         vm = vs.build_sectors(ENVELOPE)
         groups = vm.treemap_groups()
-        self.assertEqual([round(g[1]) for g in groups], [600, 400])
-        self.assertEqual([round(v) for _, _, members in groups for _, v in members], [400, 200, 300, 100])
+        self.assertEqual([round(g[1]) for g in groups], [750, 150, 100])
+        self.assertEqual([round(v) for _, _, members in groups for _, v in members], [400, 200, 150, 150, 100])
 
     def test_errors_and_empty_answers(self) -> None:
         self.assertFalse(vs.build_sectors(None).available)
@@ -180,13 +228,15 @@ class ViewModelTests(unittest.TestCase):
         self.assertEqual(empty.sector_rows, [])
         junk = vs.build_sectors({"ok": True, "sectors": [{"sector": "A", "positions": [{"symbol": "Z", "market_value_eur": "x"}, "bad"]}, 5]})
         self.assertEqual(junk.sectors[0].positions, [])  # a position without a number is skipped, nothing crashes
+        old = vs.build_sectors({"ok": True, "sectors": [{"sector": "A", "market_value_eur": 10.0, "positions": []}], "total_market_value_eur": 10.0})  # an answer without the look-through fields
+        self.assertEqual(old.sector_rows[0][:5], ["A", "10 €", "0,0 %", vs.DASH, vs.DASH])
 
     def test_unvalued_positions_and_warnings_are_shown_as_notes(self) -> None:
         env = dict(ENVELOPE, unvalued=[{"symbol": "ZZZ"}], warnings=["UNVALUED_POSITIONS: 1 open position(s) without a EUR valuation are not part of the values"])
         notes = vs.build_sectors(env).notes
         self.assertTrue(any("ZZZ" in n for n in notes))
         self.assertTrue(any(n.startswith("UNVALUED_POSITIONS") for n in notes))
-        self.assertTrue(any("keine Zerlegung" in n for n in notes))
+        self.assertTrue(any("ETF-Look-through" in n and "Risk Guard" in n for n in notes))
 
 
 class PolicyTests(unittest.TestCase):
@@ -228,7 +278,7 @@ class SectorsPageTests(unittest.TestCase):
         self.mcp.start()
         self.assertTrue(pump(40, lambda: self.window._orch is not None), "the dashboard data did not arrive")
         self.window.sidebar.setCurrentRow(SECTORS_PAGE)
-        self.assertTrue(pump(15, lambda: self.view.sector_table.rowCount() == 2), "the sector overview did not load")
+        self.assertTrue(pump(15, lambda: self.view.sector_table.rowCount() == 3), "the sector overview did not load")
 
     def test_the_page_exists_loads_on_opening_and_only_reads(self) -> None:
         self.assertEqual(PAGES[SECTORS_PAGE], "Sektoren")
@@ -241,14 +291,18 @@ class SectorsPageTests(unittest.TestCase):
     def test_tables_and_treemap_show_the_data(self) -> None:
         self.open_page()
         v = self.view
-        self.assertEqual([v.sector_table.item(r, 0).text() for r in range(2)], ["ALPHA", "Nicht zugeordnet"])
-        self.assertEqual(v.sector_table.item(1, 5).text(), "nicht bewertet")
-        self.assertEqual(v.position_table.rowCount(), 4)
+        self.assertEqual([v.sector_table.item(r, 0).text() for r in range(3)], ["ALPHA", "Information Technology (ETF, nicht zuordenbar)", "Nicht zugeordnet"])
+        self.assertEqual(v.sector_table.item(1, 7).text(), "nicht bewertet")
+        self.assertEqual(v.position_table.rowCount(), 5)
+        self.assertEqual([v.etf_table.item(0, c).text() for c in range(3)], ["WORLD", "300 €", "angewendet"])
         self.assertTrue(v.treemap.tiles)
-        self.assertEqual(len(v.treemap.tiles), 2)
-        self.assertEqual(sum(len(t.children) for t in v.treemap.tiles), 4)
+        self.assertEqual(len(v.treemap.tiles), 3)
+        self.assertEqual(sum(len(t.children) for t in v.treemap.tiles), 5)
         tip = v.treemap.tile_at(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(*[c + s / 2 for c, s in zip(v.treemap.tiles[0].children[0].rect[:2], v.treemap.tiles[0].children[0].rect[2:])]))
         self.assertIn("Marktwert", tip)
+        part = v.treemap.tiles[0].children[2]  # the ETF contribution inside ALPHA says that it is not a direct position
+        centre = __import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(part.rect[0] + part.rect[2] / 2, part.rect[1] + part.rect[3] / 2)
+        self.assertIn("ETF-Look-through", v.treemap.tile_at(centre))
 
     def test_the_treemap_paints_offscreen_and_a_screenshot_can_be_taken(self) -> None:
         self.open_page()
@@ -267,7 +321,7 @@ class SectorsPageTests(unittest.TestCase):
         self.open_page()
         self.window.sectors.show_vm(vs.build_sectors({"ok": False, "message": "kaputt"}))
         self.assertIn("kaputt", self.view.message.text())
-        self.assertEqual(self.view.sector_table.rowCount(), 0)
+        self.assertEqual((self.view.sector_table.rowCount(), self.view.etf_table.rowCount()), (0, 0))
         self.assertTrue(self.view.button.isEnabled())
         self.view.treemap.grab()  # painting without data does not fail
 

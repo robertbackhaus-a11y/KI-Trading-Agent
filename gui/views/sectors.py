@@ -9,8 +9,8 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSplitter, QToolTip, QVBoxLayout, QWidget
 
 from ..viewmodels import treemap
-from ..viewmodels.portfolio import DASH
-from ..viewmodels.sectors import GUARD_TIP, UNASSIGNED, POSITION_HEADERS, SECTOR_HEADERS, SectorsVM, fmt_signed_pct
+from ..viewmodels.portfolio import DASH, fmt_eur
+from ..viewmodels.sectors import ETF_HEADERS, GUARD_TIP, KIND_SECTOR, POSITION_HEADERS, SECTOR_HEADERS, SectorsVM, fmt_signed_pct
 from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows
 
 PAD, CAPTION = 2.0, 18.0
@@ -61,8 +61,9 @@ class TreemapWidget(QWidget):
             group = self.vm.sectors[int(group_tile.key)]
             gx, gy, gw, gh = group_tile.rect
             outer = QRectF(gx, gy, gw, gh)
-            painter.fillRect(outer, QColor("#e4e8ec" if group.sector is not None else "#d5d9de"))
-            pen = QPen(QColor("#6b7580"), 1, Qt.PenStyle.SolidLine if group.sector is not None else Qt.PenStyle.DashLine)
+            sector = group.kind == KIND_SECTOR
+            painter.fillRect(outer, QColor("#e4e8ec" if sector else "#dde3ee" if group.kind == "etf_category" else "#d5d9de"))
+            pen = QPen(QColor("#6b7580"), 1, Qt.PenStyle.SolidLine if sector else Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.drawRect(outer.adjusted(0, 0, -1, -1))
             if group_tile.caption_height:
@@ -76,12 +77,14 @@ class TreemapWidget(QWidget):
                 box = QRectF(x, y, w, h)
                 color = QColor(position.color)
                 painter.fillRect(box, color)
-                painter.setPen(QPen(QColor("#ffffff"), 1, Qt.PenStyle.DashLine if position.is_etf else Qt.PenStyle.SolidLine))
+                painter.setPen(QPen(QColor("#ffffff"), 1, Qt.PenStyle.DashLine if position.lookthrough else Qt.PenStyle.SolidLine))
                 painter.drawRect(box.adjusted(0, 0, -1, -1))
                 if w >= MIN_LABEL_W and h >= MIN_LABEL_H:
                     painter.setFont(small)
                     painter.setPen(_text_color(color))
                     lines = [position.label, DASH if position.change_pct is None else fmt_signed_pct(position.change_pct, 1)]
+                    if position.lookthrough and h >= 3 * MIN_LABEL_H / 2 + 14:
+                        lines.append("ETF-Look-through")
                     painter.drawText(box.adjusted(3, 2, -3, -2), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft, "\n".join(lines))
         painter.end()
 
@@ -98,7 +101,8 @@ class TreemapWidget(QWidget):
                 x, y, w, h = child.rect
                 if x <= point.x() < x + w and y <= point.y() < y + h:
                     return group.positions[int(child.key)].tip
-            return f"{group.title}\n{group.count} Positionen, {group.weight_pct:.1f} % des investierten Werts".replace(".", ",")
+            return (f"{group.title}\n{group.direct_count} direkt, {group.etf_count} ETF; {group.weight_pct:.1f} % des investierten Werts "
+                    f"(direkt {fmt_eur(group.direct_value)}, ETF-Look-through {fmt_eur(group.etf_value)})").replace(".", ",", 1)
         return None
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
@@ -131,7 +135,7 @@ class SectorsView(QWidget):
         self.summary = QHBoxLayout()
         outer.addLayout(self.summary)
         self.treemap = TreemapWidget()
-        box = QGroupBox("Portfolio nach Sektoren (Fläche = Marktwert, Farbe = Tagesperformance, grau = keine Daten, gestrichelt = ETF)")
+        box = QGroupBox("Exposure nach Sektoren (Fläche = Marktwert, Farbe = Tagesperformance, grau = keine Daten, gestrichelter Rand = Anteil aus ETF-Look-through)")
         inner = QVBoxLayout(box)
         inner.addWidget(self.treemap)
         legend = QLabel("<span style='color:#c0392b'>■</span> −3 % und tiefer &nbsp; <span style='color:#7a828a'>■</span> 0 % &nbsp; <span style='color:#1f8c4c'>■</span> +3 % und höher &nbsp; "
@@ -144,11 +148,21 @@ class SectorsView(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         self.sector_table = make_table(SECTOR_HEADERS)
         self.position_table = make_table(POSITION_HEADERS)
-        for caption, table in (("Sektoren", self.sector_table), ("Positionen", self.position_table)):
+        self.etf_table = make_table(ETF_HEADERS)
+        self.etf_table.setMaximumHeight(130)
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        for caption, table in (("Sektoren (effektive Exposure: direkt + ETF-Look-through)", self.sector_table), ("ETF-Look-through", self.etf_table)):
             group = QGroupBox(caption)
             layout = QVBoxLayout(group)
             layout.addWidget(table)
-            row.addWidget(group, 1)
+            left_layout.addWidget(group, 3 if table is self.sector_table else 1)
+        row.addWidget(left, 3)
+        group = QGroupBox("Positionen und ETF-Beiträge")
+        layout = QVBoxLayout(group)
+        layout.addWidget(self.position_table)
+        row.addWidget(group, 2)
         split.addWidget(lower)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
@@ -169,6 +183,7 @@ class SectorsView(QWidget):
             self.treemap.set_vm(None)
             fill_table(self.sector_table, SECTOR_HEADERS, [])
             fill_table(self.position_table, POSITION_HEADERS, [])
+            fill_table(self.etf_table, ETF_HEADERS, [])
             return
         self.message.setText("")
         while self.summary.count():
@@ -182,8 +197,9 @@ class SectorsView(QWidget):
         self.treemap.set_vm(vm)
         fill_table(self.sector_table, SECTOR_HEADERS, vm.sector_rows, vm.sector_levels)
         for r, group in enumerate(vm.sectors):
-            item = self.sector_table.item(r, 5)
+            item = self.sector_table.item(r, len(SECTOR_HEADERS) - 1)
             if item is not None:
                 item.setToolTip(GUARD_TIP.get(group.guard, ""))
         fill_table(self.position_table, POSITION_HEADERS, vm.position_rows)
+        fill_table(self.etf_table, ETF_HEADERS, vm.etf_rows, vm.etf_levels)
         self.notes.setText("<small>" + "<br>".join(vm.notes) + "</small>")

@@ -71,7 +71,7 @@ powershell -File deploy\Deploy-TradingAgent.ps1 -Action Rollback -BackupPath C:\
 - **Backups:** replaced files go to `backup\deploy-<timestamp>\` (with `backup-manifest.json`); the database copy is made through the SQLite backup API to `data\trading.db.bak-deploy-<timestamp>`.
 - **Rollback:** copies back only the files saved there; the database is restored only with an explicit `-RestoreDb` (a safety copy `trading.db.bak-pre-rollback-<timestamp>` is made first).
 - **After every deploy** restart running MCP processes or the front end (Python modules are cached per process). The scheduler is not re-registered, no collector is started, and there is no schema migration.
-- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched by the deploy (only the GUI action `set_security_sector` writes it); if it is missing, only a warning is printed.
+- **Private:** `app\universe\sector_map_local.json` (git-ignored, not in the manifest) is never touched by the deploy (only the GUI action `set_security_sector` writes it), and so is `app\universe\etf_lookthrough_local.json` (the private ETF sector allocations of the sector overview, git-ignored, maintained by hand); if it is missing, only a warning is printed.
 - **Desktop GUI:** the manifest groups `gui*` copy the package `gui\` and `requirements-gui.txt` to the production root; the GUI environment `.venv-gui` is not copied but created from `requirements-gui.txt` (see [docs/gui.en.md](docs/gui.en.md)).
 
 ## Architecture
