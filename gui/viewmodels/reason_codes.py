@@ -193,6 +193,16 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "BLOCKED_BY_EXISTING_POSITION": ("Position bereits vorhanden", "Ein neuer Einstieg wird nicht geplant, weil bereits eine Position in diesem Wertpapier besteht."),
     "STRATEGY_ASSIGNMENT_REQUIRED": ("Strategiezuordnung fehlt", "Für das Wertpapier ist noch nicht festgelegt, ob es als Swing- oder Long-Term-Position geführt werden soll."),
     "MARKET_DATA_MISSING": ("Marktdaten fehlen", "Für eine belastbare Bewertung fehlen aktuelle oder ausreichende Kursdaten."),
+    # -- transaction import (open items of the Import page) ------------------------------------------------------------------------
+    "MASTERDATA_CONFLICT": ("Stammdaten-Konflikt", "Die Datenbank hat für das Wertpapier einen anderen Wert als die Datei (zum Beispiel eine andere ISIN). Es wurde nichts überschrieben."),
+    "IDENTIFIER_ALIAS_REFUSED": ("Zuordnung abgelehnt", "Die angeforderte Zuordnung der Kennung zu einem Wertpapier wurde abgelehnt (zum Beispiel fehlt die gleiche WKN als Beleg); ein Import wäre nicht möglich."),
+    "ROWS_BLOCKED": ("Zeilen nicht importierbar", "Einzelne Zeilen der Datei sind ein Konflikt, ein unbekanntes Wertpapier oder ungültig und wurden nicht importiert."),
+    "HISTORICAL_ROWS_NOT_IMPORTED": ("Historische Zeilen übersprungen", "Die Datei enthält Zeilen, die älter sind als die letzte gespeicherte Transaktion. Sie werden nur mit der entsprechenden Option importiert."),
+    "STRATEGY_CONFLICT": ("Strategie widerspricht", "Die angeforderte Strategie weicht von der bestehenden Zuordnung ab; die Zuordnung wurde nicht geändert."),
+    "STRATEGY_EFFECTIVE_FROM_UNCLEAR": ("Strategie-Beginn unklar", "Der Beginn der Strategiezuordnung ließ sich nicht eindeutig bestimmen; es wurde nichts geschrieben."),
+    "CAMPAIGN_INITIALIZATION_REQUIRED": ("Kampagnenstart offen", "Der Start der Swing-Kampagne ist nicht eindeutig ableitbar und muss angegeben werden."),
+    "CAMPAIGN_RECONCILIATION_REQUIRED": ("Kampagne abzugleichen", "Eine bestehende Kampagne stimmt nicht mit der Position überein und braucht eine manuelle Prüfung."),
+    "CAMPAIGN_START_IGNORED": ("Kampagnenstart ignoriert", "Das angegebene Startdatum wurde nicht verwendet."),
 }
 
 KNOWN_REASON_CODES = frozenset(_TEXTS)

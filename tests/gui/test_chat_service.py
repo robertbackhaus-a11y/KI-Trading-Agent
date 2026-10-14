@@ -347,14 +347,14 @@ class ChatViewTests(unittest.TestCase):
 class RealServerToolSurfaceTests(unittest.IsolatedAsyncioTestCase):
     """The tool surface of the REAL Trading MCP server (repository copy; it only lists tools, no database is touched)."""
 
-    async def test_v_w_the_25_real_tools_map_to_17_offered_ones(self) -> None:
+    async def test_v_w_the_27_real_tools_map_to_17_offered_ones(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         core = mc.McpClientCore(sys.executable, str(support.ROOT / "mcp-tools" / "server.py"), str(Path(tmp.name) / "none.db"), Path(tmp.name) / "e.log")
         try:
             self.assertTrue(await core.start(), core.detail)
             catalog = core.tools
-            self.assertEqual(len(catalog), 25)
+            self.assertEqual(len(catalog), 27)
             tools, schemas = tl.offered_tools(catalog)
             names = [t["function"]["name"] for t in tools]
             self.assertEqual(len(names), 17)  # the 13 READ tools of before, get_watchlist, get_sector_overview, get_data_freshness and get_effective_exposure

@@ -1,7 +1,7 @@
 """Which MCP tools a client sees: the server registers every public method of ``Tools``; ``TRADING_EXCLUDE`` hides tools per client process.
 
-The desktop GUI starts the server without an exclude (25 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
-three watchlist actions, ``onboard_security``, ``set_security_strategy`` and ``set_security_sector`` excluded, so it sees the 15 tools of before plus the four READ tools ``get_watchlist``, ``get_sector_overview``, ``get_data_freshness`` and ``get_effective_exposure`` (19).  The 15 tools of before keep their exact description and schema.
+The desktop GUI starts the server without an exclude (27 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
+three watchlist actions, ``onboard_security``, ``set_security_strategy``, ``set_security_sector``, ``check_transaction_import`` and ``import_transactions`` excluded, so it sees the 15 tools of before plus the four READ tools ``get_watchlist``, ``get_sector_overview``, ``get_data_freshness`` and ``get_effective_exposure`` (19).  The 15 tools of before keep their exact description and schema.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
-JAN_EXCLUDE = "add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority,onboard_security,set_security_strategy,set_security_sector"  # the value in Jan's MCP configuration (documented in the architecture docs)
-WATCHLIST_ACTIONS = {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"}  # the three watchlist writes, the onboarding, the strategy write and the sector write
+JAN_EXCLUDE = "add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority,onboard_security,set_security_strategy,set_security_sector,check_transaction_import,import_transactions"  # the value in Jan's MCP configuration (documented in the architecture docs)
+WATCHLIST_ACTIONS = {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector", "check_transaction_import", "import_transactions"}  # the three watchlist writes, the onboarding, the strategy write, the sector write and the two transaction import tools
 READ_ADDITIONS = {"get_watchlist", "get_sector_overview", "get_data_freshness", "get_effective_exposure"}  # the read tools added after the 15 original ones
 NEW_TOOLS = WATCHLIST_ACTIONS | READ_ADDITIONS
 # sha256 prefix of {"description", "input_schema"} of each tool that existed before the watchlist tools; a changed description or parameter fails this test
@@ -72,13 +72,13 @@ def fingerprint(tool) -> str:
 
 @unittest.skipIf(SERVER is None, "the mcp package is only in the Trading venv")
 class ToolVisibilityTests(unittest.TestCase):
-    def test_the_qt_gui_process_gets_all_25_tools(self) -> None:
+    def test_the_qt_gui_process_gets_all_27_tools(self) -> None:
         tools = listing()
-        self.assertEqual(len(tools), 25)
+        self.assertEqual(len(tools), 27)
         self.assertTrue(NEW_TOOLS <= set(tools))
         self.assertEqual(set(tools) - NEW_TOOLS, set(BASELINE))
 
-    def test_jans_exclude_hides_exactly_the_six_write_actions(self) -> None:
+    def test_jans_exclude_hides_exactly_the_eight_write_actions(self) -> None:
         self.assertEqual(set(JAN_EXCLUDE.split(",")), WATCHLIST_ACTIONS)
         everything, jan = listing(), listing(JAN_EXCLUDE)
         self.assertEqual(len(jan), 19)
@@ -89,7 +89,7 @@ class ToolVisibilityTests(unittest.TestCase):
 
     def test_the_exclude_is_tolerant_and_changes_nothing_else(self) -> None:
         self.assertEqual(set(listing(" add_watchlist_candidate , ,nonexistent_tool,")) , set(listing()) - {"add_watchlist_candidate"})
-        self.assertEqual(len(listing("")), 25)
+        self.assertEqual(len(listing("")), 27)
         for name, tool in listing(JAN_EXCLUDE).items():  # excluding does not touch the remaining tools
             if name in BASELINE:
                 self.assertEqual(fingerprint(tool), BASELINE[name], name)
@@ -116,7 +116,12 @@ class ToolVisibilityTests(unittest.TestCase):
         self.assertEqual(params["set_security_sector"], ["sector", "security_id"])
         for forbidden in ("sql", "query", "security_id", "sector", "cik", "active"):  # the onboarding takes no SQL, no id, no sector and no CIK
             self.assertNotIn(forbidden, tools["onboard_security"].input_schema.get("properties", {}), forbidden)
-        for name in WATCHLIST_ACTIONS - {"onboard_security", "set_security_strategy", "set_security_sector"}:
+        self.assertEqual(params["check_transaction_import"], sorted(["file_path", "format", "create_securities", "include_historical", "strategies", "campaign_opened_at", "accept_aliases"]))
+        self.assertEqual(params["import_transactions"], sorted(["file_path", "plan_token", "format", "create_securities", "include_historical", "strategies", "campaign_opened_at", "accept_aliases"]))
+        for name in ("check_transaction_import", "import_transactions"):  # a file path and options, never SQL
+            for forbidden in ("sql", "query", "security_id", "table"):
+                self.assertNotIn(forbidden, tools[name].input_schema.get("properties", {}), f"{name}: {forbidden}")
+        for name in WATCHLIST_ACTIONS - {"onboard_security", "set_security_strategy", "set_security_sector", "check_transaction_import", "import_transactions"}:
             for forbidden in ("sql", "query", "name", "isin", "wkn", "symbol", "exchange", "currency", "sector"):  # nothing that could describe a new security
                 self.assertNotIn(forbidden, tools[name].input_schema.get("properties", {}), f"{name}: {forbidden}")
 

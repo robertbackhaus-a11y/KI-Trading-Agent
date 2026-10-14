@@ -1320,6 +1320,84 @@ class Tools:
         except Exception as exc:
             return {"ok": False, "operation": "onboard_security", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
+    def _transaction_import_sync(self, write: bool, file_path: str, format: str, create_securities: bool, include_historical: bool,
+                                 strategies: list[str] | None, campaign_opened_at: list[str] | None, plan_token: str | None, accept_aliases: list[str] | None = None) -> dict:
+        workflow = self._load_runtime_trading_module("import_workflow")
+        if format not in ("parqet", "canonical"):
+            raise ValueError("format must be parqet or canonical")
+        path = workflow.validate_source_file(file_path)
+        common = dict(fmt=format, create_securities=bool(create_securities), strategies=list(strategies or []), campaign_opened_at=list(campaign_opened_at or []),
+                      include_historical=bool(include_historical), accept_aliases=list(accept_aliases or []))
+        if write:
+            return workflow.compact(workflow.run(self.valves.database_path, path, expected_plan_token=plan_token, **common))
+        return workflow.compact(workflow.check(self.valves.database_path, path, **common))
+
+    async def check_transaction_import(
+        self,
+        file_path: str,
+        format: str = "parqet",
+        create_securities: bool = False,
+        include_historical: bool = False,
+        strategies: list[str] | None = None,
+        campaign_opened_at: list[str] | None = None,
+        accept_aliases: list[str] | None = None,
+    ) -> dict:
+        """ACTION class (for the desktop GUI only; reads a local CSV, writes nothing): the complete dry run of a transaction export.
+
+        Analyses the file, compares it with the database and returns ONE report: the difference (new securities, supplemented master data, master data
+        conflicts, new / existing transactions, rows with a problem, expected position changes), the planned end state (open items) and the reconciliation of
+        the file against the simulated end state (counts, portfolio value, net shares file against positions, integrity_check, foreign_key_check). The real
+        database is opened read-only; the import is simulated on an in-memory copy. plan_token is what import_transactions needs.
+
+        :param file_path: path of a local .csv file (Parqet export or the canonical CSV)
+        :param format: parqet (default) or canonical
+        :param create_securities: true = securities that are not in the Security Master are created from the file (ISIN, WKN, name; nothing is looked up or invented)
+        :param include_historical: true = also import rows older than the latest stored transaction
+        :param strategies: optional list of "SYMBOL=swing" or "SYMBOL=long_term" for held positions without an assignment
+        :param campaign_opened_at: optional list of "SYMBOL=YYYY-MM-DD" when a Swing campaign start cannot be derived
+        :param accept_aliases: optional list of "IDENTIFIER=SYMBOL": the identifier (ISIN) of the file IS that existing security (ADR / GDR / other listing); needs the same WKN on both sides
+        """
+        try:
+            return await asyncio.to_thread(self._transaction_import_sync, False, file_path, format, create_securities, include_historical, strategies, campaign_opened_at, None, accept_aliases)
+        except Exception as exc:
+            return {"ok": False, "operation": "check_transaction_import", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:300]}
+
+    async def import_transactions(
+        self,
+        file_path: str,
+        plan_token: str,
+        format: str = "parqet",
+        create_securities: bool = False,
+        include_historical: bool = False,
+        strategies: list[str] | None = None,
+        campaign_opened_at: list[str] | None = None,
+        accept_aliases: list[str] | None = None,
+    ) -> dict:
+        """ACTION (writes the database; for the desktop GUI only): import a transaction export in ONE transaction, after check_transaction_import.
+
+        plan_token must be the token of a check with the same file and options; it is refused when the file or the database changed since. A backup of the database
+        is made first. In one transaction: new securities (central create path, values from the file only), supplemented master data (empty ISIN / WKN only, nothing
+        is overwritten), new transactions (duplicates are skipped, so the same file twice changes nothing), the positions of the touched securities (rebuilt through the
+        existing rebuild), and strategy / campaign handling only as the explicit import rules say. Any error rolls everything back. Watchlist, strategy assignments and
+        campaigns are not changed because a position was imported. Afterwards the file is reconciled against the database (counts, value, shares, integrity, foreign keys).
+        Prices, FX rates and cash are not part of it.
+
+        :param file_path: the same local .csv file as in the check
+        :param plan_token: plan_token of check_transaction_import
+        :param format: parqet (default) or canonical
+        :param create_securities: same value as in the check
+        :param include_historical: same value as in the check
+        :param strategies: same value as in the check
+        :param campaign_opened_at: same value as in the check
+        :param accept_aliases: same value as in the check
+        """
+        try:
+            if not plan_token:
+                raise ValueError("plan_token is required (run check_transaction_import first)")
+            return await asyncio.to_thread(self._transaction_import_sync, True, file_path, format, create_securities, include_historical, strategies, campaign_opened_at, plan_token, accept_aliases)
+        except Exception as exc:
+            return {"ok": False, "operation": "import_transactions", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:300]}
+
     # ============================================================
     # Runtime helper loading and read-only connection
     # ============================================================

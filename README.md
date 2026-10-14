@@ -17,7 +17,7 @@ The agent is MCP-based and not tied to a particular front end (any MCP-capable L
 Versioned in this repository: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) and
 `scheduler\Manage-TradingTasks.ps1` (management of the scheduled tasks).
 
-Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 25 tools)
+Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 27 tools)
 → runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
 
 This repository contains code only. The database, backups, audit/candidate JSON files,
@@ -47,7 +47,7 @@ This README, the changelog, the contributing guide and the security policy are E
 
 | Topic | English | Deutsch |
 |---|---|---|
-| Queries and examples (25 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
+| Queries and examples (27 MCP tools) | [trading-agent-query-examples.en.md](docs/trading-agent-query-examples.en.md) | [trading-agent-query-examples.de.md](docs/trading-agent-query-examples.de.md) |
 | Architecture reference | [trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md) | [trading-agent-architecture.de.md](docs/trading-agent-architecture.de.md) |
 | Watchlist candidate decision status | [trading-candidate-decision.en.md](docs/trading-candidate-decision.en.md) | [trading-candidate-decision.de.md](docs/trading-candidate-decision.de.md) |
 | Watchlist strategy suggestion | [trading-strategy-suggestion.en.md](docs/trading-strategy-suggestion.en.md) | [trading-strategy-suggestion.de.md](docs/trading-strategy-suggestion.de.md) |

@@ -40,6 +40,7 @@ Die Befehle laufen im Repository-Stammordner. Die Standardwerte zeigen auf die P
 | Watchlist | die gesamte Watchlist mit Strategie, Priorität, Rang, Score, Status, Datenqualität, News-Status und Bewertungsdatum; Filter und Sortierung; Hinzufügen, Entfernen sowie Strategie und Priorität direkt in der Tabelle bearbeiten | `get_watchlist`, `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority`, `onboard_security`, `set_security_strategy`, `set_security_sector` |
 | Sektoren | das Portfolio nach Sektoren: Treemap (Fläche = Marktwert, Gruppierung = Sektor, Farbe = Tagesperformance), Sektor-Tabelle (Marktwert, Anteil, Anzahl Positionen, Tagesperformance, Guard-Status und Limit) und Positionstabelle; nicht zugeordnete Positionen als eigener Bereich „Nicht zugeordnet“ | `get_sector_overview` |
 | Tasks | Betriebsübersicht der sechs geplanten Trading-Tasks: Rhythmus, Status mit letztem Lauf, Datenstand, letzter Erfolg, nächster Lauf, Dauer, Run now (mit Warnung bei veralteten Vorläufern), Log-Ende | Windows Task Scheduler, Logdateien, `get_data_freshness` |
+| Import | ein Transaktionsexport (Parqet oder kanonisches CSV): Datei wählen, „Prüfen“ (Probelauf) zeigt den Unterschied zur Datenbank und den Abgleich der Datei mit dem simulierten Endstand, „Importieren“ (nach einer Prüfung, die etwas ändern würde, und nach einer Bestätigung) importiert in einer Transaktion und zeigt den Abgleich mit der Datenbank | `check_transaction_import`, `import_transactions` |
 | Chat | Fragen an ein lokales Sprachmodell, das über die READ-Tools liest; gestreamte Antwort, optionales Thinking, Tool-Status, Stop, Neuer Chat | Ollama, MCP-Tools |
 | Diagnostics / Settings | MCP-, Datenbank- und Ollama-Status, Pfade, Tool-Klassifizierung, Schema-Hash, letzter Chat-Fehler, Einstellungsformular, MCP-Neustart | `database_status`, Einstellungsdatei |
 
@@ -75,6 +76,7 @@ Technische Reason Codes (z. B. `STOPPED_SWING_MAX_REACHED`) werden als kurzer de
 | ACTION (Strategie) | `set_security_strategy` | nur über „Änderung übernehmen“ der Watchlist-Seite (`call_action`); dem Modell nie angeboten, von `call` verweigert |
 | ACTION (Sektor) | `set_security_sector` | nur über „Änderung übernehmen“ der Watchlist-Seite (`call_action`); schreibt nur die lokale Sector-Map; dem Modell nie angeboten, von `call` verweigert |
 | ACTION (Security Master) | `onboard_security` | nur über den Dialog „Neues Wertpapier aufnehmen“ der Watchlist-Seite (`call_action`, erst Trockenlauf, dann Anlegen); dem Modell nie angeboten, von `call` verweigert |
+| ACTION (Import) | `check_transaction_import`, `import_transactions` | nur über die Schaltflächen „Prüfen“ und „Importieren“ der Seite Import (`call_action`; der Import mit dem Token der Prüfung und nach einer Bestätigung); nie dem Modell angeboten, von `call` abgelehnt |
 | unbekannt | jedes Tool, das nicht in der Tabelle steht | verweigert (Deny by default) |
 
 Die Tabelle liegt in `gui/services/tool_policy.py`; ein Test verlangt, dass jedes Tool des Servers klassifiziert ist. Aktionen sind in der Oberfläche sichtbar von Lesezugriffen getrennt und stecken nie hinter einem Lesezugriff.

@@ -89,9 +89,13 @@ def _text(value: Any) -> Optional[str]:
 
 def normalize(
     symbol: Any, name: Any, asset_type: Any, isin: Any = None, wkn: Any = None, exchange: Any = None, currency: Any = None, country: Any = None,
-    provider_symbols: Any = None, add_to_watchlist: Any = False, watchlist_priority: Any = None,
+    provider_symbols: Any = None, add_to_watchlist: Any = False, watchlist_priority: Any = None, symbol_required: bool = True,
+    isin_checksum: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
-    """``(clean values, errors)``.  Errors are ``{"field", "reason"}``; every field is checked, not just the first failing one."""
+    """``(clean values, errors)``.  Errors are ``{"field", "reason"}``; every field is checked, not just the first failing one.
+
+    ``isin_checksum=False`` keeps the format check only (the ISINs of a broker export are not retyped by hand and synthetic test files exist).
+    ``symbol_required=False`` is for the transaction import: a source such as Parqet identifies a holding by ISIN, WKN and name and has no ticker, and a ticker is never guessed."""
     errors: list[dict[str, str]] = []
 
     def fail(field: str, reason: str) -> None:
@@ -121,7 +125,7 @@ def normalize(
         return out
 
     clean: dict[str, Any] = {
-        "symbol": text("symbol", symbol, required=True, upper=True, pattern=_SYMBOL, hint="BAD_SYMBOL"),
+        "symbol": text("symbol", symbol, required=symbol_required, upper=True, pattern=_SYMBOL, hint="BAD_SYMBOL"),
         "name": text("name", name, required=True, limit=MAX_NAME),
         "isin": text("isin", isin, upper=True, pattern=_ISIN, hint="BAD_ISIN"),
         "wkn": text("wkn", wkn, upper=True, pattern=_WKN, hint="BAD_WKN"),
@@ -129,7 +133,7 @@ def normalize(
         "currency": text("currency", currency, upper=True, pattern=_CURRENCY, hint="BAD_CURRENCY"),
         "country": text("country", country, upper=True, pattern=_COUNTRY, hint="BAD_COUNTRY"),
     }
-    if clean["isin"] and not isin_checksum_ok(clean["isin"]):
+    if isin_checksum and clean["isin"] and not isin_checksum_ok(clean["isin"]):
         fail("isin", "BAD_ISIN_CHECKSUM")
         clean["isin"] = None
     kind = text("asset_type", asset_type, required=True)
@@ -314,6 +318,18 @@ def onboard_security(
         return _result(ERROR, ok=False, message=str(exc)[:200], error="Rollback")
     except Exception as exc:  # noqa: BLE001 - every failure is reported, nothing half-written remains (the transaction rolled back)
         return _result(ERROR, ok=False, error=type(exc).__name__, message=str(exc)[:200])
+
+
+def create_security(conn: sqlite3.Connection, *, symbol: Any, name: Any, asset_type: Any, isin: Any = None, wkn: Any = None, exchange: Any = None, currency: Any = None,
+                    country: Any = None) -> int:
+    """The one place that inserts a security for a caller that runs its own transaction (the transaction import).  Same validation as ``onboard_security``; the symbol may be
+    missing when the ISIN is given.  Raises ``ValueError`` for invalid values; the caller's transaction then rolls back."""
+    clean, errors = normalize(symbol, name, asset_type, isin, wkn, exchange, currency, country, symbol_required=False, isin_checksum=False)
+    if not errors and not clean["symbol"] and not clean["isin"]:
+        errors.append({"field": "symbol", "reason": "SYMBOL_OR_ISIN_REQUIRED"})
+    if errors:
+        raise ValueError("invalid security: " + ", ".join(f"{e['field']}:{e['reason']}" for e in errors))
+    return _create(conn, clean)
 
 
 def _create(conn: sqlite3.Connection, clean: Mapping[str, Any]) -> int:

@@ -3,7 +3,7 @@
 The MCP tools carry no read-only annotations, so the GUI keeps its own table.  A tool that is not listed here is treated as an
 ACTION and denied (deny by default); a test requires every tool of the server to be classified.
 
-Three narrow watchlist ACTIONs and the security onboarding (``GUI_ACTIONS``) may be triggered by an explicit button of the Watchlist page, and only through
+Three narrow watchlist ACTIONs, the security onboarding and the two transaction import tools (``GUI_ACTIONS``) may be triggered by an explicit button of the Watchlist or Import page, and only through
 ``McpService.call_action``; they are never offered to the chat and ``call`` / ``call_sync`` still refuse them.  ``sql_execute``,
 ``approve_swing_promotion`` and every unknown tool stay denied.
 """
@@ -45,10 +45,15 @@ POLICY: dict[str, str] = {
     "set_security_strategy": ACTION,
     # action: sets or removes the LOCAL sector entry of ONE security (sector_map_local.json only, never the database); explicit apply of the Watchlist page, never the chat
     "set_security_sector": ACTION,
+    # actions: the transaction import. check_transaction_import reads a local CSV and writes nothing (a dry run), import_transactions writes in ONE transaction after a check
+    # (token); both are explicit buttons of the Import page, never the chat (a file path is not something an LLM may be given)
+    "check_transaction_import": ACTION,
+    "import_transactions": ACTION,
 }
 
 # the ACTIONs the GUI itself may call (explicit button + confirmation where destructive); everything else is denied
-GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"})
+GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector",
+                                         "check_transaction_import", "import_transactions"})
 
 
 class ToolDenied(Exception):

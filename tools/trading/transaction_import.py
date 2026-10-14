@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
+import security_onboarding
 from corporate_actions import cumulative_split_factor, load_corporate_actions
 
 
@@ -65,6 +66,8 @@ MARKET_DATA_MISSING = "MARKET_DATA_MISSING"
 ROWS_BLOCKED = "ROWS_BLOCKED"
 HISTORICAL_ROWS_NOT_IMPORTED = "HISTORICAL_ROWS_NOT_IMPORTED"
 CAMPAIGN_START_IGNORED = "CAMPAIGN_START_IGNORED"
+MASTERDATA_CONFLICT = "MASTERDATA_CONFLICT"
+ALIAS_NEW, ALIAS_EXISTS, ALIAS_REFUSED = "NEW", "EXISTS", "REFUSED"
 
 
 class TransactionImportError(ValueError):
@@ -129,22 +132,25 @@ class ImportOptions:
     create_securities: bool = False
     strategies: tuple[tuple[str, str], ...] = ()  # (security key, swing|long_term)
     campaign_opened_at: tuple[tuple[str, str], ...] = ()  # (security key, YYYY-MM-DD)
+    accept_aliases: tuple[tuple[str, str], ...] = ()  # (identifier of the file, security key): the file's identifier IS this security (recorded as a source symbol)
     as_of_date: Optional[str] = None  # "today" for assignment lookups (tests); default: current UTC date
 
     @property
     def has_phase_work(self) -> bool:
-        return bool(self.strategies or self.campaign_opened_at)
+        return bool(self.strategies or self.campaign_opened_at or self.accept_aliases)
 
 
 def parse_key_value_options(items: Iterable[str], *, kind: str) -> tuple[tuple[str, str], ...]:
-    """Parse repeated ``KEY=VALUE`` CLI items (``kind`` is ``strategy`` or ``date``)."""
+    """Parse repeated ``KEY=VALUE`` CLI items (``kind`` is ``strategy``, ``date`` or ``alias``)."""
     result: dict[str, str] = {}
     for item in items:
         key, separator, value = item.partition("=")
         key, value = key.strip().upper(), value.strip()
         if not separator or not key or not value:
             raise TransactionImportError(f"expected SYMBOL=VALUE, got {item!r}")
-        if kind == "strategy":
+        if kind == "alias":
+            value = value.upper()
+        elif kind == "strategy":
             value = value.lower().replace("-", "_")
             if value not in IMPORT_STRATEGIES:
                 raise TransactionImportError(f"strategy for {key} must be one of {', '.join(IMPORT_STRATEGIES)}, got {value!r}")
@@ -186,6 +192,8 @@ class NormalizedImportRecord:
     new_security: Optional[dict[str, Any]] = None  # master data of a security that would be created (--create-securities)
     source_external_id: Optional[str] = None  # external id given by the source file
     matched_transaction_id: Optional[int] = None  # existing transaction a DUPLICATE row matches / transaction an inserted row became
+    isin: Optional[str] = None  # master data the file gives for the security (supplements and conflicts are derived from it)
+    wkn: Optional[str] = None
 
     def primitive(self) -> dict[str, Any]:
         return asdict(self)
@@ -202,6 +210,9 @@ class ImportPlan:
     records: tuple[NormalizedImportRecord, ...]
     adapter_name: str = "parqet"
     options: ImportOptions = ImportOptions()
+    masterdata_updates: tuple[dict[str, Any], ...] = ()  # fields (ISIN, WKN) that are empty in the database and unambiguously given by the file
+    masterdata_conflicts: tuple[dict[str, Any], ...] = ()  # the database holds another value than the file: reported, never overwritten
+    identifier_aliases: tuple[dict[str, Any], ...] = ()  # identifiers of the file the caller declared to be an existing security (status NEW / EXISTS / REFUSED)
 
     @property
     def counts(self) -> dict[str, int]:
@@ -240,6 +251,9 @@ class ImportPlan:
             "invalid": counts[CLASS_INVALID.lower()],
             "affected_security_ids": self.affected_security_ids,
             "safe_to_import_new_rows": self.safe_to_import_new_rows,
+            "masterdata_updates": list(self.masterdata_updates),
+            "masterdata_conflicts": list(self.masterdata_conflicts),
+            "identifier_aliases": list(self.identifier_aliases),
             "historical_requires_approval": counts[CLASS_NEW_HISTORICAL.lower()] > 0,
             "conflict_count": counts[CLASS_CONFLICT.lower()],
             "rows": [record.primitive() for record in self.records],
@@ -703,7 +717,15 @@ def _lifecycle_report(conn: sqlite3.Connection, security_ids: Iterable[int], rec
 def _write_backup(conn: sqlite3.Connection, tag: str, backup_path: str | Path | None) -> Path:
     db_row = conn.execute("PRAGMA database_list").fetchone()
     db_path = Path(db_row[2])
-    backup = Path(backup_path) if backup_path is not None else db_path.with_name(f"{db_path.name}.{tag}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.bak")
+    if backup_path is not None:
+        backup = Path(backup_path)
+    else:  # two imports within one second get distinct names; an existing backup is never overwritten
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup = db_path.with_name(f"{db_path.name}.{tag}-{stamp}.bak")
+        counter = 1
+        while backup.exists():
+            counter += 1
+            backup = db_path.with_name(f"{db_path.name}.{tag}-{stamp}-{counter}.bak")
     if backup.exists():
         raise TransactionImportError(f"refusing to overwrite backup: {backup}")
     # Use a separate read-only connection so the backup contains the
@@ -936,7 +958,7 @@ def _record_from_row(
             currency=row.currency, broker=row.broker, realized_gain=row.realized_gain, source_notes=row.notes, external_id=external_id,
             classification=classification, classification_reason=reason, holding=row.name, asset_type=row.asset_type,
             source_values=row.source_values, security_resolution=resolution, symbol=row.symbol, new_security=new_security,
-            source_external_id=row.external_id, matched_transaction_id=matched,
+            source_external_id=row.external_id, matched_transaction_id=matched, isin=row.isin, wkn=row.wkn,
         )
 
     def fingerprint(key: Any) -> str:
@@ -945,6 +967,14 @@ def _record_from_row(
             amount=amount, fees=fees, taxes=taxes, currency=row.currency, broker=row.broker or "",
         )
 
+    if security_id is not None and row.isin:
+        # A row that was found only by its NAME and whose ISIN differs from the security's ISIN is not that security (two share classes can share a name): a conflict, never
+        # merged.  A match by ISIN, source symbol, symbol or WKN stays valid (an ADR / GDR row can carry another ISIN than the listing the master holds); the difference is
+        # reported as a master-data conflict and nothing is overwritten.
+        known = conn.execute("SELECT isin FROM security WHERE id = ?", (security_id,)).fetchone()
+        if known is not None and known[0] and str(known[0]).upper() != row.isin.upper() and resolution == "EXACT_NORMALIZED_HOLDING_NAME":
+            return build(CLASS_CONFLICT, f"{MASTERDATA_CONFLICT}: the file ISIN {row.isin} differs from ISIN {str(known[0]).upper()} of the security the row resolved to ({resolution})",
+                         sid=security_id, external_id=None)
     if security_id is None:
         creatable = (
             options.create_securities and resolution_error is not None and resolution_error.startswith("UNKNOWN_SECURITY")
@@ -955,10 +985,18 @@ def _record_from_row(
             if options.create_securities and reason.startswith("UNKNOWN_SECURITY") and not row.name:
                 reason += "; a name is required to create the security"
             return build(CLASS_UNKNOWN_SECURITY, reason, sid=None, external_id=None)
+        # the master data of a new security must pass the validation of the central create path (ISIN checksum, formats) - nothing is invented or repaired
+        kind = (row.asset_type or "").strip().lower()
+        defaulted = kind not in security_onboarding.ASSET_TYPES  # Parqet says "Security", not stock or ETF: the schema default applies and the result says so
+        clean, errors = security_onboarding.normalize(row.symbol, row.name, "stock" if defaulted else kind, row.isin, row.wkn, None, row.currency, None, symbol_required=False, isin_checksum=False)
+        if any(e["field"] == "wkn" for e in errors):  # an unusable WKN is left out, the rest of the security stays valid
+            clean, errors = security_onboarding.normalize(row.symbol, row.name, "stock" if defaulted else kind, row.isin, None, None, row.currency, None, symbol_required=False, isin_checksum=False)
+        if errors:
+            return build(CLASS_UNKNOWN_SECURITY, "INVALID_MASTERDATA: " + ", ".join(f"{e['field']}:{e['reason']}" for e in errors), sid=None, external_id=None)
         key = _security_key(row, pending)
         spec = pending.setdefault(key, {
-            "key": key, "symbol": row.symbol, "isin": row.isin, "wkn": row.wkn, "name": row.name, "currency": row.currency,
-            "asset_type": row.asset_type or "stock",
+            "key": key, "symbol": clean["symbol"], "isin": clean["isin"], "wkn": clean["wkn"], "name": row.name, "currency": row.currency,
+            "asset_type": clean["asset_type"], "asset_type_defaulted": defaulted,
         })
         digest = fingerprint(f"new:{key}")
         if digest in seen:
@@ -1002,6 +1040,111 @@ def _record_from_row(
     return build(classification, reason, sid=security_id, external_id=external_id, matched=int(exact[0]["id"]) if exact else None)
 
 
+_WKN_FORMAT = re.compile(r"^[A-Z0-9]{6}$")
+_ISIN_FORMAT = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+
+
+def _alias_symbols(conn: sqlite3.Connection, security_id: int) -> set[str]:
+    """The persisted source symbols of a security (``source_symbols``, any source): the explicit identifier mapping the resolver already uses."""
+    try:
+        return {str(r[0]).upper() for r in conn.execute("SELECT symbol FROM source_symbols WHERE security_id = ? AND symbol IS NOT NULL", (security_id,))}
+    except sqlite3.OperationalError:  # a database without the table has no mapping (the resolver treats it the same way)
+        return set()
+
+
+def _plan_aliases(conn: sqlite3.Connection, adapter: ImportAdapter, records: Iterable[NormalizedImportRecord], options: ImportOptions) -> list[dict[str, Any]]:
+    """The identifier aliases the caller asked for, each with its status.
+
+    An alias says: the identifier (ISIN) that the source file carries IS this security of the Security Master (an ADR / GDR or alternative listing of the same instrument).  It
+    is only accepted with evidence: the file rows of that identifier carry a WKN, and it is the WKN of the security.  The ISIN must belong to no other security and the
+    security must not have another identifier of this source yet.  The alias is stored as a source symbol of the source (``Parqet``); the existing resolver then finds it first.
+    """
+    rows = list(records)
+    out: list[dict[str, Any]] = []
+    for identifier, key in options.accept_aliases:
+        entry: dict[str, Any] = {"identifier": identifier, "security": key, "security_id": None, "symbol": None, "status": ALIAS_REFUSED, "reason": ""}
+        out.append(entry)
+        targets = conn.execute("SELECT id, symbol, isin, wkn FROM security WHERE upper(symbol) = ? OR upper(isin) = ? OR CAST(id AS TEXT) = ?", (key, key, key)).fetchall()
+        if len(targets) != 1:
+            entry["reason"] = "no security with that symbol, ISIN or id" if not targets else "the key is ambiguous; use the ISIN or the security id"
+            continue
+        target = targets[0]
+        entry.update(security_id=int(target["id"]), symbol=target["symbol"] or key)
+        owner = conn.execute("SELECT id FROM security WHERE upper(isin) = ? AND id <> ?", (identifier, int(target["id"]))).fetchone()
+        file_wkns = {str(r.wkn).upper() for r in rows if (r.identifier or "").upper() == identifier and r.wkn}
+        if owner is not None:
+            entry["reason"] = f"the identifier is the ISIN of security {owner[0]}"
+        elif identifier in _alias_symbols(conn, int(target["id"])):
+            entry["status"] = ALIAS_EXISTS
+        elif not any((r.identifier or "").upper() == identifier for r in rows):
+            entry["reason"] = "the identifier does not occur in the file"
+        elif not file_wkns or not target["wkn"]:
+            entry["reason"] = "evidence missing: the file and the security master both need a WKN"
+        elif file_wkns != {str(target["wkn"]).upper()}:
+            entry["reason"] = f"the WKN differs (file {sorted(file_wkns)}, security master {target['wkn']})"
+        else:
+            source = conn.execute("SELECT id FROM data_sources WHERE name = ?", (adapter.source_label,)).fetchone()
+            other = conn.execute("SELECT symbol FROM source_symbols WHERE security_id = ? AND source_id = ?", (int(target["id"]), int(source[0]))).fetchone() if source else None
+            if other is not None:
+                entry["reason"] = f"the security already has the {adapter.source_label} identifier {other[0]}"
+            else:
+                entry["status"] = ALIAS_NEW
+    return out
+
+
+def _masterdata_changes(conn: sqlite3.Connection, records: Iterable[NormalizedImportRecord], aliases: Iterable[dict[str, Any]] = ()) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Master data of EXISTING securities that the file delivers: ``(updates, conflicts)``.
+
+    Only ISIN and WKN, only when the file gives exactly one value.  An empty database field is supplemented (an ISIN only when it passes the checksum and no other security has it);
+    a database value that differs from the file is a conflict and is never overwritten.  Name, symbol and currency of an existing security are never touched.
+    """
+    accepted = {(int(a["security_id"]), a["identifier"]) for a in aliases if a["status"] in (ALIAS_NEW, ALIAS_EXISTS)}
+    wanted: dict[int, dict[str, set[str]]] = {}
+    for record in records:
+        if record.security_id is None or record.classification in _BLOCKING_CLASSES:
+            continue
+        item = wanted.setdefault(int(record.security_id), {"isin": set(), "wkn": set()})
+        if record.isin:
+            item["isin"].add(record.isin.upper())
+        if record.wkn:
+            item["wkn"].add(record.wkn.upper())
+    updates: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+    for security_id in sorted(wanted):
+        row = conn.execute("SELECT symbol, name, isin, wkn FROM security WHERE id = ?", (security_id,)).fetchone()
+        if row is None:
+            continue
+        label = row["symbol"] or row["name"]
+        for field_name in ("isin", "wkn"):
+            values = sorted(wanted[security_id][field_name])
+            current = (row[field_name] or "").upper() or None
+            if field_name == "isin" and current is not None:  # an identifier the resolver already maps to this security (source symbol) or that the caller accepted is no conflict
+                known = _alias_symbols(conn, security_id)
+                values = [v for v in values if v != current and v not in known and (security_id, v) not in accepted]
+            if not values:
+                continue
+            base = {"security_id": security_id, "symbol": label, "field": field_name}
+            if len(values) > 1:
+                conflicts.append({**base, "database": current, "file": values, "reason": "the file gives several values"})
+            elif current is None:
+                value = values[0]
+                other = conn.execute(f"SELECT id FROM security WHERE upper({field_name}) = ? AND id <> ?", (value, security_id)).fetchone()
+                if field_name == "isin" and not _ISIN_FORMAT.match(value):
+                    conflicts.append({**base, "database": None, "file": value, "reason": "invalid ISIN format; not written"})
+                elif field_name == "wkn" and not _WKN_FORMAT.match(value):
+                    conflicts.append({**base, "database": None, "file": value, "reason": "invalid WKN format; not written"})
+                elif other is not None:
+                    conflicts.append({**base, "database": None, "file": value, "reason": f"the value belongs to security {other[0]}; not written"})
+                else:
+                    updates.append({**base, "from": None, "to": value})
+            elif current != values[0]:
+                reason = "the database value differs from the file; not overwritten"
+                if field_name == "isin" and row["wkn"] and {w.upper() for w in wanted[security_id]["wkn"]} == {str(row["wkn"]).upper()}:
+                    reason += f"; the WKN is the same - if it is the same instrument (ADR / GDR / other listing), record the identifier with --accept-identifier-alias {values[0]}={row['symbol'] or security_id}"
+                conflicts.append({**base, "database": current, "file": values[0], "reason": reason})
+    return updates, conflicts
+
+
 def build_import_plan(
     conn: sqlite3.Connection,
     csv_path: str | Path,
@@ -1021,12 +1164,15 @@ def build_import_plan(
     pending: dict[str, dict[str, Any]] = {}
     records = [_record_from_row(row, adapter, conn, latest_date, cache, seen, pending, options) for row in adapter.parse(path)]
     source_hash = _file_hash(path)
+    aliases = _plan_aliases(conn, adapter, records, options)
+    updates, conflicts = _masterdata_changes(conn, records, aliases)
     token_payload = {
         "file_sha256": source_hash, "db_state": db_token, "adapter": adapter.name, "rows": [record.primitive() for record in records],
-        "options": {"create_securities": options.create_securities, "strategies": options.strategies, "campaign_opened_at": options.campaign_opened_at},
+        "masterdata": [updates, conflicts, aliases],
+        "options": {"create_securities": options.create_securities, "strategies": options.strategies, "campaign_opened_at": options.campaign_opened_at, "accept_aliases": options.accept_aliases},
     }
     plan_token = hashlib.sha256(json.dumps(token_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-    return ImportPlan(str(path), source_hash, len(records), latest_date, db_token, plan_token, tuple(records), adapter.name, options)
+    return ImportPlan(str(path), source_hash, len(records), latest_date, db_token, plan_token, tuple(records), adapter.name, options, tuple(updates), tuple(conflicts), tuple(aliases))
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------
@@ -1337,13 +1483,10 @@ _SECURITY_COLUMNS = ("symbol", "isin", "wkn", "name", "currency", "asset_type", 
 
 
 def _create_security(conn: sqlite3.Connection, spec: Mapping[str, Any]) -> int:
-    available = {row[1] for row in conn.execute("PRAGMA table_info(security)")}
-    values = {**spec, "active": 1}
-    columns = [name for name in _SECURITY_COLUMNS if name in available and values.get(name) is not None]
-    cursor = conn.execute(
-        f"INSERT INTO security({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})", [values[name] for name in columns],
+    """The insert is the central create path of the security master (``security_onboarding``); this module only supplies the values the file explicitly contains."""
+    return security_onboarding.create_security(
+        conn, symbol=spec["symbol"], name=spec["name"], asset_type=spec["asset_type"], isin=spec["isin"], wkn=spec["wkn"], currency=spec["currency"],
     )
-    return int(cursor.lastrowid)
 
 
 def _summary(
@@ -1423,7 +1566,28 @@ def apply_import_plan(
             if spec is not None and spec["key"] not in key_to_id:
                 security_id = _create_security(conn, spec)
                 key_to_id[spec["key"]] = security_id
-                created.append({"security_id": security_id, "symbol": spec["symbol"], "isin": spec["isin"], "name": spec["name"], "currency": spec["currency"]})
+                created.append({"security_id": security_id, "symbol": spec["symbol"], "isin": spec["isin"], "wkn": spec.get("wkn"), "name": spec["name"], "currency": spec["currency"],
+                                "asset_type": spec["asset_type"], "asset_type_defaulted": bool(spec.get("asset_type_defaulted"))})
+
+        masterdata_updated: list[dict[str, Any]] = []
+        for update in fresh.masterdata_updates:
+            cursor = conn.execute(f"UPDATE security SET {update['field']} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND {update['field']} IS NULL", (update["to"], update["security_id"]))
+            if cursor.rowcount != 1:
+                raise TransactionImportError(f"master data of security {update['security_id']} changed during the import")
+            masterdata_updated.append(update)
+
+        aliases_recorded: list[dict[str, Any]] = []
+        alias_refusals: list[dict[str, Any]] = []
+        for alias in fresh.identifier_aliases:
+            if alias["status"] == ALIAS_REFUSED:  # an explicit request that cannot be honoured stops the import: nothing is written (the dry run shows it as an open item)
+                if not dry_run:
+                    raise TransactionImportError(f"identifier alias {alias['identifier']} -> {alias['security']} refused: {alias['reason']}")
+                alias_refusals.append(alias)
+            if alias["status"] == ALIAS_NEW:
+                source = conn.execute("SELECT id FROM data_sources WHERE name = ?", (adapter.source_label,)).fetchone()
+                source_id = int(source[0]) if source else int(conn.execute("INSERT INTO data_sources(name, source_type, active) VALUES (?, 'import', 1)", (adapter.source_label,)).lastrowid)
+                conn.execute("INSERT INTO source_symbols(security_id, source_id, symbol) VALUES (?, ?, ?)", (alias["security_id"], source_id, alias["identifier"]))
+                aliases_recorded.append(alias)
 
         inserted: list[int] = []
         finals: list[NormalizedImportRecord] = []
@@ -1491,6 +1655,11 @@ def apply_import_plan(
             if _position_shares(conn, security_id) > _EPS and _market_data_missing(conn, security_id):
                 open_items.append({"code": MARKET_DATA_MISSING, "security_id": security_id, "symbol": _security_label(conn, security_id),
                                    "detail": "no market data yet; run Resolve-TradingSecurities.py and Backfill-TradingMarketData.py"})
+        for alias in alias_refusals:
+            open_items.append({"code": "IDENTIFIER_ALIAS_REFUSED", "security_id": alias["security_id"], "symbol": alias["symbol"], "detail": f"{alias['identifier']} -> {alias['security']}: {alias['reason']}"})
+        for conflict in fresh.masterdata_conflicts:
+            open_items.append({"code": MASTERDATA_CONFLICT, "security_id": conflict["security_id"], "symbol": conflict["symbol"],
+                               "detail": f"{conflict['field']}: {conflict['reason']} (database {conflict.get('database')}, file {conflict.get('file')})"})
         if blocked_rows:
             open_items.append({"code": ROWS_BLOCKED, "security_id": None, "symbol": None, "detail": f"{len(blocked_rows)} row(s) not importable (conflict, unknown security or invalid)", "rows": blocked_rows[:50]})
         skipped_historical = [r.source_row_number for r in fresh.records if r.classification == CLASS_NEW_HISTORICAL and not include_historical]
@@ -1503,8 +1672,11 @@ def apply_import_plan(
             1 for security_id in candidates if shares_before.get(security_id, 0.0) <= _EPS and _position_shares(conn, security_id) > _EPS
         )
         summary = _summary(fresh, approved, inserted, include_historical, created, new_positions, phase, reconciliation, open_items)
+        summary["masterdata_updated"] = len(masterdata_updated)
+        summary["masterdata_conflicts"] = len(fresh.masterdata_conflicts)
+        summary["identifier_aliases_recorded"] = len(aliases_recorded)
         changed = bool(
-            inserted or created or summary["strategy_assignments_created"] or phase["campaigns"]
+            inserted or created or masterdata_updated or aliases_recorded or summary["strategy_assignments_created"] or phase["campaigns"]
             or any(report.get("applied") for report in reconciliation)
         )
         if changed:
@@ -1535,6 +1707,8 @@ def apply_import_plan(
         "plan_token": fresh.plan_token,
         "summary": summary, "created_securities": created, "strategy_assignments": phase["assignments"],
         "campaigns_created": phase["campaigns"], "campaign_reconciliation": reconciliation, "open_items": open_items,
+        "masterdata_updated": masterdata_updated, "masterdata_conflicts": list(fresh.masterdata_conflicts), "identifier_aliases": list(fresh.identifier_aliases),
+        "identifier_aliases_recorded": aliases_recorded,
     }
 
 
@@ -1545,6 +1719,7 @@ def preview_import(
     adapter: ImportAdapter | str = "parqet",
     options: Optional[ImportOptions] = None,
     include_historical: bool = False,
+    inspect: Optional[Callable[[sqlite3.Connection, dict[str, Any]], Any]] = None,
 ) -> dict[str, Any]:
     """Complete dry run: the full execution path on an in-memory copy; the real database is only read.
 
@@ -1559,6 +1734,8 @@ def preview_import(
         conn.backup(copy)
         copy_plan = build_import_plan(copy, csv_path, adapter=adapter, options=options)
         planned = apply_import_plan(copy, copy_plan, expected_plan_token=copy_plan.plan_token, include_historical=include_historical, dry_run=True)
+        if inspect is not None:  # the simulated end state, while the in-memory copy is still open (read-only use by the caller)
+            inspect(copy, planned)
     finally:
         copy.close()
     return {**plan.primitive(), "dry_run": True, "planned": planned}

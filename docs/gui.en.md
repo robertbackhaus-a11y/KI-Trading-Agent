@@ -40,6 +40,7 @@ The commands run from the repository root. The defaults point to the production 
 | Watchlist | the whole watchlist with strategy, priority, rank, score, status, data quality, news status and evaluation date; filters and sorting; add, remove, and edit strategy and priority in the table | `get_watchlist`, `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority`, `onboard_security`, `set_security_strategy`, `set_security_sector` |
 | Sektoren | the portfolio by sector: treemap (area = market value, grouped by sector, colour = daily change), sector table (market value, share, number of positions, daily change, guard status and limit) and a position table; positions without a sector as their own area "Nicht zugeordnet" | `get_sector_overview` |
 | Tasks | operations overview of the six scheduled Trading tasks: rhythm, state with the last run, data stand, last success, next run, duration, Run now (with a warning when a prerequisite is stale), log tail | Windows Task Scheduler, log files, `get_data_freshness` |
+| Import | a transaction export (Parqet or canonical CSV): choose the file, "Pruefen" (dry run) shows the difference to the database and the reconciliation of the file against the simulated end state, "Importieren" (after a check that would change something, after a confirmation) imports in one transaction and shows the reconciliation against the database | `check_transaction_import`, `import_transactions` |
 | Chat | questions to a local language model that reads through the READ tools; streamed answer, optional thinking, tool status, Stop, New chat | Ollama, MCP tools |
 | Diagnostics / Settings | MCP, database and Ollama status, paths, tool classification, schema hash, last chat error, settings form, MCP restart | `database_status`, settings file |
 
@@ -75,6 +76,7 @@ Technical reason codes (for example `STOPPED_SWING_MAX_REACHED`) are shown as a 
 | ACTION (strategy) | `set_security_strategy` | only through the apply button of the Watchlist page (`call_action`); never offered to the model, refused by `call` |
 | ACTION (sector) | `set_security_sector` | only through the apply button of the Watchlist page (`call_action`); writes only the local sector map; never offered to the model, refused by `call` |
 | ACTION (Security Master) | `onboard_security` | only through the dialog "Neues Wertpapier aufnehmen" of the Watchlist page (`call_action`, dry run first, then create); never offered to the model, refused by `call` |
+| ACTION (import) | `check_transaction_import`, `import_transactions` | only through the buttons "Pruefen" and "Importieren" of the Import page (`call_action`; the import with the token of the check and after a confirmation); never offered to the model, refused by `call` |
 | unknown | every tool that is not in the table | denied (deny by default) |
 
 The table lives in `gui/services/tool_policy.py`; a test requires that every tool of the server is classified. Actions are visibly separate from reads in the user interface and are never hidden behind a read.

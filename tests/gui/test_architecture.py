@@ -33,8 +33,8 @@ class ArchitectureTests(unittest.TestCase):
         names = {str(p.relative_to(GUI)).replace("\\", "/") for p in files()}
         self.assertEqual(names - {"__init__.py", "services/__init__.py", "viewmodels/__init__.py", "views/__init__.py"}, {
             "__main__.py", "app.py", "services/background.py", "services/chat_service.py", "services/mcp_client.py", "services/ollama_client.py", "services/settings.py",
-            "services/task_model.py", "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/effective.py", "viewmodels/onboarding.py", "viewmodels/portfolio.py", "viewmodels/reason_codes.py", "viewmodels/sectors.py", "viewmodels/tasks.py", "viewmodels/treemap.py", "viewmodels/watchlist.py", "viewmodels/watchlist_edit.py",
-            "views/_common.py", "views/chat.py", "views/dashboard.py", "views/diagnostics.py", "views/onboarding.py", "views/planner.py", "views/sectors.py", "views/tasks.py", "views/watchlist.py", "views/watchlist_edit.py",
+            "services/task_model.py", "services/task_service.py", "services/tool_loop.py", "services/tool_policy.py", "viewmodels/chat.py", "viewmodels/effective.py", "viewmodels/onboarding.py", "viewmodels/portfolio.py", "viewmodels/reason_codes.py", "viewmodels/sectors.py", "viewmodels/tasks.py", "viewmodels/transaction_import.py", "viewmodels/treemap.py", "viewmodels/watchlist.py", "viewmodels/watchlist_edit.py",
+            "views/_common.py", "views/chat.py", "views/dashboard.py", "views/diagnostics.py", "views/onboarding.py", "views/planner.py", "views/sectors.py", "views/tasks.py", "views/transaction_import.py", "views/watchlist.py", "views/watchlist_edit.py",
         })
         self.assertFalse((GUI / "controllers").exists())
         self.assertFalse((GUI / "widgets").exists())

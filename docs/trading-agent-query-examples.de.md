@@ -380,7 +380,7 @@ Kurze Formulierungen, die zuverlässig auf das passende Tool führen.
 
 ## A. Technische Zuordnung
 
-Alle 25 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
+Alle 27 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
 
 | Tool | Zugriff | Zweck | Wichtige Parameter | Kapitel |
 |---|---|---|---|---|
@@ -399,6 +399,8 @@ Alle 25 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen
 | `get_sector_overview` | Lesen | Offene Positionen nach Sektor: Marktwert in EUR, Anteil am investierten Wert, Anzahl Positionen, wertgewichtete Tagesperformance, Limit und Status des Sector Guards; Positionen ohne Sektor-Eintrag als eigene Gruppe (`sector` = null); ETFs mit offizieller Sektorverteilung werden in Sektor-Beiträge aufgeteilt (Look-through, je Eintrag `origin`), sonst eine Position | `as_of`, `lookthrough` | – |
 | `get_data_freshness` | Lesen | Datenstand der Daten, die die geplanten Tasks erzeugen: Marktdaten, FX, News/Events, Fundamentals sowie Stand der letzten Discovery- und Intelligence-Reports; nur Fakten, mit den vorhandenen Altersregeln | – | – |
 | `get_effective_exposure` | Lesen | Effektive Einzelwert-Exposure: direkte Position + Anteil derselben Firma in allen gehaltenen ETFs (Holdings der Anbieter, synthetische ETFs nach Index-Zusammensetzung), größte Firmen mit Direkt-/ETF-Anteil, Abdeckung je ETF; wendet kein Limit an | `as_of`, `top` | – |
+| `check_transaction_import` | Liest eine lokale CSV, schreibt nichts (nur Desktop-GUI) | Der vollständige Probelauf eines Transaktionsexports (Parqet oder kanonisches CSV): Unterschied zur Datenbank (neue Wertpapiere, ergänzte Stammdaten, Stammdaten-Konflikte, neue / vorhandene Transaktionen, Problemzeilen, erwartete Positionsänderungen), der geplante Endstand und der Abgleich der Datei mit dem simulierten Endstand; liefert den `plan_token` für den Import | `file_path`, `format`, `create_securities`, `include_historical`, `strategies`, `campaign_opened_at` | – |
+| `import_transactions` | Schreiben (nur Desktop-GUI) | Importiert die Datei einer Prüfung in EINER Transaktion (vorher Sicherung, jeder Fehler macht alles rückgängig): neue Wertpapiere, leere ISIN / WKN ergänzt, neue Transaktionen, Positionen der berührten Wertpapiere neu berechnet; danach der Abgleich der Datei mit der Datenbank. Braucht den `plan_token` der Prüfung | `file_path`, `plan_token`, `format`, `create_securities`, `include_historical`, `strategies`, `campaign_opened_at` | – |
 | `onboard_security` | Schreiben (Security Master, nur Desktop-GUI) | Ein neues Wertpapier aus ausdrücklich angegebenen Werten anlegen; Standard ist die Prüfung (`dry_run=true`), optional Provider-Symbole und Watchlist-Eintrag in derselben Transaktion; nichts wird recherchiert oder geraten | `symbol`, `name`, `asset_type`, `isin`, `wkn`, `exchange`, `currency`, `country`, `provider_symbols`, `add_to_watchlist`, `watchlist_priority`, `dry_run` | – |
 | `rank_watchlist` | Lesen | Technischer Momentum-/Trend-Rang der Watchlist | – | 3 |
 | `remove_watchlist_candidate` | Schreiben (nur Watchlist) | Ein Wertpapier von der Watchlist entfernen; Positionen, Strategien und Kampagnen bleiben unberührt | `security_id` | – |

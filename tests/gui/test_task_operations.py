@@ -8,6 +8,7 @@ import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -391,6 +392,16 @@ class ErrorStateTests(unittest.TestCase):
 class OperationsPageTests(unittest.TestCase):
     def setUp(self) -> None:
         qapp()
+        import gui.app
+
+        class FrozenDatetime(datetime):  # the page compares the fixture times with "now": pin that to the fixtures' NOW, whatever the time of day
+            @classmethod
+            def now(cls, tz=None):
+                return NOW if tz is None else NOW.astimezone(tz)
+
+        patcher = unittest.mock.patch.object(gui.app, "datetime", FrozenDatetime)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmpdir = tempfile.TemporaryDirectory()
         self.tmp = Path(self.tmpdir.name)
         (self.tmp / "orch.json").write_text(json.dumps(fixtures.orchestrator_envelope(5_000.0)), encoding="utf-8")

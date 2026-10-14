@@ -267,7 +267,29 @@ async def get_effective_exposure(as_of: str | None = None, top: int = 25) -> str
     return _text({"ok": True, "operation": "get_effective_exposure", "as_of": "2026-10-13", "total_market_value_eur": 0.0, "top": [], "etfs": [], "coverage": {}, "checks": {}, "warnings": []})
 
 
-for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, get_sector_overview, get_data_freshness, get_effective_exposure, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector):
+async def check_transaction_import(file_path: str, format: str = "parqet", create_securities: bool = False, include_historical: bool = False,
+                                   strategies: list[str] | None = None, campaign_opened_at: list[str] | None = None) -> str:
+    """Action tool (fake): the dry run of a transaction import; the answer is the fixture file named by FAKE_IMPORT_FILE (mode check)."""
+    _calls("check_transaction_import", {"file_path": file_path, "format": format, "create_securities": create_securities, "include_historical": include_historical,
+                                         "strategies": strategies, "campaign_opened_at": campaign_opened_at})
+    if file_path.endswith("broken.csv"):
+        return _text({"ok": False, "operation": "check_transaction_import", "result": "ERROR", "changed": False, "error": "FileNotFoundError", "message": "file not found: broken.csv"})
+    path = os.environ.get("FAKE_IMPORT_FILE")
+    return Path(path).read_text(encoding="utf-8") if path and Path(path).exists() else _text({"ok": False, "message": "no fixture"})
+
+
+async def import_transactions(file_path: str, plan_token: str, format: str = "parqet", create_securities: bool = False, include_historical: bool = False,
+                              strategies: list[str] | None = None, campaign_opened_at: list[str] | None = None) -> str:
+    """Action tool (fake): the import; the answer is the fixture file named by FAKE_IMPORT_DONE_FILE (mode write); a wrong token is refused like the real tool does."""
+    _calls("import_transactions", {"file_path": file_path, "plan_token": plan_token, "format": format, "create_securities": create_securities, "include_historical": include_historical,
+                                    "strategies": strategies, "campaign_opened_at": campaign_opened_at})
+    if plan_token != "tok-check-1":
+        return _text({"ok": False, "operation": "import_transactions", "result": "ERROR", "changed": False, "error": "TransactionImportError", "message": "import plan is stale; check again before writing"})
+    path = os.environ.get("FAKE_IMPORT_DONE_FILE")
+    return Path(path).read_text(encoding="utf-8") if path and Path(path).exists() else _text({"ok": False, "message": "no fixture"})
+
+
+for fn in (database_status, run_trading_orchestrator, rank_watchlist, slow, crash, broken, failing, sql_execute, get_watchlist, get_sector_overview, get_data_freshness, get_effective_exposure, add_watchlist_candidate, remove_watchlist_candidate, set_watchlist_priority, onboard_security, set_security_strategy, set_security_sector, check_transaction_import, import_transactions):
     server.tool(name=fn.__name__, description=fn.__doc__ or fn.__name__, structured_output=False)(fn)
 
 print("fake-mcp ready", file=sys.stderr, flush=True)

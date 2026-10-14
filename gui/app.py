@@ -29,6 +29,7 @@ from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.effective import build_effective, direct_performance
 from .viewmodels.sectors import build_sectors
+from .viewmodels import transaction_import as import_vm
 from .viewmodels.tasks import build_task_rows, summarize
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
 from .viewmodels.watchlist_edit import describe_sector, describe_strategy, priority_saved, sector_saved, strategy_saved
@@ -38,10 +39,11 @@ from .views.diagnostics import DiagnosticsView
 from .views.planner import PlannerView
 from .views.sectors import SectorsView
 from .views.tasks import TasksView
+from .views.transaction_import import TransactionImportView
 from .views.watchlist import WatchlistView
 
-PAGES = ("Dashboard", "Planner / Actions", "Watchlist", "Sektoren", "Tasks", "Chat", "Diagnostics / Settings")
-WATCHLIST_PAGE, SECTORS_PAGE, TASKS_PAGE, CHAT_PAGE, DIAGNOSTICS_PAGE = 2, 3, 4, 5, 6
+PAGES = ("Dashboard", "Planner / Actions", "Watchlist", "Sektoren", "Tasks", "Import", "Chat", "Diagnostics / Settings")
+WATCHLIST_PAGE, SECTORS_PAGE, TASKS_PAGE, IMPORT_PAGE, CHAT_PAGE, DIAGNOSTICS_PAGE = 2, 3, 4, 5, 6, 7
 WATCHLIST_STALE_S = 60  # opening the page reloads a list older than this; there is no polling
 SECTORS_STALE_S = 60  # the same for the sector overview
 STATE_TEXT = {"CONNECTED": "verbunden", "CONNECTING": "verbindet …", "DISCONNECTED": "getrennt", "ERROR": "Fehler"}
@@ -83,9 +85,10 @@ class MainWindow(QMainWindow):
         self.sidebar.addItems(PAGES)
         self.stack = QStackedWidget()
         self.dashboard, self.planner, self.watchlist, self.sectors, self.tasks = DashboardView(), PlannerView(), WatchlistView(), SectorsView(), TasksView()
+        self.import_page = TransactionImportView()
         self.chat = ChatView(settings.ollama_model, settings.think_enabled)
         self.diagnostics = DiagnosticsView(settings)
-        for page in (self.dashboard, self.planner, self.watchlist, self.sectors, self.tasks, self.chat, self.diagnostics):
+        for page in (self.dashboard, self.planner, self.watchlist, self.sectors, self.tasks, self.import_page, self.chat, self.diagnostics):
             self.stack.addWidget(page)
         layout.addWidget(self.sidebar)
         layout.addWidget(self.stack, 1)
@@ -112,6 +115,8 @@ class MainWindow(QMainWindow):
         self.tasks.refresh_requested.connect(self.refresh_tasks)
         self.tasks.run_requested.connect(self.run_task)
         self.tasks.log_requested.connect(self.show_task_log)
+        self.import_page.check_requested.connect(self.check_import)
+        self.import_page.import_requested.connect(self.run_import)
         self.diagnostics.refresh_requested.connect(self.refresh_diagnostics)
         self.diagnostics.restart_requested.connect(self.restart_mcp)
         self.diagnostics.ollama_check_requested.connect(self.check_ollama)
@@ -405,6 +410,35 @@ class MainWindow(QMainWindow):
 
     def create_onboarding(self, arguments: dict) -> None:
         self._onboarding_action(arguments, create=True)
+
+    # -- transaction import (explicit buttons of the Import page) -----------------------------------------------------------------
+    def check_import(self, arguments: dict) -> None:
+        """``check_transaction_import``: the dry run; nothing is written."""
+        self.log.info("Import-Prüfung angefordert")  # neither the path nor any value in the log
+
+        def done(res: McpResult) -> None:
+            view = import_vm.build(res.tool_ok, res.data, res.message)
+            self.log.info("Import-Prüfung: %s", "ok" if view.ok else res.kind)
+            self.import_page.show_view(view, arguments if view.ok else None)
+            self.statusBar().showMessage(view.headline, 8000)
+
+        self.mcp.call_action("check_transaction_import", arguments, timeout=300, on_done=done)
+
+    def run_import(self, arguments: dict, plan_token: str) -> None:
+        """``import_transactions`` with the token of the check; the cached lists are dropped afterwards (positions and securities may have changed)."""
+        self.log.info("Import angefordert")
+
+        def done(res: McpResult) -> None:
+            view = import_vm.build(res.tool_ok, res.data, res.message)
+            self.log.info("Import: %s", "geschrieben" if view.written else ("ok" if view.ok else res.kind))
+            self.import_page.show_view(view, None)
+            self.statusBar().showMessage(view.headline, 8000)
+            if view.written:
+                self._watchlist_at = None
+                self._sectors_at = None
+                self.refresh_orchestrator()
+
+        self.mcp.call_action("import_transactions", {**arguments, "plan_token": plan_token}, timeout=300, on_done=done)
 
     def add_existing_to_watchlist(self, security_id: int) -> None:
         """A security the onboarding check found in the Security Master: the ordinary add action (no second copy is ever created)."""
