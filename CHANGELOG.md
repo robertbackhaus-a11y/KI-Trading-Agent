@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Desktop GUI, Watchlist page: the ISIN column was pushed far out of the visible area by the wide columns to its left (it sat behind the name, entry status and news columns); it is now displayed right behind the name and no column is wider than 260 px (the full text stays in the tooltip). Column model, editors, sorting and filters are unchanged.
+
 ### Removed
 - The unused column `security.sector` (free text of a former import; nothing read or wrote it, the sector of the risk guards and of the news mapping comes from the sector map). New and reset databases no longer have it, the view `v_watchlist` no longer selects it, `get_watchlist` detail rows and the research prompt no longer carry it, and the new migration `Migrate-TradingDropSecuritySector.py` removes it from an existing database (dry run by default, backup copy, ids and all other fields unchanged; the old values are not copied into any sector map). `security.industry` stays. Run the migration after deploying; the sector map files are not touched.
 

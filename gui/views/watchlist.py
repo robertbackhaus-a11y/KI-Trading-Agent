@@ -28,6 +28,8 @@ SORT_KEY = Qt.ItemDataRole.UserRole
 EDIT_COLUMN = len(HEADERS)  # the marker column "Änderung" behind the data columns
 STRATEGY_COLUMN, PRIORITY_COLUMN = 2, 3
 SECTOR_COLUMN = HEADERS.index("Sektor")  # the last data column, behind the ISIN
+ISIN_COLUMN, ISIN_VISUAL_POSITION = HEADERS.index("ISIN"), 2  # the ISIN is a normal column, displayed right behind the name (it used to sit off-screen at the far right)
+MAX_COLUMN_WIDTH = 260  # a long text (name, entry status, news, sector) must not push the other columns out of sight; the full text is in the tooltip
 
 
 def _color(level: str) -> str:
@@ -208,6 +210,7 @@ class WatchlistView(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().moveSection(ISIN_COLUMN, ISIN_VISUAL_POSITION)  # shown behind the name; the logical columns (editors, sorting, indices) stay as they are
         self.table.setSortingEnabled(True)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         outer.addWidget(self.table, 1)
@@ -354,6 +357,9 @@ class WatchlistView(QWidget):
         if column >= 0:
             self.table.sortItems(column, order)
         self.table.resizeColumnsToContents()
+        for c in range(len(HEADERS)):
+            if self.table.columnWidth(c) > MAX_COLUMN_WIDTH:
+                self.table.setColumnWidth(c, MAX_COLUMN_WIDTH)
         if selected is not None:
             for r in range(self.table.rowCount()):
                 if self.table.item(r, 0).data(ROW_ID) == selected:
