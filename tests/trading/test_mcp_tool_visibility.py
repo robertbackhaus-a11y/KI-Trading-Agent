@@ -1,7 +1,7 @@
 """Which MCP tools a client sees: the server registers every public method of ``Tools``; ``TRADING_EXCLUDE`` hides tools per client process.
 
-The desktop GUI starts the server without an exclude (23 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
-three watchlist actions, ``onboard_security``, ``set_security_strategy`` and ``set_security_sector`` excluded, so it sees the 15 tools of before plus the two READ tools ``get_watchlist`` and ``get_sector_overview`` (17).  The 15 tools of before keep their exact description and schema.
+The desktop GUI starts the server without an exclude (24 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
+three watchlist actions, ``onboard_security``, ``set_security_strategy`` and ``set_security_sector`` excluded, so it sees the 15 tools of before plus the three READ tools ``get_watchlist``, ``get_sector_overview`` and ``get_data_freshness`` (18).  The 15 tools of before keep their exact description and schema.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 JAN_EXCLUDE = "add_watchlist_candidate,remove_watchlist_candidate,set_watchlist_priority,onboard_security,set_security_strategy,set_security_sector"  # the value in Jan's MCP configuration (documented in the architecture docs)
 WATCHLIST_ACTIONS = {"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector"}  # the three watchlist writes, the onboarding, the strategy write and the sector write
-READ_ADDITIONS = {"get_watchlist", "get_sector_overview"}  # the read tools added after the 15 original ones
+READ_ADDITIONS = {"get_watchlist", "get_sector_overview", "get_data_freshness"}  # the read tools added after the 15 original ones
 NEW_TOOLS = WATCHLIST_ACTIONS | READ_ADDITIONS
 # sha256 prefix of {"description", "input_schema"} of each tool that existed before the watchlist tools; a changed description or parameter fails this test
 BASELINE = {
@@ -72,24 +72,24 @@ def fingerprint(tool) -> str:
 
 @unittest.skipIf(SERVER is None, "the mcp package is only in the Trading venv")
 class ToolVisibilityTests(unittest.TestCase):
-    def test_the_qt_gui_process_gets_all_23_tools(self) -> None:
+    def test_the_qt_gui_process_gets_all_24_tools(self) -> None:
         tools = listing()
-        self.assertEqual(len(tools), 23)
+        self.assertEqual(len(tools), 24)
         self.assertTrue(NEW_TOOLS <= set(tools))
         self.assertEqual(set(tools) - NEW_TOOLS, set(BASELINE))
 
     def test_jans_exclude_hides_exactly_the_six_write_actions(self) -> None:
         self.assertEqual(set(JAN_EXCLUDE.split(",")), WATCHLIST_ACTIONS)
         everything, jan = listing(), listing(JAN_EXCLUDE)
-        self.assertEqual(len(jan), 17)
+        self.assertEqual(len(jan), 18)
         self.assertEqual(set(everything) - set(jan), WATCHLIST_ACTIONS)
         self.assertTrue(READ_ADDITIONS <= set(jan))  # Jan keeps the read tools
         self.assertTrue(WATCHLIST_ACTIONS.isdisjoint(jan))
-        self.assertEqual(set(jan), set(BASELINE) | READ_ADDITIONS)  # exactly the tools of before plus the two read tools
+        self.assertEqual(set(jan), set(BASELINE) | READ_ADDITIONS)  # exactly the tools of before plus the three read tools
 
     def test_the_exclude_is_tolerant_and_changes_nothing_else(self) -> None:
         self.assertEqual(set(listing(" add_watchlist_candidate , ,nonexistent_tool,")) , set(listing()) - {"add_watchlist_candidate"})
-        self.assertEqual(len(listing("")), 23)
+        self.assertEqual(len(listing("")), 24)
         for name, tool in listing(JAN_EXCLUDE).items():  # excluding does not touch the remaining tools
             if name in BASELINE:
                 self.assertEqual(fingerprint(tool), BASELINE[name], name)

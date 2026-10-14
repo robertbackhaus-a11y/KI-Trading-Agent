@@ -3,6 +3,9 @@
 Only the six known Trading tasks are ever queried or started.  "Run now" starts the *existing* scheduled task (``Start-ScheduledTask``);
 the underlying script is never launched directly and no task definition is changed.  The scheduler's own ``MultipleInstances = IgnoreNew``
 stays in effect; the GUI additionally refuses to start a task that is already running or disabled.  Output is JSON, never localized text.
+
+Besides the run state the query reads the *definition* (triggers, ``StartWhenAvailable``, ``MultipleInstances``, time limit, missed runs) and, from the log
+file next to it, when it was last written and the last error-looking line of its end -- read-only, nothing is changed.
 """
 
 from __future__ import annotations
@@ -10,8 +13,9 @@ from __future__ import annotations
 import json
 import ntpath
 import os
+import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Protocol
@@ -50,6 +54,21 @@ class PowerShellRunner:
         return done.returncode, done.stdout.decode("utf-8-sig", "replace"), done.stderr.decode("utf-8", "replace")
 
 
+DAY_NAMES = ((1, "So"), (2, "Mo"), (4, "Di"), (8, "Mi"), (16, "Do"), (32, "Fr"), (64, "Sa"))  # the DaysOfWeek bit mask of the scheduler
+
+
+@dataclass(frozen=True)
+class TriggerInfo:
+    """One trigger of a task: ``kind`` is ``Daily``, ``Weekly``, ``Logon`` or ``Other``; ``time`` is the local ``HH:MM`` of the start."""
+
+    kind: str
+    time: Optional[str] = None
+    days_interval: int = 1
+    weeks_interval: int = 1
+    days_of_week: int = 0
+    enabled: bool = True
+
+
 @dataclass
 class TaskInfo:
     name: str
@@ -59,6 +78,14 @@ class TaskInfo:
     next_run: Optional[datetime] = None
     last_result: Optional[int] = None
     log_file: str = ""
+    triggers: list[TriggerInfo] = field(default_factory=list)
+    start_when_available: Optional[bool] = None
+    multiple_instances: str = ""  # IgnoreNew, Parallel, Queue, StopExisting
+    time_limit: str = ""  # ISO 8601 duration of the scheduler, e.g. PT2H
+    missed_runs: Optional[int] = None
+    log_modified: Optional[datetime] = None  # when the log file was last written (about the end of the last run)
+    log_size: Optional[int] = None
+    log_hint: str = ""  # the last error-looking line at the end of the log
 
     @property
     def running(self) -> bool:
@@ -95,8 +122,11 @@ def query_script() -> str:
         "[pscustomobject]@{ name = $n; found = $true; state = [string]$t.State; "
         "last_run = $(if ($i.LastRunTime -gt [datetime]'2001-01-01') { $i.LastRunTime.ToString('o') } else { $null }); "
         "next_run = $(if ($i.NextRunTime -gt [datetime]'2001-01-01') { $i.NextRunTime.ToString('o') } else { $null }); "
-        "last_result = [int64]$i.LastTaskResult } } }; "
-        "ConvertTo-Json -InputObject @($rows) -Compress"
+        "last_result = [int64]$i.LastTaskResult; missed_runs = [int]$i.NumberOfMissedRuns; "
+        "start_when_available = [bool]$t.Settings.StartWhenAvailable; multiple_instances = [string]$t.Settings.MultipleInstances; time_limit = [string]$t.Settings.ExecutionTimeLimit; "
+        "triggers = @($t.Triggers | ForEach-Object { [pscustomobject]@{ type = [string]$_.CimClass.CimClassName; start = [string]$_.StartBoundary; "
+        "days_interval = [int]$_.DaysInterval; weeks_interval = [int]$_.WeeksInterval; days_of_week = [int]$_.DaysOfWeek; enabled = [bool]$_.Enabled } }) } } }; "
+        "ConvertTo-Json -InputObject @($rows) -Compress -Depth 5"
     )
 
 
@@ -117,6 +147,19 @@ def _when(value) -> Optional[datetime]:
     return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
 
 
+def _trigger(raw) -> Optional[TriggerInfo]:
+    if not isinstance(raw, dict):
+        return None
+    kind_raw = str(raw.get("type") or "")
+    kind = "Daily" if "Daily" in kind_raw else "Weekly" if "Weekly" in kind_raw else "Logon" if "Logon" in kind_raw else "Other"
+    start = _when(raw.get("start"))
+    interval = raw.get("days_interval")
+    weeks = raw.get("weeks_interval")
+    mask = raw.get("days_of_week")
+    return TriggerInfo(kind, start.strftime("%H:%M") if start else None, int(interval) if isinstance(interval, (int, float)) and interval else 1,
+                       int(weeks) if isinstance(weeks, (int, float)) and weeks else 1, int(mask) if isinstance(mask, (int, float)) else 0, raw.get("enabled") is not False)
+
+
 def parse_tasks(text: str) -> list[TaskInfo]:
     """JSON of :func:`query_script` -> one :class:`TaskInfo` per known task (in display order); an absent task is ``found=False``."""
     try:
@@ -133,11 +176,51 @@ def parse_tasks(text: str) -> list[TaskInfo]:
             out.append(TaskInfo(task.name, log_file=task.log_file))
             continue
         result = item.get("last_result")
+        triggers = [t for t in (_trigger(raw) for raw in (item.get("triggers") if isinstance(item.get("triggers"), list) else [])) if t is not None]
+        missed = item.get("missed_runs")
         out.append(TaskInfo(
             task.name, True, str(item.get("state") or ""), _when(item.get("last_run")), _when(item.get("next_run")),
             int(result) if isinstance(result, (int, float)) else None, task.log_file,
+            triggers, item.get("start_when_available") if isinstance(item.get("start_when_available"), bool) else None, str(item.get("multiple_instances") or ""),
+            str(item.get("time_limit") or ""), int(missed) if isinstance(missed, (int, float)) else None,
         ))
     return out
+
+
+def _days_text(mask: int) -> str:
+    names = [name for bit, name in DAY_NAMES if mask & bit]
+    return ", ".join(names) if names else "?"
+
+
+def trigger_line(trigger: TriggerInfo) -> str:
+    """One trigger in words, for the details: ``täglich 17:15``, ``alle 2 Tage 10:00``, ``wöchentlich So 10:00``, ``bei Anmeldung``."""
+    suffix = "" if trigger.enabled else " (deaktiviert)"
+    at = f" {trigger.time}" if trigger.time else ""
+    if trigger.kind == "Daily":
+        return (("täglich" if trigger.days_interval <= 1 else f"alle {trigger.days_interval} Tage") + at) + suffix
+    if trigger.kind == "Weekly":
+        return (("wöchentlich" if trigger.weeks_interval <= 1 else f"alle {trigger.weeks_interval} Wochen") + f" {_days_text(trigger.days_of_week)}" + at) + suffix
+    if trigger.kind == "Logon":
+        return "bei Anmeldung" + suffix
+    return "anderer Auslöser" + suffix
+
+
+def rhythm_text(triggers: list[TriggerInfo]) -> str:
+    """The rhythm of a task from its (enabled) triggers: ``täglich 17:15 + bei Anmeldung``, ``2× täglich 08:15, 17:45``, ``wöchentlich So 10:00 + bei Anmeldung``."""
+    active = [t for t in triggers if t.enabled]
+    if not active:
+        return "kein Auslöser" if not triggers else "Auslöser deaktiviert"
+    parts: list[str] = []
+    daily = sorted((t for t in active if t.kind == "Daily"), key=lambda t: t.time or "")
+    if len(daily) == 1:
+        parts.append(trigger_line(daily[0]))
+    elif len(daily) > 1:
+        parts.append(f"{len(daily)}× täglich " + ", ".join(t.time or "?" for t in daily))
+    parts += [trigger_line(t) for t in active if t.kind == "Weekly"]
+    if any(t.kind == "Logon" for t in active):
+        parts.append("bei Anmeldung")
+    parts += [trigger_line(t) for t in active if t.kind == "Other"]
+    return " + ".join(parts)
 
 
 def result_text(code: Optional[int]) -> str:
@@ -170,6 +253,36 @@ def start_task(runner: CommandRunner, name: str, timeout: float = 30.0) -> tuple
     if code != 0:
         return False, f"Start fehlgeschlagen ({code}): {err.strip().splitlines()[0] if err.strip() else 'keine Meldung'}"
     return True, f"Task {name} gestartet"
+
+
+_ERROR_LINE = re.compile(r"traceback|\berror\b|\bfailed\b|\bfehler\b|getaddrinfo|forbidden|timed? ?out", re.I)
+_BENIGN_LINE = re.compile(r"failed[^:=\n]{0,24}[:=]\s*0\b|failed:\s*\[\s*\]|\"failed\":\s*0|errors\"?:\s*(\{\s*\}|0\b)|no errors|keine fehler", re.I)
+HINT_LINES, HINT_BYTES = 80, 40_000
+
+
+def log_hint(tail_text: str) -> str:
+    """The last error-looking line of the end of a log (a line that says ``0 failed`` or ``errors: {}`` does not count), at most 200 characters; empty if none."""
+    for line in reversed(tail_text.splitlines()[-HINT_LINES:]):
+        if _ERROR_LINE.search(line) and not _BENIGN_LINE.search(line):
+            text = line.strip()
+            return text if len(text) <= 200 else text[:197] + "…"
+    return ""
+
+
+def enrich_with_logs(tasks: list[TaskInfo], logs_dir: str) -> list[TaskInfo]:
+    """Adds the write time and size of every task's log file and the last error-looking line at its end (read-only; a missing log leaves the fields empty)."""
+    for task in tasks:
+        path = log_path(logs_dir, task.name)
+        if path is None:
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        task.log_modified, task.log_size = datetime.fromtimestamp(stat.st_mtime), stat.st_size
+        tail = tail_log(path, max_lines=HINT_LINES, max_bytes=HINT_BYTES)
+        task.log_hint = log_hint(tail.text) if tail.available else ""
+    return tasks
 
 
 def log_path(logs_dir: str, name: str) -> Optional[Path]:
@@ -211,7 +324,7 @@ class TaskBackend:
         self.runner = runner or PowerShellRunner()
 
     def query(self) -> list[TaskInfo]:
-        return query_tasks(self.runner)
+        return enrich_with_logs(query_tasks(self.runner), self.logs_dir)
 
     def start(self, name: str) -> tuple[bool, str]:
         return start_task(self.runner, name)

@@ -1127,6 +1127,30 @@ class Tools:
         except Exception as exc:
             return {"ok": False, "operation": "get_sector_overview", "error": "SECTOR_OVERVIEW_FAILED", "message": str(exc)}
 
+    def _get_data_freshness_sync(self) -> dict:
+        freshness = self._load_runtime_trading_module("data_freshness")
+        discovery = self._load_runtime_trading_module("discovery_report")
+        intelligence = self._load_runtime_trading_module("intelligence_report")
+        conn = self._readonly_import_connection(self.valves.database_path)
+        try:
+            return freshness.build_data_freshness(conn, discovery_module=discovery, intelligence_module=intelligence, discovery_dir=self._discovery_report_directory(),
+                                                  intelligence_dir=self._market_intelligence_report_directory())
+        finally:
+            conn.close()
+
+    async def get_data_freshness(self) -> dict:
+        """The age of the data the scheduled tasks produce (read-only: no web, no DB write, no task is started).
+
+        Per source the facts the data carry: market data (latest daily bar, oldest latest bar of a held position, last fetch), FX rates (latest rate date, oldest currency,
+        last fetch), news and SEC events (last fetch, latest article, latest event), fundamentals (last fetch, period end, filing date) and the generated_at / evaluation
+        date of the last finished candidate-discovery and market-intelligence report (written only after a complete run). The existing age rules are returned in
+        rules. Facts only, no verdict; the Windows Task Scheduler state is a separate source.
+        """
+        try:
+            return await asyncio.to_thread(self._get_data_freshness_sync)
+        except Exception as exc:
+            return {"ok": False, "operation": "get_data_freshness", "error": "DATA_FRESHNESS_FAILED", "message": str(exc)}
+
     def _watchlist_write_sync(self, operation: str, *args, **kwargs) -> dict:
         admin = self._load_runtime_trading_module("watchlist_admin")
         conn = self._connect()

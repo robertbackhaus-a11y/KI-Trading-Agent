@@ -143,7 +143,7 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(pump(10, lambda: len(w.tasks.run_buttons) == 6))
         self.assertFalse(w.tasks.run_buttons[TASKS[1].name].isEnabled())
         self.assertTrue(w.tasks.run_buttons[TASKS[0].name].isEnabled())
-        self.assertEqual(w.tasks.table.item(1, 1).text(), "läuft")
+        self.assertTrue(w.tasks.table.item(1, 2).text().startswith("läuft"))
 
     def test_a_failed_scheduler_query_is_shown_not_raised(self) -> None:
         self.backend.fail_query = True

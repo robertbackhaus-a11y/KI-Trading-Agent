@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "description": "Explicit list of the runtime files deployed to the production root. Nothing outside this list is ever copied, overwritten or deleted. Keep it in sync with the repo: tests/trading/test_deploy_manifest.py fails if a runtime file is neither listed here nor in not_deployed.",
-  "expected_tool_count": 23,
+  "expected_tool_count": 24,
   "groups": [
     {
       "name": "app",
@@ -43,6 +43,7 @@
         "candidate_discovery.py",
         "capital_state.py",
         "corporate_actions.py",
+        "data_freshness.py",
         "decision_engine.py",
         "discovery_report.py",
         "entry_sizing.py",
@@ -123,6 +124,7 @@
         "mcp_client.py",
         "ollama_client.py",
         "settings.py",
+        "task_model.py",
         "task_service.py",
         "tool_loop.py",
         "tool_policy.py"

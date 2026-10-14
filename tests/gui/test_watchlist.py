@@ -215,7 +215,7 @@ class WatchlistWindowTests(unittest.TestCase):
         return [json.loads(line) for line in self.calls_file.read_text(encoding="utf-8").splitlines()] if self.calls_file.exists() else []
 
     def actions(self) -> list[dict]:
-        return [c for c in self.calls() if c["tool"] != "get_watchlist"]
+        return [c for c in self.calls() if c["tool"] not in ("get_watchlist", "get_data_freshness")]
 
     def open_page(self) -> None:
         self.window.show()

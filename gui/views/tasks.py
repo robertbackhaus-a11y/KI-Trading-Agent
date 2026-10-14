@@ -1,11 +1,12 @@
-"""Tasks page: the six scheduled Trading tasks, "Run now" (an ACTION, with confirmation) and a log tail."""
+"""Tasks page: the operations overview of the six scheduled Trading tasks (rhythm, state, data stand, last success, next run, duration), "Run now" (an ACTION, with
+confirmation and a warning when a prerequisite is stale or failed) and a log tail."""
 
 from __future__ import annotations
 
 from typing import Callable, Optional
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QBrush, QColor, QFontDatabase
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from ..services.task_service import LogTail
@@ -13,7 +14,8 @@ from ..viewmodels.portfolio import DASH
 from ..viewmodels.tasks import TaskRowVM
 from ._common import LEVEL_COLORS, fill_table, make_table
 
-HEADERS = ["Task", "Status", "Letzter Lauf", "Nächster Lauf", "Ergebnis", "Aktion", "Log"]
+HEADERS = ["Task", "Rhythmus", "Status", "Datenstand", "Letzter Erfolg", "Nächster Lauf", "Dauer", "Aktion", "Log"]
+ACTION_COLUMN, LOG_COLUMN, DATA_COLUMN = 7, 8, 3
 
 
 class TasksView(QWidget):
@@ -39,7 +41,7 @@ class TasksView(QWidget):
         self.message.setWordWrap(True)
         outer.addWidget(self.message)
         self.table = make_table(HEADERS)
-        self.table.setMinimumHeight(230)
+        self.table.setMinimumHeight(260)
         outer.addWidget(self.table)
         self.log_title = QLabel("Log: (Task wählen)")
         outer.addWidget(self.log_title)
@@ -49,32 +51,47 @@ class TasksView(QWidget):
         self.log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         outer.addWidget(self.log, 1)
         self.run_buttons: dict[str, QPushButton] = {}
+        self.rows: dict[str, TaskRowVM] = {}
+        self.last_confirm_text = ""  # what the last confirmation said (tests)
 
     @staticmethod
-    def _ask_text(name: str) -> str:
-        return f"Den bestehenden Scheduled Task\n\n{name}\n\njetzt starten?\n\nDas ist eine Aktion: Der Task läuft wie geplant (Netzzugriff und Datenbank-Schreibzugriffe des Tasks sind möglich)."
+    def _ask_text(name: str, warning: str = "") -> str:
+        text = f"Den bestehenden Scheduled Task\n\n{name}\n\njetzt starten?\n\nDas ist eine Aktion: Der Task läuft wie geplant (Netzzugriff und Datenbank-Schreibzugriffe des Tasks sind möglich)."
+        if warning:
+            text += f"\n\nAchtung – nötige Daten sind nicht in Ordnung:\n{warning}\n\nDas Ergebnis des Tasks kann dadurch unvollständig oder veraltet sein. Es wird kein anderer Task gestartet."
+        return text
 
     def _ask(self, name: str) -> bool:
-        box = QMessageBox(QMessageBox.Icon.Warning, "Task starten", self._ask_text(name), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, self)
+        row = self.rows.get(name)
+        self.last_confirm_text = self._ask_text(name, row.run_warning if row else "")
+        box = QMessageBox(QMessageBox.Icon.Warning, "Task starten", self.last_confirm_text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, self)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         return box.exec() == QMessageBox.StandardButton.Yes
 
-    def show_rows(self, rows: list[TaskRowVM], refreshed: str = DASH) -> None:
+    def show_rows(self, rows: list[TaskRowVM], refreshed: str = DASH, summary: str = "") -> None:
         self.button.setEnabled(True)
         self.refreshed.setText("Letzte Aktualisierung: " + refreshed)
-        self.message.setText("")
-        fill_table(self.table, HEADERS, [[r.name, r.status, r.last_run, r.next_run, r.result, "", ""] for r in rows], [r.level for r in rows])
+        self.message.setText(summary)
+        self.rows = {r.name: r for r in rows}
+        fill_table(self.table, HEADERS, [[r.title or r.name, r.rhythm, r.status_line or r.status, r.data_stand, r.last_success, r.next_run, r.duration, "", ""] for r in rows], [r.level for r in rows])
         self.run_buttons.clear()
         for index, row in enumerate(rows):
+            for column in range(len(HEADERS)):
+                item = self.table.item(index, column)
+                if item is not None:
+                    item.setToolTip(row.details or item.text())
+            data = self.table.item(index, DATA_COLUMN)
+            if data is not None and row.data_level:
+                data.setForeground(QBrush(QColor(LEVEL_COLORS["blocker" if row.data_level == "blocker" else "warning"])))
             run = QPushButton("▶ Jetzt starten …")
             run.setEnabled(row.can_run)
             run.setToolTip(row.run_hint)
             run.clicked.connect(lambda _=False, n=row.name: self._on_run(n))
             self.run_buttons[row.name] = run
-            self.table.setCellWidget(index, 5, run)
+            self.table.setCellWidget(index, ACTION_COLUMN, run)
             log = QPushButton("Log anzeigen")
             log.clicked.connect(lambda _=False, n=row.name: self.log_requested.emit(n))
-            self.table.setCellWidget(index, 6, log)
+            self.table.setCellWidget(index, LOG_COLUMN, log)
         self.table.resizeColumnsToContents()
 
     def _on_run(self, name: str) -> None:

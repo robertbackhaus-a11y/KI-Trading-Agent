@@ -23,6 +23,7 @@ POLICY: dict[str, str] = {
     "evaluate_swing_candidates": READ,
     "evaluate_watchlist_candidates": READ,
     "get_candidate_discovery": READ,
+    "get_data_freshness": READ,
     "get_market_intelligence": READ,
     "get_opportunity_view": READ,
     "get_sector_overview": READ,

@@ -28,7 +28,7 @@ from .services.tool_policy import classify
 from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.sectors import build_sectors
-from .viewmodels.tasks import build_task_rows
+from .viewmodels.tasks import build_task_rows, summarize
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
 from .viewmodels.watchlist_edit import describe_sector, describe_strategy, priority_saved, sector_saved, strategy_saved
 from .views.chat import ChatView
@@ -63,6 +63,8 @@ class MainWindow(QMainWindow):
         self._db_text = DASH
         self._last_refresh: Optional[datetime] = None
         self._tasks_at: Optional[datetime] = None
+        self._task_infos = None  # the last scheduler answer
+        self._freshness = None  # the last get_data_freshness answer (None = not available)
         self._watchlist = None
         self._watchlist_at: Optional[datetime] = None
         self._sectors = None
@@ -216,6 +218,9 @@ class MainWindow(QMainWindow):
             return
         self._inflight.add("tasks")
         self.runner.submit(self.backend.query, self._on_tasks)
+        if "freshness" not in self._inflight:
+            self._inflight.add("freshness")
+            self.mcp.call("get_data_freshness", timeout=30, on_done=self._on_freshness)  # the data stand of what the tasks produce (READ); without MCP the column stays empty
 
     def _on_tasks(self, ok: bool, value) -> None:
         self._inflight.discard("tasks")
@@ -224,7 +229,21 @@ class MainWindow(QMainWindow):
             self.tasks.show_error(f"Scheduler-Abfrage fehlgeschlagen: {value}")
             return
         self._tasks_at = datetime.now()
-        self.tasks.show_rows(build_task_rows(value), fmt_time(self._tasks_at))
+        self._task_infos = value
+        self._render_tasks()
+
+    def _on_freshness(self, res: McpResult) -> None:
+        self._inflight.discard("freshness")
+        self._freshness = res.data if res.tool_ok and isinstance(res.data, dict) else None
+        if not res.tool_ok:
+            self.log.info("Datenstand der Tasks nicht verfügbar: %s", res.kind)
+        self._render_tasks()
+
+    def _render_tasks(self) -> None:
+        if self._task_infos is None:
+            return
+        rows = build_task_rows(self._task_infos, self._freshness, datetime.now(), self.backend.logs_dir)
+        self.tasks.show_rows(rows, fmt_time(self._tasks_at), summarize(rows, self._freshness is not None))
 
     # -- watchlist ------------------------------------------------------------------------------------------
     def refresh_watchlist(self) -> None:
