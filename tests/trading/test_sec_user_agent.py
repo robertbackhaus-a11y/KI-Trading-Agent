@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 TOOLS = Path(__file__).resolve().parents[2] / "tools" / "trading"
-NOREPLY = "Trading-Agent Robert Backhaus <295335214+someone@users.noreply.github.com>"  # the shape that produced the 403
+NOREPLY = "Trading-Agent Robert Backhaus <1234567+someone@users.noreply.github.com>"  # the shape that produced the 403
 REAL = "Trading-Agent Example Person person@example.org"
 PLACEHOLDER = "Trading-Agent contact@example.com"
 SCRIPTS = ("Backfill-TradingEventsNews.py", "Backfill-TradingFundamentalsSEC.py")

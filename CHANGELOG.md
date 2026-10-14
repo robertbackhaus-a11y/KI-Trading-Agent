@@ -2,16 +2,14 @@
 
 ## [Unreleased]
 
-### Fixed
-- SEC requests of the events/news and the SEC fundamentals collectors answered HTTP 403 (no SEC events were stored since 2026-10-09): the SEC rejects every User-Agent that carries a GitHub noreply contact ("...@users.noreply.github.com"), and that was the configured `SEC_USER_AGENT`. Both scripts now refuse such a value, use the placeholder instead and print a warning; the real fix is to set `SEC_USER_AGENT` to "<name> <real e-mail>". No retry, proxy or header architecture was added.
-- Desktop GUI, Watchlist page: the ISIN column was pushed far out of the visible area by the wide columns to its left (it sat behind the name, entry status and news columns); it is now displayed right behind the name and no column is wider than 260 px (the full text stays in the tooltip). Column model, editors, sorting and filters are unchanged.
+## [0.5.0] - 2026-10-14
 
-### Removed
-- The unused column `security.sector` (free text of a former import; nothing read or wrote it, the sector of the risk guards and of the news mapping comes from the sector map). New and reset databases no longer have it, the view `v_watchlist` no longer selects it, `get_watchlist` detail rows and the research prompt no longer carry it, and the new migration `Migrate-TradingDropSecuritySector.py` removes it from an existing database (dry run by default, backup copy, ids and all other fields unchanged; the old values are not copied into any sector map). `security.industry` stays. Run the migration after deploying; the sector map files are not touched.
-
-### Changed
-- Sector map resolution: a local entry of a symbol now overrides the public one (before, a symbol in both files was an error that switched the guards off); two sectors for a symbol inside one file are still an error. The risk guards and the news mapping share the rule (`sector_assignment.py`).
-- Desktop GUI: the separate "change priority" dialog and button were removed; the priority is edited inline in the table (pending until the apply button saves it), so there is a single path for it. The MCP action `set_watchlist_priority` is unchanged.
+### Highlights
+- Watchlist: strategy, priority and sector group are editable in the table (pending until one apply button saves them); the sector comes from the sector map only.
+- New Sektoren page: sector overview with treemap, ETF sector look-through and the new tab "Einzelwertrisiko" (effective exposure per company from direct positions and ETF holdings, with treemap).
+- Tasks page as an operations overview: rhythm, data freshness, technical dependencies and a warning before a manual start.
+- MCP tools 20 -> 25 since v0.4.0 (`set_security_strategy`, `set_security_sector`, `get_sector_overview`, `get_data_freshness`, `get_effective_exposure`); the Qt chat is offered 17 read tools; the front end Jan sees 19 (its exclude list hides the six write actions).
+- The risk guard, the planner logic and the database schema (apart from the removed column `security.sector`) are unchanged.
 
 ### Added
 - Effective exposure treemap: the tab "Einzelwertrisiko" gets an own treemap with one tile per company (area = the effective value, direct and ETF merged; share classes of one issuer and a company in several ETFs are one tile), separate blocks for the remaining companies and cash, colour = the daily change of the company's own share (grey without one; an ETF's change is never used), tooltip with the effective, direct and ETF figures, the contributing ETFs, stand, source and matching hints. It is fed by `get_effective_exposure` (now requested with up to 40 companies); the sector treemap is unchanged. The rounding drift is never a tile.
@@ -22,6 +20,19 @@
 - Sector overview (MCP tools 22 -> 23, desktop GUI page "Sektoren"): the new READ tool `get_sector_overview` groups the open positions by their effective sector (public map + local override, the same resolution as the risk guard and the news mapping) with EUR market value, share of the invested value, number of positions, value-weighted daily change and the sector-guard limit and status; positions without an entry form their own group "not assigned" and are never dropped. ETFs are one position each (no look-through). The page shows a treemap (area = market value, grouped by sector, colour = daily change, grey = no data) plus a sector table and a position table. Read-only: no write, no change to the risk guard.
 - Editable sector group on the Watchlist page (MCP tools 21 -> 22): the new ACTION `set_security_sector` sets or removes the LOCAL sector entry of one security (only an existing group; `null`, or a sector equal to the public one, removes the local entry) and writes only `sector_map_local.json` (atomic, the previous file is kept as `.bak`); `sector_map_v1.json` and the database are never touched, and a held position or an open campaign does not block it. The table column "Sektor" shows the group and whether it comes from the public map, the local map or is not assigned (the replaced public value is in the tooltip); the same pending / apply mechanism as for strategy and priority applies. `get_watchlist` (table and detail shape) carries `sector`, `sector_source`, `sector_public` and `sector_groups`; the compact chat answer is unchanged.
 - Inline editing of strategy and priority on the Watchlist page (MCP tools 20 → 21): the new ACTION `set_security_strategy` sets (`swing`, `long_term`) or removes the strategy of one security and writes only `strategy_assignment`; a held position (`BLOCKED_HELD_POSITION`) and a security with an open campaign (`BLOCKED_ACTIVE_CAMPAIGN`) are blocked without any write, and no campaign or order is created. The priority uses the existing `set_watchlist_priority`. A choice in the table is only a pending change until the apply button saves it, strategy first and the priority only if that succeeded; reloading with pending changes asks first. A not held security set to Swing is afterwards an entry candidate of the planner (simulation only). The chat and other MCP clients configured with `TRADING_EXCLUDE` do not see the action.
+
+### Changed
+- Sector map resolution: a local entry of a symbol now overrides the public one (before, a symbol in both files was an error that switched the guards off); two sectors for a symbol inside one file are still an error. The risk guards and the news mapping share the rule (`sector_assignment.py`).
+- Desktop GUI: the separate "change priority" dialog and button were removed; the priority is edited inline in the table (pending until the apply button saves it), so there is a single path for it. The MCP action `set_watchlist_priority` is unchanged.
+
+### Removed
+- The unused column `security.sector` (free text of a former import; nothing read or wrote it, the sector of the risk guards and of the news mapping comes from the sector map). New and reset databases no longer have it, the view `v_watchlist` no longer selects it, `get_watchlist` detail rows and the research prompt no longer carry it, and the new migration `Migrate-TradingDropSecuritySector.py` removes it from an existing database (dry run by default, backup copy, ids and all other fields unchanged; the old values are not copied into any sector map). `security.industry` stays. Run the migration after deploying; the sector map files are not touched.
+
+### Fixed
+- SEC requests of the events/news and the SEC fundamentals collectors answered HTTP 403 (no SEC events were stored since 2026-10-09): the SEC rejects every User-Agent that carries a GitHub noreply contact ("...@users.noreply.github.com"), and that was the configured `SEC_USER_AGENT`. Both scripts now refuse such a value, use the placeholder instead and print a warning; the real fix is to set `SEC_USER_AGENT` to "<name> <real e-mail>". No retry, proxy or header architecture was added.
+- Desktop GUI, Watchlist page: the ISIN column was pushed far out of the visible area by the wide columns to its left (it sat behind the name, entry status and news columns); it is now displayed right behind the name and no column is wider than 260 px (the full text stays in the tooltip). Column model, editors, sorting and filters are unchanged.
+- Migration of the removed column `security.sector`: a relative `--db-path` no longer breaks the dry run (the path is resolved first).
+- Master data (production data, not part of the repository): the 16 securities that had no ISIN were completed from public sources (ISIN, and WKN where a source gave one) and the quote currency of one listing was corrected; no security was created, no position, transaction or strategy changed.
 
 ## [0.4.0] - 2026-10-13
 

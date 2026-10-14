@@ -402,7 +402,7 @@ Output keys: `status`, `read_only`, `watchlist_written`, `orders_created`, `eval
 
 > **Current access path:** the agent (through an MCP client) uses this tool through the Trading MCP server (`C:\tools\trading\mcp\server.py`; repo source `mcp-tools/`), which exposes every public method of the `Tools` class in `trading_sqlite.py` as an MCP tool — currently 15. Parqet imports run via `Import-ParqetTransactions.py` (there are no upload methods in the MCP server).
 
-**Deploy (current):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, see the README) copies only the files listed in `deploy/deploy-manifest.json` to `C:\tools\trading\app\`, `mcp\` and `scheduler\` after a file and database backup, compares hashes and runs an MCP smoke test (expects 22 tools). Afterwards restart the MCP server process (in the current setup the MCP client restarts it automatically when it is ended).
+**Deploy (current):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, see the README) copies only the files listed in `deploy/deploy-manifest.json` to `C:\tools\trading\app\`, `mcp\` and `scheduler\` after a file and database backup, compares hashes and runs an MCP smoke test (expects 25 tools). Afterwards restart the MCP server process (in the current setup the MCP client restarts it automatically when it is ended).
 
 **Current public method inventory** (version `1.7.0`, 25 public methods, now `mcp-tools/trading_sqlite.py`), classified read-only vs. write-capable:
 
