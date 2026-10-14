@@ -12,7 +12,10 @@ from typing import Any, Optional
 
 from .portfolio import DASH, fmt_eur, fmt_pct, fmt_time, _num
 
-COMPANY_HEADERS = ["Firma", "Direkt €", "Direkt %", "ETF €", "ETF %", "Effektiv €", "Effektiv %", "ETF-Beiträge"]
+COMPANY_HEADERS = ["Unternehmen / Symbol", "Direkt €", "Direkt %", "ETF €", "ETF %", "Effektiv €", "Effektiv %", "Beitragende ETFs", "Datenstand"]
+EFFECTIVE_COLUMNS = (5, 6)  # the columns the page highlights: the economic total per company
+NUMERIC_COLUMNS = (1, 2, 3, 4, 5, 6)
+DEFAULT_SORT_COLUMN = 6  # Effektiv %, descending
 ETF_HEADERS = ["ETF", "Wert €", "Daten", "Stand", "Art / Quelle", "Holdings", "Aktien-Gewicht", "Direkt gehaltene Firmen", "Nur über ETFs", "Unklar", "Sonstiges / Rundung"]
 STATUS_TEXT = {"APPLIED": "angewendet", "STALE": "angewendet (veraltet)", "NO_DATA": "keine Daten", "ALLOCATION_INVALID": "Daten ungültig", "NO_ISIN": "keine ISIN"}
 KIND_TEXT = {"physical": "physisch (Fondsvermögen)", "synthetic_index": "synthetisch (Index-Zusammensetzung)"}
@@ -34,6 +37,22 @@ class CompanyVM:
     matched: bool = False
     isin: str = ""
     category: str = "etf_only"
+    etf_info: dict = field(default_factory=dict)  # ETF symbol -> {"as_of", "source", "status", "provider"} of the holdings it was computed from
+
+    @property
+    def label(self) -> str:
+        """The company and, if there is one, its symbol: ``TSMC (ADR) · TSM``."""
+        return f"{self.name} · {self.ticker}" if self.ticker and self.ticker.strip().lower() != self.name.strip().lower() else self.name
+
+    @property
+    def stand_text(self) -> str:
+        """The stand of the holdings the ETF share is based on, per contributing ETF (``IS3N 12.10.``); a stale one is marked.  A company without an ETF share has none."""
+        parts = []
+        for c in self.contributors:
+            info = self.etf_info.get(str(c.get("etf")), {})
+            day = _day(c.get("etf_as_of") or info.get("as_of"))
+            parts.append(f"{c.get('etf')} {day[:5] + '.' if len(day) >= 10 and day[2] == '.' else day}" + (" ⚠ veraltet" if info.get("status") == "STALE" else ""))
+        return "; ".join(parts) or DASH
 
     @property
     def overlap(self) -> bool:
@@ -49,8 +68,12 @@ class CompanyVM:
                  f"Direkt: {fmt_eur(self.direct_value)} ({fmt_pct(self.direct_weight, 2)})", f"Über ETFs: {fmt_eur(self.etf_value)} ({fmt_pct(self.etf_weight, 2)})",
                  f"Effektiv: {fmt_eur(self.effective_value)} ({fmt_pct(self.effective_weight, 2)})"]
         for c in self.contributors:
+            info = self.etf_info.get(str(c.get("etf")), {})
             lines.append(f"• {c.get('etf')}: {fmt_eur(c.get('value_eur'))}, {fmt_pct(c.get('weight_in_etf_pct'), 3)} des ETF "
-                         f"(Holding „{c.get('holding_name')}“, Zuordnung: {MATCH_TEXT.get(str(c.get('match')), c.get('match'))}, Stand {_day(c.get('etf_as_of')) if c.get('etf_as_of') else DASH})")
+                         f"(Holding „{c.get('holding_name')}“, Zuordnung: {MATCH_TEXT.get(str(c.get('match')), c.get('match'))})")
+            lines.append(f"   Datenstand {_day(c.get('etf_as_of') or info.get('as_of')) if (c.get('etf_as_of') or info.get('as_of')) else DASH}"
+                         + (f" ({info.get('provider')})" if info.get("provider") else "") + (" – veraltet" if info.get("status") == "STALE" else "")
+                         + (f"\n   Quelle: {info.get('source')}" if info.get("source") else ""))
         lines.append("Einordnung: " + CATEGORY_TEXT.get(self.category, self.category))
         lines.append("Als Wertpapier des Portfolios erkannt: " + ("ja" if self.matched else "nein (eigene Firma aus den ETF-Holdings, eindeutig identifiziert)" if self.category == "etf_only" else "nein"))
         return "\n".join(lines)
@@ -69,6 +92,10 @@ class EffectiveVM:
     etf_levels: list[str] = field(default_factory=list)
     etf_tips: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    company_keys: list[list[Any]] = field(default_factory=list)  # per row and column the value the column sorts by (None = no value, sorted last)
+    headline: str = ""  # the biggest effective single position, as one line
+    headline_detail: str = ""
+    chips: list[tuple[str, str, str]] = field(default_factory=list)  # (label, value, level) -- the compact figures at the top
 
 
 def _d(value: Any) -> dict:
@@ -104,6 +131,47 @@ def _bucket_lines(b: dict) -> list[tuple[str, str]]:
     return lines if b else [("Aufteilung", DASH)]
 
 
+def holdings_freshness(env: dict) -> tuple[str, str]:
+    """``(text, level)`` of the holdings the exposure is based on: current / stale / incomplete, with the oldest stand."""
+    etfs = [e for e in _l(env.get("etfs")) if isinstance(e, dict)]
+    if not etfs:
+        return "keine ETFs", ""
+    stale = [e for e in etfs if e.get("status") == "STALE"]
+    missing = [e for e in etfs if e.get("status") not in ("APPLIED", "STALE")]
+    used = [e for e in etfs if e.get("status") in ("APPLIED", "STALE") and e.get("as_of")]
+    oldest = min(used, key=lambda e: str(e["as_of"])) if used else None
+    age = ""
+    if oldest is not None:
+        try:
+            from datetime import date as _date
+
+            days = (_date.fromisoformat(str(env.get("as_of"))[:10]) - _date.fromisoformat(str(oldest["as_of"])[:10])).days
+            age = f", {days} Tage"
+        except ValueError:
+            pass
+    if missing:
+        return "unvollständig: " + ", ".join(f"{e.get('symbol')} ({STATUS_TEXT.get(str(e.get('status')), e.get('status'))})" for e in missing), "blocker"
+    if stale:
+        return "veraltet: " + ", ".join(f"{e.get('symbol')} (Stand {_day(e.get('as_of'))})" for e in stale), "warning"
+    return f"aktuell – ältester Stand {_day(oldest['as_of'])}{age}" if oldest else "aktuell", ""
+
+
+def _headline(vm: "EffectiveVM", env: dict) -> None:
+    """The compact figures on top: the biggest effective single position, its direct / ETF split, the number of companies over 5 % and 10 %, the holdings freshness."""
+    if vm.companies:
+        top = max(vm.companies, key=lambda c: c.effective_weight)
+        share = (lambda part: fmt_pct(part / top.effective_value * 100.0, 0)) if top.effective_value > 0 else (lambda part: DASH)
+        vm.headline = f"{top.label} – {fmt_pct(top.effective_weight, 2)} effektiv"
+        vm.headline_detail = (f"Direkt {fmt_pct(top.direct_weight, 2) if top.direct_value else DASH} · ETF {fmt_pct(top.etf_weight, 2) if top.etf_value else DASH}"
+                              f" (Anteil direkt / ETF: {share(top.direct_value)} / {share(top.etf_value)})")
+    else:
+        vm.headline, vm.headline_detail = DASH, ""
+    over5 = sum(1 for c in vm.companies if c.effective_weight > 5.0)
+    over10 = sum(1 for c in vm.companies if c.effective_weight > 10.0)
+    text, level = holdings_freshness(env)
+    vm.chips = [("Firmen über 5 %", str(over5), ""), ("Firmen über 10 %", str(over10), "warning" if over10 else ""), ("Holdings-Daten", text, level)]
+
+
 def build_effective(envelope: Any, refreshed: Optional[datetime] = None) -> EffectiveVM:
     vm = EffectiveVM(refreshed=fmt_time(refreshed))
     env = _d(envelope)
@@ -114,17 +182,21 @@ def build_effective(envelope: Any, refreshed: Optional[datetime] = None) -> Effe
         vm.error = str(env.get("message") or env.get("error") or "Einzelwert-Auswertung nicht verfügbar")
         return vm
     vm.available = True
+    etf_info = {str(_d(e).get("symbol")): {"as_of": _d(e).get("as_of"), "source": _d(e).get("source"), "status": _d(e).get("status"), "provider": _d(e).get("provider")}
+                for e in _l(env.get("etfs")) if isinstance(e, dict)}
     for raw in _l(env["top"]):
         c = _d(raw)
         if _num(c.get("effective_value_eur")) is None:  # a row without its main figure is not a company row
             continue
         vm.companies.append(CompanyVM(str(c.get("name") or DASH), str(c.get("ticker") or ""), _num(c.get("direct_value_eur")) or 0.0, _num(c.get("direct_weight_pct")) or 0.0,
                                       _num(c.get("etf_value_eur")) or 0.0, _num(c.get("etf_weight_pct")) or 0.0, _num(c.get("effective_value_eur")) or 0.0,
-                                      _num(c.get("effective_weight_pct")) or 0.0, [_d(x) for x in _l(c.get("contributors"))], bool(c.get("matched")), str(c.get("isin") or ""), str(c.get("category") or "etf_only")))
+                                      _num(c.get("effective_weight_pct")) or 0.0, [_d(x) for x in _l(c.get("contributors"))], bool(c.get("matched")), str(c.get("isin") or ""), str(c.get("category") or "etf_only"), etf_info))
     for company in vm.companies:
-        vm.company_rows.append([company.name, fmt_eur(company.direct_value) if company.direct_value else DASH, fmt_pct(company.direct_weight, 2) if company.direct_value else DASH,
+        vm.company_rows.append([company.label, fmt_eur(company.direct_value) if company.direct_value else DASH, fmt_pct(company.direct_weight, 2) if company.direct_value else DASH,
                                 fmt_eur(company.etf_value) if company.etf_value else DASH, fmt_pct(company.etf_weight, 2) if company.etf_value else DASH,
-                                fmt_eur(company.effective_value), fmt_pct(company.effective_weight, 2), company.contributors_text])
+                                fmt_eur(company.effective_value), fmt_pct(company.effective_weight, 2), company.contributors_text, company.stand_text])
+        vm.company_keys.append([company.name.lower(), company.direct_value or None, company.direct_weight if company.direct_value else None, company.etf_value or None,
+                                company.etf_weight if company.etf_value else None, company.effective_value, company.effective_weight, company.contributors_text.lower(), company.stand_text.lower()])
         vm.company_levels.append("warning" if company.category == "ambiguous_unmatched" else "info" if company.overlap else "")
     for raw in _l(env.get("etfs")):
         if not isinstance(raw, dict):
@@ -152,6 +224,7 @@ def build_effective(envelope: Any, refreshed: Optional[datetime] = None) -> Effe
         else:
             tip.append(f"Nicht aufgelöst: {e.get('detail') or status}")
         vm.etf_tips.append("\n".join(tip))
+    _headline(vm, env)
     cov, chk = _d(env.get("coverage")), _d(env.get("checks"))
     total = _num(env.get("total_market_value_eur")) or 0.0
     vm.summary = [
