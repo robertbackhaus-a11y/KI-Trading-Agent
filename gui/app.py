@@ -27,7 +27,7 @@ from .services.tool_loop import offered_tools, schema_hash
 from .services.tool_policy import classify
 from .viewmodels.onboarding import describe_onboarding
 from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
-from .viewmodels.effective import build_effective
+from .viewmodels.effective import build_effective, direct_performance
 from .viewmodels.sectors import build_sectors
 from .viewmodels.tasks import build_task_rows, summarize
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
@@ -277,7 +277,7 @@ class MainWindow(QMainWindow):
         if "effective" not in self._inflight:
             self._inflight.add("effective")
             self.sectors.show_effective_loading()
-            self.mcp.call("get_effective_exposure", {"top": 25}, timeout=90, on_done=self._on_effective)
+            self.mcp.call("get_effective_exposure", {"top": 40}, timeout=90, on_done=self._on_effective)
 
     def _on_effective(self, res: McpResult) -> None:
         self._inflight.discard("effective")
@@ -286,8 +286,12 @@ class MainWindow(QMainWindow):
             self._effective = res.data
         else:
             error = res.message or "Unbekannter Fehler"
+        self._render_effective(error)
+
+    def _render_effective(self, error: str = "") -> None:
+        """The exposure section: the effective-exposure answer plus, for the colour of a tile, the daily change of the company's own direct share from the sector overview."""
         envelope = self._effective if self._effective is not None else {"ok": False, "message": error or "Noch keine Daten"}
-        self.sectors.show_effective(build_effective(envelope, self._sectors_at))
+        self.sectors.show_effective(build_effective(envelope, self._sectors_at, direct_performance(self._sectors)))
         if error and self._effective is not None:
             self.sectors.effective_message.setText(f"Aktualisierung fehlgeschlagen ({error}); gezeigt wird der letzte Stand.")
 
@@ -303,6 +307,8 @@ class MainWindow(QMainWindow):
         self.sectors.show_vm(build_sectors(envelope, self._sectors_at))
         if error and self._sectors is not None:  # keep the last good overview and say so
             self.sectors.message.setText(f"Aktualisierung fehlgeschlagen ({error}); gezeigt wird der Stand von {fmt_time(self._sectors_at)}.")
+        if self._effective is not None:
+            self._render_effective()  # the tile colours depend on the daily changes of this answer
 
     def _watchlist_action(self, tool: str, arguments: dict, to_dialog: bool = False) -> None:
         """One watchlist ACTION for an explicit user action; the outcome is shown and, if something changed, the list is reloaded."""

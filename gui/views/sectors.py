@@ -9,7 +9,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSplitter, QTabWidget, QTableWidgetItem, QToolTip, QVBoxLayout, QWidget
 
 from ..viewmodels import treemap
-from ..viewmodels.effective import COMPANY_HEADERS, DEFAULT_SORT_COLUMN, EFFECTIVE_COLUMNS, NUMERIC_COLUMNS, EffectiveVM, ETF_HEADERS as EFFECTIVE_ETF_HEADERS
+from ..viewmodels.effective import COMPANY_HEADERS, DEFAULT_SORT_COLUMN, EFFECTIVE_COLUMNS, NUMERIC_COLUMNS, EffectiveVM, ETF_HEADERS as EFFECTIVE_ETF_HEADERS, TileVM
 from ..viewmodels.portfolio import DASH, fmt_eur
 from ..viewmodels.sectors import ETF_HEADERS, GUARD_TIP, KIND_SECTOR, POSITION_HEADERS, SECTOR_HEADERS, SectorsVM, fmt_signed_pct
 from ._common import LEVEL_COLORS, fill_table, make_table, set_form_rows
@@ -131,6 +131,69 @@ class TreemapWidget(QWidget):
             QToolTip.hideText()
 
 
+class ExposureTreemapWidget(QWidget):
+    """The treemap of the effective exposure: ONE tile per company (area = effective EUR value, direct + ETF merged), colour = the daily change of the company's own share
+    (grey without one), plus separate blocks for the rest of the companies and cash.  Own data source (``EffectiveVM.tiles``); the sector treemap is not involved."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tiles: list[TileVM] = []
+        self.rects: list[Optional[tuple[float, float, float, float]]] = []
+        self.setMinimumSize(420, 170)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMouseTracking(True)
+
+    def set_tiles(self, tiles: list[TileVM]) -> None:
+        self.tiles = list(tiles)
+        self.relayout()
+        self.update()
+
+    def relayout(self) -> None:
+        self.rects = treemap.squarify([t.value for t in self.tiles], (2.0, 2.0, max(0.0, self.width() - 4.0), max(0.0, self.height() - 4.0))) if self.tiles else []
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.relayout()
+        super().resizeEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), self.palette().window())
+        if not self.tiles:
+            painter.setPen(self.palette().text().color())
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Keine Daten")
+            return
+        small = QFont(self.font())
+        small.setPointSizeF(max(7.0, small.pointSizeF() - 1.0))
+        painter.setFont(small)
+        for tile, rect in zip(self.tiles, self.rects):
+            if rect is None:
+                continue
+            x, y, w, h = rect
+            box = QRectF(x, y, w, h)
+            color = QColor(tile.color)
+            painter.fillRect(box, color)
+            painter.setPen(QPen(QColor("#ffffff") if tile.kind == "company" else QColor("#6b7580"), 1, Qt.PenStyle.SolidLine if tile.kind == "company" else Qt.PenStyle.DashLine))
+            painter.drawRect(box.adjusted(0, 0, -1, -1))
+            if w >= MIN_LABEL_W and h >= MIN_LABEL_H:
+                painter.setPen(_text_color(color))
+                text = f"{tile.label}\n{tile.weight_pct:.2f} %".replace(".", ",")
+                painter.drawText(box.adjusted(3, 2, -3, -2), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, text)
+        painter.end()
+
+    def tile_at(self, point: QPointF) -> Optional[str]:
+        for tile, rect in zip(self.tiles, self.rects):
+            if rect is not None and rect[0] <= point.x() < rect[0] + rect[2] and rect[1] <= point.y() < rect[1] + rect[3]:
+                return tile.tip
+        return None
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        text = self.tile_at(event.position())
+        if text:
+            QToolTip.showText(event.globalPosition().toPoint(), text, self)
+        else:
+            QToolTip.hideText()
+
+
 class SectorsView(QWidget):
     refresh_requested = Signal()
 
@@ -217,17 +280,26 @@ class SectorsView(QWidget):
         layout.addLayout(self.effective_summary)
         self._company_sort = (DEFAULT_SORT_COLUMN, Qt.SortOrder.DescendingOrder)  # Effektiv %, largest first, until the user sorts otherwise
         self.company_table = make_table(COMPANY_HEADERS)
+        self.company_table.setMinimumHeight(190)  # the table stays readable next to the treemap
         self.effective_etf_table = make_table(EFFECTIVE_ETF_HEADERS)
         self.effective_etf_table.setMaximumHeight(140)
+        self.exposure_treemap = ExposureTreemapWidget()
         split = QSplitter(Qt.Orientation.Vertical)
+        map_box = QGroupBox("Effective Exposure je Unternehmen (Fläche = effektiver Wert, direkt + ETF; Farbe = Tagesperformance der Aktie, grau = keine eigene Tagesperformance)")
+        map_layout = QVBoxLayout(map_box)
+        map_layout.addWidget(self.exposure_treemap)
+        map_layout.addWidget(QLabel("<span style='color:#c0392b'>■</span> −3 % und tiefer &nbsp; <span style='color:#7a828a'>■</span> 0 % &nbsp; <span style='color:#1f8c4c'>■</span> +3 % und höher &nbsp; "
+                                    "<span style='color:#b4bcc6'>■</span> keine Tagesperformance der Aktie (zum Beispiel Firmen nur über ETFs) &nbsp; gestrichelt = Weitere Firmen / Sonstiges"))
+        split.addWidget(map_box)
         for caption, table in (("Größte effektive Firmen-Exposure (direkt + Anteil aus den gehaltenen ETFs; eine Firma zählt einmal)", self.company_table),
                                ("ETF-Holdings: Abdeckung und Verknüpfung", self.effective_etf_table)):
             box = QGroupBox(caption)
             inner = QVBoxLayout(box)
             inner.addWidget(table)
             split.addWidget(box)
-        split.setStretchFactor(0, 4)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 3)
+        split.setStretchFactor(2, 1)
         self.company_table.setSortingEnabled(False)
         self.company_table.horizontalHeader().sortIndicatorChanged.connect(self._on_company_sort)
         layout.addWidget(split, 1)
@@ -279,6 +351,7 @@ class SectorsView(QWidget):
             fill_table(self.company_table, COMPANY_HEADERS, [])
             fill_table(self.effective_etf_table, EFFECTIVE_ETF_HEADERS, [])
             self.effective_headline.setText("")
+            self.exposure_treemap.set_tiles([])
             return
         self.effective_message.setText("")
         self.effective_headline.setText(f"<span style='font-size:11pt'>Größte effektive Einzelposition:</span> <b style='font-size:15pt'>{vm.headline}</b>"
@@ -301,6 +374,7 @@ class SectorsView(QWidget):
             self.effective_summary.addWidget(QLabel(f"<small>{caption}</small><br><b>{value}</b>"))
         self.effective_summary.addStretch(1)
         self._fill_companies(vm)
+        self.exposure_treemap.set_tiles(vm.tiles)
         fill_table(self.effective_etf_table, EFFECTIVE_ETF_HEADERS, vm.etf_rows, vm.etf_levels)
         for r, tip in enumerate(vm.etf_tips):
             for c in range(len(EFFECTIVE_ETF_HEADERS)):

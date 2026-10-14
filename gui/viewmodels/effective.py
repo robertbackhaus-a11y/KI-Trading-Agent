@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from .portfolio import DASH, fmt_eur, fmt_pct, fmt_time, _num
+from .treemap import NEUTRAL, performance_color
 
 COMPANY_HEADERS = ["Unternehmen / Symbol", "Direkt €", "Direkt %", "ETF €", "ETF %", "Effektiv €", "Effektiv %", "Beitragende ETFs", "Datenstand"]
 EFFECTIVE_COLUMNS = (5, 6)  # the columns the page highlights: the economic total per company
@@ -38,6 +39,31 @@ class CompanyVM:
     isin: str = ""
     category: str = "etf_only"
     etf_info: dict = field(default_factory=dict)  # ETF symbol -> {"as_of", "source", "status", "provider"} of the holdings it was computed from
+    security_id: Optional[int] = None
+    key: str = ""  # the company key of the backend (one per company, share classes of one issuer share one)
+    change_pct: Optional[float] = None  # the daily change of the company's OWN share (direct position); never the change of an ETF
+
+    @property
+    def hints(self) -> list[str]:
+        """Matching hints that matter: a reviewed alias, an issuer group (share classes), an exact ticker + exchange match."""
+        bases = {str(c.get("match")) for c in self.contributors}
+        out = []
+        if "alias" in bases:
+            out.append("Zuordnungshinweis: Die Holding wurde über eine geprüfte Zuordnung (zum Beispiel ADR ↔ Stammaktie desselben Emittenten) mit dem Wertpapier des Portfolios zusammengeführt.")
+        if "ticker_exchange" in bases:
+            out.append("Zuordnungshinweis: Zuordnung über denselben Ticker an derselben Börse.")
+        if self.key.startswith("grp:"):
+            out.append("Zuordnungshinweis: Gattungen eines Emittenten (zum Beispiel Alphabet A und C) sind als eine Firma zusammengeführt.")
+        return out
+
+    @property
+    def tile_tip(self) -> str:
+        """The tooltip of the treemap tile: everything of the table tooltip plus the daily change of the company's own share and the matching hints."""
+        lines = [self.tip]
+        lines.append("Tagesperformance der Aktie: " + (f"{'+' if self.change_pct > 0 else ''}{fmt_pct(self.change_pct, 2)}" if self.change_pct is not None
+                                                      else "nicht verfügbar (die Performance eines ETF wird nie als Unternehmensperformance verwendet)"))
+        lines.extend(self.hints)
+        return "\n".join(lines)
 
     @property
     def label(self) -> str:
@@ -80,6 +106,18 @@ class CompanyVM:
 
 
 @dataclass
+class TileVM:
+    """One tile of the exposure treemap: a company, or one of the separate blocks (the rest of the companies, cash and derivatives, ETFs without holdings)."""
+
+    kind: str  # "company", "rest", "other", "unresolved"
+    label: str
+    value: float
+    weight_pct: float
+    color: str
+    tip: str
+
+
+@dataclass
 class EffectiveVM:
     available: bool = False
     error: str = ""
@@ -96,6 +134,7 @@ class EffectiveVM:
     headline: str = ""  # the biggest effective single position, as one line
     headline_detail: str = ""
     chips: list[tuple[str, str, str]] = field(default_factory=list)  # (label, value, level) -- the compact figures at the top
+    tiles: list[TileVM] = field(default_factory=list)  # the treemap: one tile per company (largest first) plus the separate blocks; never the rounding drift
 
 
 def _d(value: Any) -> dict:
@@ -172,7 +211,61 @@ def _headline(vm: "EffectiveVM", env: dict) -> None:
     vm.chips = [("Firmen über 5 %", str(over5), ""), ("Firmen über 10 %", str(over10), "warning" if over10 else ""), ("Holdings-Daten", text, level)]
 
 
-def build_effective(envelope: Any, refreshed: Optional[datetime] = None) -> EffectiveVM:
+def direct_performance(sector_envelope: Any) -> dict[int, float]:
+    """``{security_id: daily change in %}`` of the DIRECT, non-ETF positions of a ``get_sector_overview`` answer -- the company's own share price.  The change of an ETF
+    (or of an ETF look-through entry) is never included, so it can never be mistaken for the performance of a company inside it."""
+    out: dict[int, float] = {}
+    for group in _l(_d(sector_envelope).get("sectors")):
+        for p in _l(_d(group).get("positions")):
+            p = _d(p)
+            change = _num(p.get("day_change_pct"))
+            if p.get("origin", "direct") == "direct" and not p.get("is_etf") and change is not None and isinstance(p.get("security_id"), int):
+                out[p["security_id"]] = change
+    return out
+
+
+def _merge_by_key(companies: list[CompanyVM]) -> list[CompanyVM]:
+    """One entry per company key (defensive: the backend already aggregates; a repeated key is added up, never counted twice as two companies)."""
+    merged: dict[str, CompanyVM] = {}
+    for c in companies:
+        key = c.key or f"name:{c.name}"
+        if key not in merged:
+            merged[key] = c
+            continue
+        m = merged[key]
+        m.direct_value += c.direct_value
+        m.direct_weight += c.direct_weight
+        m.etf_value += c.etf_value
+        m.etf_weight += c.etf_weight
+        m.effective_value += c.effective_value
+        m.effective_weight += c.effective_weight
+        m.contributors = m.contributors + c.contributors
+    return list(merged.values())
+
+
+def _tiles(vm: "EffectiveVM", env: dict, companies: list[CompanyVM]) -> list[TileVM]:
+    total = _num(env.get("total_market_value_eur")) or 0.0
+    weight = lambda value: value / total * 100.0 if total > 0 else 0.0  # noqa: E731 - a display helper
+    tiles = [TileVM("company", c.label, c.effective_value, c.effective_weight, performance_color(c.change_pct) if c.change_pct is not None else NEUTRAL, c.tile_tip)
+             for c in sorted(companies, key=lambda c: (-c.effective_value, c.name)) if c.effective_value > 0]
+    chk, buckets = _d(env.get("checks")), _d(env.get("buckets"))
+    listed = sum(t.value for t in tiles)
+    rest = (_num(chk.get("companies_eur")) or 0.0) - listed
+    remaining = int(env.get("company_count") or 0) - len(companies)
+    if rest > 0.5 and remaining > 0:
+        tiles.append(TileVM("rest", f"Weitere {remaining} Firmen", rest, weight(rest), "#c9d1dc",
+                            f"Weitere {remaining} Firmen\nSumme: {fmt_eur(rest)} ({fmt_pct(weight(rest), 2)})\nJede dieser Firmen liegt unter der kleinsten gezeigten Kachel."))
+    other = _num(_d(buckets.get("other")).get("value_eur")) or 0.0
+    if other > 0.5:
+        tiles.append(TileVM("other", "Sonstiges", other, weight(other), "#d9dde3", f"Sonstiges (Cash, Derivate, nicht erklärter Rest eines ETF)\n{fmt_eur(other)} ({fmt_pct(weight(other), 2)}); keine Firma."))
+    unresolved = _num(_d(buckets.get("ambiguous_unmatched")).get("unresolved_etf_value_eur")) or 0.0
+    if unresolved > 0.5:
+        tiles.append(TileVM("unresolved", "ETFs ohne Holdings", unresolved, weight(unresolved), "#e8d5d0",
+                            f"ETFs ohne Holdings-Daten\n{fmt_eur(unresolved)} ({fmt_pct(weight(unresolved), 2)}); nicht auf Firmen aufgelöst."))
+    return tiles  # the rounding drift is a reconciliation bucket (negative); it is never a tile
+
+
+def build_effective(envelope: Any, refreshed: Optional[datetime] = None, performance: Optional[Mapping[int, float]] = None) -> EffectiveVM:
     vm = EffectiveVM(refreshed=fmt_time(refreshed))
     env = _d(envelope)
     if not env:
@@ -190,7 +283,11 @@ def build_effective(envelope: Any, refreshed: Optional[datetime] = None) -> Effe
             continue
         vm.companies.append(CompanyVM(str(c.get("name") or DASH), str(c.get("ticker") or ""), _num(c.get("direct_value_eur")) or 0.0, _num(c.get("direct_weight_pct")) or 0.0,
                                       _num(c.get("etf_value_eur")) or 0.0, _num(c.get("etf_weight_pct")) or 0.0, _num(c.get("effective_value_eur")) or 0.0,
-                                      _num(c.get("effective_weight_pct")) or 0.0, [_d(x) for x in _l(c.get("contributors"))], bool(c.get("matched")), str(c.get("isin") or ""), str(c.get("category") or "etf_only"), etf_info))
+                                      _num(c.get("effective_weight_pct")) or 0.0, [_d(x) for x in _l(c.get("contributors"))], bool(c.get("matched")), str(c.get("isin") or ""), str(c.get("category") or "etf_only"), etf_info,
+                                      c.get("security_id") if isinstance(c.get("security_id"), int) else None, str(c.get("key") or "")))
+        company = vm.companies[-1]
+        if performance and company.security_id is not None and company.direct_value > 0:
+            company.change_pct = performance.get(company.security_id)  # only a company with a direct position has a price of its own here
     for company in vm.companies:
         vm.company_rows.append([company.label, fmt_eur(company.direct_value) if company.direct_value else DASH, fmt_pct(company.direct_weight, 2) if company.direct_value else DASH,
                                 fmt_eur(company.etf_value) if company.etf_value else DASH, fmt_pct(company.etf_weight, 2) if company.etf_value else DASH,
@@ -225,6 +322,7 @@ def build_effective(envelope: Any, refreshed: Optional[datetime] = None) -> Effe
             tip.append(f"Nicht aufgelöst: {e.get('detail') or status}")
         vm.etf_tips.append("\n".join(tip))
     _headline(vm, env)
+    vm.tiles = _tiles(vm, env, _merge_by_key([CompanyVM(**{**c.__dict__, "contributors": list(c.contributors)}) for c in vm.companies]))
     cov, chk = _d(env.get("coverage")), _d(env.get("checks"))
     total = _num(env.get("total_market_value_eur")) or 0.0
     vm.summary = [

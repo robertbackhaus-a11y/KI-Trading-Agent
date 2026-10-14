@@ -13,6 +13,7 @@ import support
 from support import FAKE_SERVER, HAVE_QT, pump, qapp
 
 from gui.viewmodels import effective as ve
+from gui.viewmodels import treemap
 
 if HAVE_QT:
     from PySide6.QtCore import Qt
@@ -21,6 +22,7 @@ if HAVE_QT:
     from gui.services import mcp_client as mc
     from gui.services.background import AsyncRunner
     from gui.services.settings import Settings
+    from gui.views.sectors import ExposureTreemapWidget
     from test_main_window import FakeBackend
 
     import fixtures
@@ -28,18 +30,19 @@ if HAVE_QT:
 QT = unittest.skipUnless(HAVE_QT, "PySide6 not installed (GUI venv only)")
 
 
-def company(name, direct, etf, contributors=(), matched=True, ticker="", isin="", category=None):
+def company(name, direct, etf, contributors=(), matched=True, ticker="", isin="", category=None, security_id=None, key=None):
     total = 10000.0
     category = category or ("direct_matched" if direct > 0 else "etf_only")
-    return {"key": "k:" + name, "name": name, "ticker": ticker, "isin": isin, "matched": matched, "security_id": 1 if matched else None,
-            "direct_value_eur": direct, "etf_value_eur": etf, "effective_value_eur": direct + etf, "direct_weight_pct": direct / total * 100, "etf_weight_pct": etf / total * 100,
-            "effective_weight_pct": (direct + etf) / total * 100, "contributors": list(contributors), "etf_count": len(contributors), "match_bases": [], "category": category}
+    out = {"key": key or "k:" + name, "name": name, "ticker": ticker, "isin": isin, "matched": matched, "security_id": security_id if security_id is not None else (1 if matched else None),
+           "direct_value_eur": direct, "etf_value_eur": etf, "effective_value_eur": direct + etf, "direct_weight_pct": direct / total * 100, "etf_weight_pct": etf / total * 100,
+           "effective_weight_pct": (direct + etf) / total * 100, "contributors": list(contributors), "etf_count": len(contributors), "match_bases": [], "category": category}
+    return out
 
 
 TSMC = company("TSMC (ADR)", 620.0, 111.92, [{"etf": "IS3N", "etf_security_id": 8, "value_eur": 111.92, "weight_in_etf_pct": 13.99, "match": "alias", "holding_name": "TAIWAN SEMICONDUCTOR MANUFACTURING", "etf_as_of": "2026-10-12"}],
                ticker="TSM", isin="TESTISIN-T1")
 NVDA = company("NVIDIA", 0.0, 390.0, [{"etf": "SPXS", "etf_security_id": 9, "value_eur": 390.0, "weight_in_etf_pct": 7.71, "match": "isin", "holding_name": "NVIDIA ORD", "etf_as_of": "2026-08-28"}], matched=False)
-PLAIN = company("Direct Only Inc", 300.0, 0.0)
+PLAIN = company("Direct Only Inc", 300.0, 0.0, security_id=2)
 UNCLEAR = company("Dup Corp", 0.0, 50.0, matched=False, category="ambiguous_unmatched")
 
 ENVELOPE = {
@@ -191,6 +194,157 @@ class HeadlineTests(unittest.TestCase):
         self.assertEqual(len(vm.company_rows), len(ENVELOPE["top"]))
 
 
+def tile_env(companies, **extra):
+    """An effective-exposure answer around ``companies`` (total 10 000 EUR); the buckets carry a negative rounding drift that must never become a tile."""
+    listed = sum(c["effective_value_eur"] for c in companies)
+    env = dict(ENVELOPE, top=list(companies), top_count=len(companies), company_count=extra.pop("company_count", len(companies)),
+               checks={"companies_eur": extra.pop("companies_eur", listed), "other_eur": 16.2, "rounding_drift_eur": -121.5, "unresolved_eur": 0.0, "context_total_eur": 10000.0, "reconciles": True},
+               buckets={"direct_matched": {"value_eur": 1.0}, "etf_only": {"value_eur": 1.0}, "ambiguous_unmatched": {"value_eur": 0.0, "unresolved_etf_value_eur": extra.pop("unresolved", 0.0)},
+                        "other": {"value_eur": extra.pop("other", 16.2), "pct_of_total": 0.16}, "rounding_drift": {"value_eur": -121.5, "pct_of_total": -1.215}})
+    env.update(extra)
+    return env
+
+
+GOOGLE = company("Alphabet Inc.", 0.0, 276.0, [{"etf": "SPXS", "etf_security_id": 9, "value_eur": 276.0, "weight_in_etf_pct": 5.5, "match": "isin", "holding_name": "ALPHABET CL A ORD + CL C ORD",
+                                                 "etf_as_of": "2026-08-28"}], matched=False, security_id=None, key="grp:alphabetinc")
+
+
+class TreemapDataTests(unittest.TestCase):
+    def test_a_company_is_exactly_one_tile_with_direct_and_etf_merged(self) -> None:
+        tiles = [t for t in ve.build_effective(ENVELOPE).tiles if t.kind == "company"]
+        tsmc = [t for t in tiles if t.label.startswith("TSMC")]
+        self.assertEqual(len(tsmc), 1)
+        self.assertAlmostEqual(tsmc[0].value, 620.0 + 111.92)  # the area is the effective value
+        self.assertAlmostEqual(tsmc[0].weight_pct, 7.3192, places=3)
+        self.assertEqual(len({t.label for t in tiles}), len(tiles))  # no company twice
+
+    def test_an_etf_only_company_is_a_tile_with_its_etf_value_and_no_performance_colour(self) -> None:
+        nvda = next(t for t in ve.build_effective(ENVELOPE).tiles if t.label == "NVIDIA")
+        self.assertAlmostEqual(nvda.value, 390.0)
+        self.assertAlmostEqual(nvda.weight_pct, 3.9)
+        self.assertEqual(nvda.color, treemap.NEUTRAL)
+
+    def test_the_tiles_are_sorted_by_effective_value_and_the_values_add_up(self) -> None:
+        env = tile_env([company("Small", 100.0, 0.0), company("Large", 900.0, 100.0), company("Mid", 300.0, 0.0)])
+        tiles = ve.build_effective(env).tiles
+        self.assertEqual([t.label for t in tiles if t.kind == "company"], ["Large", "Mid", "Small"])
+        self.assertAlmostEqual(sum(t.value for t in tiles if t.kind == "company"), 1400.0)  # no double counting: the same figures as the table
+        companies = [t.value for t in tiles if t.kind == "company"]
+        self.assertEqual(companies, sorted(companies, reverse=True))  # the largest tile first
+        self.assertAlmostEqual(sum(t.value for t in tiles), 1400.0 + 16.2)  # the companies plus the separate "Sonstiges"
+
+    def test_a_repeated_company_key_is_added_up_never_counted_twice(self) -> None:
+        a = company("Alphabet Inc.", 0.0, 100.0, key="grp:alphabetinc", matched=False)
+        b = company("Alphabet Inc.", 0.0, 50.0, key="grp:alphabetinc", matched=False)
+        tiles = [t for t in ve.build_effective(tile_env([a, b, PLAIN])).tiles if t.kind == "company"]
+        self.assertEqual([t.label for t in tiles].count("Alphabet Inc."), 1)
+        self.assertAlmostEqual(next(t for t in tiles if t.label == "Alphabet Inc.").value, 150.0)
+
+    def test_share_classes_of_one_issuer_are_one_tile(self) -> None:
+        tiles = [t for t in ve.build_effective(tile_env([GOOGLE, PLAIN])).tiles if t.kind == "company"]
+        self.assertEqual([t.label for t in tiles if "Alphabet" in t.label], ["Alphabet Inc."])  # A and C are one company: the backend's issuer group arrives as one row
+        tip = next(t for t in tiles if t.label == "Alphabet Inc.").tip
+        self.assertIn("Gattungen eines Emittenten", tip)
+
+    def test_the_rounding_drift_is_never_a_tile_and_cash_is_a_separate_block(self) -> None:
+        tiles = ve.build_effective(tile_env([TSMC, NVDA])).tiles
+        self.assertTrue(all(t.value > 0 for t in tiles))  # the drift is negative
+        self.assertFalse([t for t in tiles if "rund" in t.label.lower() or "drift" in t.label.lower()])
+        other = [t for t in tiles if t.kind == "other"]
+        self.assertEqual([t.label for t in other], ["Sonstiges"])
+        self.assertAlmostEqual(other[0].value, 16.2)
+        self.assertEqual([t.kind for t in tiles], ["company", "company", "other"])  # the cash block comes last, never between companies
+
+    def test_the_remaining_small_companies_are_one_separate_block(self) -> None:
+        env = tile_env([TSMC, NVDA], company_count=4000, companies_eur=9883.8)
+        tiles = ve.build_effective(env).tiles
+        rest = [t for t in tiles if t.kind == "rest"]
+        self.assertEqual(len(rest), 1)
+        self.assertEqual(rest[0].label, "Weitere 3998 Firmen")
+        self.assertAlmostEqual(rest[0].value, 9883.8 - (731.92 + 390.0))
+        self.assertAlmostEqual(sum(t.value for t in tiles if t.kind != "other"), 9883.8)  # all companies together, once
+
+    def test_no_rest_block_when_every_company_is_listed(self) -> None:
+        self.assertFalse([t for t in ve.build_effective(tile_env([TSMC, NVDA])).tiles if t.kind == "rest"])
+
+    def test_unresolved_etfs_are_their_own_block(self) -> None:
+        tiles = ve.build_effective(tile_env([TSMC], unresolved=100.0)).tiles
+        self.assertEqual([t.label for t in tiles if t.kind == "unresolved"], ["ETFs ohne Holdings"])
+
+    def test_the_colour_is_the_daily_change_of_the_companys_own_share_only(self) -> None:
+        sector_env = {"sectors": [{"positions": [
+            {"security_id": 1, "symbol": "TSM", "is_etf": False, "origin": "direct", "day_change_pct": 2.5},
+            {"security_id": 9, "symbol": "SPXS", "is_etf": True, "origin": "direct", "day_change_pct": 5.0},  # an ETF held as one position
+            {"security_id": 9, "symbol": "SPXS", "is_etf": True, "origin": "etf_lookthrough", "day_change_pct": 5.0},  # its look-through entry
+            {"security_id": 7, "symbol": "NODATA", "is_etf": False, "origin": "direct", "day_change_pct": None}]}]}
+        performance = ve.direct_performance(sector_env)
+        self.assertEqual(performance, {1: 2.5})  # neither the ETF nor its look-through entries
+        tiles = {t.label: t for t in ve.build_effective(ENVELOPE, performance=performance).tiles}
+        self.assertEqual(tiles["TSMC (ADR) · TSM"].color, treemap.performance_color(2.5))
+        self.assertEqual(tiles["NVIDIA"].color, treemap.NEUTRAL)  # held only through ETFs: no performance of its own
+        self.assertEqual(tiles["Direct Only Inc"].color, treemap.NEUTRAL)  # direct, but the performance is not available
+        self.assertEqual(ve.build_effective(ENVELOPE).tiles[0].color, treemap.NEUTRAL)  # without any sector answer everything stays neutral
+
+    def test_an_etf_performance_is_never_taken_over_for_a_company_inside_it(self) -> None:
+        etf_company = company("In The ETF", 0.0, 200.0, security_id=9, matched=True)  # a company matched to a security id that happens to be an ETF's id
+        tiles = ve.build_effective(tile_env([etf_company]), performance={9: 5.0}).tiles
+        self.assertEqual(tiles[0].color, treemap.NEUTRAL)  # no direct position of its own: the colour is not looked up at all
+
+    def test_the_tile_tooltip_carries_the_figures_the_etfs_the_stand_and_the_hint(self) -> None:
+        tile = next(t for t in ve.build_effective(ENVELOPE, performance={1: 2.5}).tiles if t.label.startswith("TSMC"))
+        for text in ("Effektiv: 732 € (7,32 %)", "Direkt: 620 € (6,20 %)", "Über ETFs: 112 € (1,12 %)", "IS3N", "Datenstand 12.10.2026 (iShares)", "Quelle: https://example.invalid/is3n",
+                     "Zuordnungshinweis", "geprüfte Zuordnung", "Tagesperformance der Aktie: +2,50 %"):
+            self.assertIn(text, tile.tip)
+        nvda = next(t for t in ve.build_effective(ENVELOPE).tiles if t.label == "NVIDIA")
+        self.assertIn("nicht verfügbar (die Performance eines ETF wird nie als Unternehmensperformance verwendet)", nvda.tip)
+        self.assertNotIn("Zuordnungshinweis", nvda.tip)  # an ISIN match needs no hint
+
+    def test_without_data_there_are_no_tiles(self) -> None:
+        self.assertEqual(ve.build_effective({"ok": False, "message": "kaputt"}).tiles, [])
+        self.assertEqual(ve.build_effective({"ok": True, "top": [], "etfs": []}).tiles, [])
+
+
+@QT
+class ExposureTreemapPageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        qapp()
+        self.widget = ExposureTreemapWidget()
+        self.addCleanup(self.widget.deleteLater)
+
+    def test_the_areas_are_proportional_to_the_effective_values(self) -> None:
+        env = tile_env([company("A", 6000.0, 0.0), company("B", 2500.0, 500.0), company("C", 600.0, 0.0), company("D", 300.0, 0.0)], other=100.0)
+        tiles = ve.build_effective(env).tiles
+        self.widget.resize(900, 500)
+        self.widget.set_tiles(tiles)
+        self.assertEqual(len(self.widget.rects), len(tiles))
+        areas = [r[2] * r[3] for r in self.widget.rects]
+        total = sum(areas)
+        for tile, area in zip(tiles, areas):
+            self.assertAlmostEqual(area / total, tile.value / sum(t.value for t in tiles), places=6)  # area = effective value, exactly
+        self.assertTrue(all(r[2] >= 0 and r[3] >= 0 for r in self.widget.rects))  # no negative sizes
+        for i, a in enumerate(self.widget.rects):  # and no overlap
+            for b in self.widget.rects[i + 1:]:
+                self.assertFalse(min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]) > 1e-6 and min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]) > 1e-6)
+        self.assertGreaterEqual(areas[0], max(areas[1:]) - 1e-6)  # the largest company has the largest tile
+
+    def test_it_paints_and_the_hover_text_is_the_tile_tooltip(self) -> None:
+        tiles = ve.build_effective(ENVELOPE, performance={1: 2.5}).tiles
+        self.widget.resize(900, 500)
+        self.widget.set_tiles(tiles)
+        self.assertFalse(self.widget.grab().isNull())
+        x, y, w, h = self.widget.rects[0]
+        from PySide6.QtCore import QPointF
+
+        tip = self.widget.tile_at(QPointF(x + w / 2, y + h / 2))
+        self.assertEqual(tip, tiles[0].tip)
+        self.assertIsNone(self.widget.tile_at(QPointF(-5, -5)))
+
+    def test_without_tiles_it_says_so_and_still_paints(self) -> None:
+        self.widget.resize(300, 200)
+        self.widget.set_tiles([])
+        self.assertFalse(self.widget.grab().isNull())
+
+
 @QT
 class EffectivePageTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -278,11 +432,22 @@ class EffectivePageTests(unittest.TestCase):
             self.assertIn(text, tip)
         self.assertEqual(self.view.company_table.item(0, 8).text(), "IS3N 12.10.")
 
+    def test_the_exposure_treemap_is_in_the_tab_and_the_sector_treemap_stays_in_the_sector_tab(self) -> None:
+        self.open_page()
+        self.assertIsNot(self.view.exposure_treemap, self.view.treemap)  # an own data source: the sector treemap is not involved
+        tiles = self.view.exposure_treemap.tiles
+        self.assertEqual([t.label for t in tiles if t.kind == "company"], ["TSMC (ADR) · TSM", "NVIDIA", "Direct Only Inc", "Dup Corp"])  # one tile per company; cash and unresolved ETFs are separate blocks
+        self.assertEqual(sorted(t.kind for t in tiles if t.kind != "company"), ["other", "unresolved"])
+        self.assertEqual(sum(1 for t in self.view.exposure_treemap.tiles if t.label.startswith("TSMC")), 1)
+        self.assertIs(self.view.tabs.widget(0).findChild(type(self.view.treemap)), self.view.treemap)  # the sector treemap is still on the Sektoren tab
+        self.view.tabs.setCurrentIndex(1)
+        self.assertFalse(self.view.grab().isNull())
+
     def test_opening_the_page_only_reads(self) -> None:
         self.open_page()
         tools = [c["tool"] for c in self.calls()]
         self.assertEqual(tools.count("get_effective_exposure"), 1)
-        self.assertEqual(next(c for c in self.calls() if c["tool"] == "get_effective_exposure")["arguments"]["top"], 25)
+        self.assertEqual(next(c for c in self.calls() if c["tool"] == "get_effective_exposure")["arguments"]["top"], 40)
         self.assertEqual([t for t in tools if t.startswith(("set_", "add_", "remove_", "onboard", "sql", "approve"))], [])
 
     def test_an_error_keeps_the_page_usable_and_the_tab_paints(self) -> None:
