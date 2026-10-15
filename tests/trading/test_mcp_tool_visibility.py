@@ -116,8 +116,8 @@ class ToolVisibilityTests(unittest.TestCase):
         self.assertEqual(params["set_security_sector"], ["sector", "security_id"])
         for forbidden in ("sql", "query", "security_id", "sector", "cik", "active"):  # the onboarding takes no SQL, no id, no sector and no CIK
             self.assertNotIn(forbidden, tools["onboard_security"].input_schema.get("properties", {}), forbidden)
-        self.assertEqual(params["check_transaction_import"], sorted(["file_path", "format", "create_securities", "include_historical", "strategies", "campaign_opened_at", "accept_aliases"]))
-        self.assertEqual(params["import_transactions"], sorted(["file_path", "plan_token", "format", "create_securities", "include_historical", "strategies", "campaign_opened_at", "accept_aliases"]))
+        self.assertEqual(params["check_transaction_import"], sorted(["file_path", "format", "create_securities", "include_historical", "strategies", "campaign_opened_at", "accept_aliases", "start_campaigns"]))
+        self.assertEqual(params["import_transactions"], sorted(["file_path", "plan_token", "format", "create_securities", "include_historical", "strategies", "campaign_opened_at", "accept_aliases", "start_campaigns"]))
         for name in ("check_transaction_import", "import_transactions"):  # a file path and options, never SQL
             for forbidden in ("sql", "query", "security_id", "table"):
                 self.assertNotIn(forbidden, tools[name].input_schema.get("properties", {}), f"{name}: {forbidden}")

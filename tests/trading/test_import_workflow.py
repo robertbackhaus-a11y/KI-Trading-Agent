@@ -368,6 +368,73 @@ class IdentifierAliasTests(FlowCase):
         self.assertIn("already has", entry["reason"])
 
 
+class DecisionTests(FlowCase):
+    """What the Import page decides on the spot: a strategy for a newly held position, an alias for an identifier conflict - through the existing options, with a token per decision."""
+
+    def assignments(self):
+        return {r[0]: r[1] for r in self.conn.execute("SELECT s.isin, a.strategy_type FROM strategy_assignment a JOIN security s ON s.id = a.security_id")}
+
+    def campaigns(self):
+        return self.conn.execute("SELECT COUNT(*) FROM swing_campaign").fetchone()[0]
+
+    def test_a_newly_held_position_without_a_strategy_is_offered_for_a_decision(self) -> None:
+        needed = self.check(A1, B1, create_securities=True)["diff"]["strategy_needed"]
+        self.assertEqual(sorted(n["key"] for n in needed), sorted([ISIN_A, ISIN_B]))  # no ticker: the ISIN is the key the option takes
+        self.assertEqual({n["name"] for n in needed}, {"Alpha Corp", "Beta AG"})
+        self.assertTrue(all(n["shares"] > 0 for n in needed))
+
+    def test_the_chosen_strategy_is_applied_through_the_existing_assignment_logic(self) -> None:
+        none = self.check(A1, B1, create_securities=True)
+        chosen = self.check(A1, B1, create_securities=True, strategies=[f"{ISIN_A}=long_term"])
+        self.assertNotEqual(none["plan_token"], chosen["plan_token"])  # every decision gives a new plan
+        self.assertEqual([n["key"] for n in chosen["diff"]["strategy_needed"]], [ISIN_B])
+        self.assertEqual(self.assignments(), {})  # the check writes nothing
+        result = self.run_flow(A1, B1, create_securities=True, strategies=[f"{ISIN_A}=long_term"], expected_plan_token=chosen["plan_token"])
+        self.assertEqual(self.assignments(), {ISIN_A: "long_term"})  # "none" for the other one stays: no assignment is guessed
+        self.assertEqual([n["key"] for n in result["diff"]["strategy_needed"]], [ISIN_B])
+        self.assertEqual(self.campaigns(), 0)  # long-term: no campaign
+
+    def test_swing_without_a_campaign_start_starts_no_campaign(self) -> None:
+        by_default = self.check(A1, create_securities=True, strategies=[f"{ISIN_A}=swing"])
+        self.assertEqual(len(by_default["planned"]["campaigns_created"]), 1)  # the existing rule: a derivable start is started
+        checked = self.check(A1, create_securities=True, strategies=[f"{ISIN_A}=swing"], start_campaigns=False)
+        self.assertNotEqual(by_default["plan_token"], checked["plan_token"])
+        self.assertEqual(checked["planned"]["campaigns_created"], [])
+        item = next(i for i in checked["planned"]["open_items"] if i["code"] == ti.CAMPAIGN_INITIALIZATION_REQUIRED)
+        self.assertIn("CAMPAIGN_START_NOT_REQUESTED", item["detail"])
+        self.run_flow(A1, create_securities=True, strategies=[f"{ISIN_A}=swing"], start_campaigns=False)
+        self.assertEqual(self.assignments(), {ISIN_A: "swing"})
+        self.assertEqual(self.campaigns(), 0)
+
+    def test_an_explicit_campaign_date_is_still_honoured(self) -> None:
+        self.run_flow(A1, create_securities=True, strategies=[f"{ISIN_A}=swing"], start_campaigns=False)
+        self.run_flow(A1, campaign_opened_at=[f"{ISIN_A}=2026-03-02"], start_campaigns=False)
+        self.assertEqual(self.campaigns(), 1)
+
+    def test_the_same_decisions_twice_are_idempotent(self) -> None:
+        decisions = dict(create_securities=True, strategies=[f"{ISIN_A}=long_term"], start_campaigns=False)
+        self.run_flow(A1, B1, **decisions)
+        after = self.dump_hash()
+        again = self.run_flow(A1, B1, **decisions)
+        self.assertFalse(again["written"])
+        self.assertEqual(self.dump_hash(), after)
+
+    def test_an_alias_conflict_offers_a_candidate_with_the_evidence(self) -> None:
+        sid = self.add_security("KR0000000019", "Hynix Test", symbol="000660", wkn="AAA111")
+        diff = self.check(A1)["diff"]
+        self.assertEqual(diff["alias_candidates"], [{"identifier": ISIN_A, "security": "000660", "same_wkn": True, "security_id": sid, "name": "Hynix Test", "wkn": "AAA111",
+                                                      "database_isin": "KR0000000019"}])
+        accepted = self.check(A1, accept_aliases=[f"{ISIN_A}=000660"])["diff"]
+        self.assertEqual(accepted["alias_candidates"], [])  # decided: no longer open
+        self.assertEqual(accepted["identifier_aliases"][0]["status"], "NEW")
+
+    def test_without_the_same_wkn_the_candidate_says_so_and_the_backend_refuses(self) -> None:
+        self.add_security("KR0000000019", "Hynix Test", symbol="000660", wkn="OTHER9")
+        self.conn.execute("UPDATE security SET isin = 'KR0000000019' WHERE symbol = '000660'")
+        diff = self.check(A1)["diff"]
+        self.assertEqual(diff["alias_candidates"], [])  # resolved by name only -> a CONFLICT row, not a master data conflict
+
+
 class CliTests(FlowCase):
     def test_the_cli_prints_the_difference_and_the_reconciliation(self) -> None:
         self.write_parqet(A1, B1)

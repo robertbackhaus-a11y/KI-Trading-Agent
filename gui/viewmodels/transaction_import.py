@@ -13,6 +13,9 @@ from .portfolio import DASH
 from .reason_codes import format_reason_code
 
 FORMATS = {"Parqet-Export": "parqet", "Kanonisches CSV": "canonical"}  # shown text -> value of the tool
+STRATEGY_CHOICES = {"Offen": None, "Swing": "swing", "Long-Term": "long_term", "Keine": "none"}  # shown text -> value; "none" is a decision (stay without a strategy), not sent to the tool
+ALIAS_CHOICES = {"Offen": None, "Alias übernehmen": "accept"}
+ALIAS_STATUS = {"NEW": "wird übernommen", "EXISTS": "bereits gespeichert", "REFUSED": "abgelehnt"}
 TYPE_TEXT = {"BUY": "Kauf", "SELL": "Verkauf", "DIVIDEND": "Dividende", "COST": "Kosten", "TRANSFERIN": "Einlieferung", "TRANSFEROUT": "Auslieferung"}
 KIND_TEXT = {"new": "neu", "changed": "geändert", "closed": "geschlossen"}
 FIELD_TEXT = {"isin": "ISIN", "wkn": "WKN"}
@@ -24,6 +27,7 @@ POSITION_HEADERS = ["Wertpapier", "Änderung", "Stück vorher", "Stück nachher"
 PROBLEM_HEADERS = ["Zeile", "Wertpapier", "Problem", "Grund"]
 OPEN_HEADERS = ["Wertpapier", "Offener Punkt", "Detail"]
 DIFFERENCE_HEADERS = ["Wertpapier", "Datei (Stück)", "Datenbank (Stück)", "Hinweis"]
+DECISION_HEADERS = ["Art", "Wertpapier", "Angaben", "Entscheidung", "Stand"]
 
 
 @dataclass
@@ -41,13 +45,20 @@ class ImportView:
     problems: list[list[str]] = field(default_factory=list)
     open_items: list[list[str]] = field(default_factory=list)
     differences: list[list[str]] = field(default_factory=list)
+    alias_infos: dict[str, dict[str, Any]] = field(default_factory=dict)  # Parqet identifier -> what the user needs to decide on it (this check)
+    strategy_infos: dict[str, dict[str, Any]] = field(default_factory=dict)  # strategy key -> the newly held position without a strategy (this check)
+    refused: list[str] = field(default_factory=list)  # identifiers whose alias the server refused (the import is then not possible)
     closing: list[str] = field(default_factory=list)
     tooltip: str = ""
 
 
-def request_arguments(path: str, format_text: str, create_securities: bool, include_historical: bool) -> dict[str, Any]:
-    """Exactly what the user chose; nothing is filled in."""
-    return {"file_path": path.strip(), "format": FORMATS.get(format_text, "parqet"), "create_securities": bool(create_securities), "include_historical": bool(include_historical)}
+def request_arguments(path: str, format_text: str, create_securities: bool, include_historical: bool, strategies: Optional[dict[str, str]] = None,
+                      aliases: Optional[dict[str, str]] = None) -> dict[str, Any]:
+    """Exactly what the user chose; nothing is filled in.  ``strategies`` maps a strategy key to ``swing`` / ``long_term`` / ``none`` (``none`` is not sent: the position simply
+    stays without a strategy), ``aliases`` maps a Parqet identifier to the security key.  No campaign is ever started by the page (``start_campaigns`` false)."""
+    return {"file_path": path.strip(), "format": FORMATS.get(format_text, "parqet"), "create_securities": bool(create_securities), "include_historical": bool(include_historical),
+            "strategies": [f"{key}={value}" for key, value in sorted((strategies or {}).items()) if value in ("swing", "long_term")],
+            "accept_aliases": [f"{identifier}={security}" for identifier, security in sorted((aliases or {}).items())], "start_campaigns": False}
 
 
 def _num(value: Any, digits: int = 2) -> str:
@@ -84,7 +95,18 @@ def build(res_ok: bool, data: Any, message: str = "") -> ImportView:
     created, updates, conflicts = diff["new_securities"], diff["masterdata_updates"], diff["masterdata_conflicts"]
     changes = diff["position_changes"]
     would_write = bool(data.get("would_write"))
-    view = ImportView(True, "info", "", can_import=(mode == "check" and would_write and bool(data.get("plan_token"))), plan_token=data.get("plan_token"), written=written)
+    results = {a["identifier"]: a for a in diff.get("identifier_aliases", [])}
+    refused = sorted(i for i, a in results.items() if a["status"] == "REFUSED")
+    view = ImportView(True, "info", "", can_import=(mode == "check" and would_write and bool(data.get("plan_token")) and not refused), plan_token=data.get("plan_token"), written=written)
+    view.refused = refused
+    for candidate in diff.get("alias_candidates", []):
+        view.alias_infos[candidate["identifier"]] = {"security": candidate["security"], "name": candidate.get("name"), "wkn": candidate.get("wkn"),
+                                                       "database_isin": candidate.get("database_isin"), "same_wkn": bool(candidate.get("same_wkn")), "status": "OFFEN", "reason": ""}
+    for identifier, alias in results.items():  # an alias already chosen: the result of the server (accepted, already stored or refused with the reason)
+        info = view.alias_infos.setdefault(identifier, {"security": alias["security"], "name": alias.get("symbol"), "wkn": None, "database_isin": None, "same_wkn": None})
+        info.update(status=alias["status"], reason=alias.get("reason") or "")
+    for needed in diff.get("strategy_needed", []):
+        view.strategy_infos[needed["key"]] = {"name": needed.get("name") or needed.get("symbol"), "symbol": needed.get("symbol"), "shares": needed.get("shares")}
 
     nothing = not (new_tx["count"] or created or updates)
     prefix = "Import abgeschlossen" if written else "Prüfung"
@@ -133,6 +155,9 @@ def build(res_ok: bool, data: Any, message: str = "") -> ImportView:
             view.level = "warning"
     elif conflicts or problems:
         view.level = "warning"
+    if refused:
+        view.level = "blocker" if view.level != "blocker" else view.level
+        view.headline = "Zuordnung abgelehnt – bitte die Auswahl ändern. " + view.headline
     if view.open_items and view.level == "info":
         view.level = "warning"
     view.tooltip = "Prüfen schreibt nichts: Der Import wird auf einer Kopie im Speicher simuliert."

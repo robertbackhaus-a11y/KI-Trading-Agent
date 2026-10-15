@@ -1321,13 +1321,14 @@ class Tools:
             return {"ok": False, "operation": "onboard_security", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
     def _transaction_import_sync(self, write: bool, file_path: str, format: str, create_securities: bool, include_historical: bool,
-                                 strategies: list[str] | None, campaign_opened_at: list[str] | None, plan_token: str | None, accept_aliases: list[str] | None = None) -> dict:
+                                 strategies: list[str] | None, campaign_opened_at: list[str] | None, plan_token: str | None, accept_aliases: list[str] | None = None,
+                                 start_campaigns: bool = True) -> dict:
         workflow = self._load_runtime_trading_module("import_workflow")
         if format not in ("parqet", "canonical"):
             raise ValueError("format must be parqet or canonical")
         path = workflow.validate_source_file(file_path)
         common = dict(fmt=format, create_securities=bool(create_securities), strategies=list(strategies or []), campaign_opened_at=list(campaign_opened_at or []),
-                      include_historical=bool(include_historical), accept_aliases=list(accept_aliases or []))
+                      include_historical=bool(include_historical), accept_aliases=list(accept_aliases or []), start_campaigns=bool(start_campaigns))
         if write:
             return workflow.compact(workflow.run(self.valves.database_path, path, expected_plan_token=plan_token, **common))
         return workflow.compact(workflow.check(self.valves.database_path, path, **common))
@@ -1341,6 +1342,7 @@ class Tools:
         strategies: list[str] | None = None,
         campaign_opened_at: list[str] | None = None,
         accept_aliases: list[str] | None = None,
+        start_campaigns: bool = True,
     ) -> dict:
         """ACTION class (for the desktop GUI only; reads a local CSV, writes nothing): the complete dry run of a transaction export.
 
@@ -1356,9 +1358,10 @@ class Tools:
         :param strategies: optional list of "SYMBOL=swing" or "SYMBOL=long_term" for held positions without an assignment
         :param campaign_opened_at: optional list of "SYMBOL=YYYY-MM-DD" when a Swing campaign start cannot be derived
         :param accept_aliases: optional list of "IDENTIFIER=SYMBOL": the identifier (ISIN) of the file IS that existing security (ADR / GDR / other listing); needs the same WKN on both sides
+        :param start_campaigns: false = no Swing campaign is derived and started automatically (the open item says so); an explicit start date in campaign_opened_at still starts one
         """
         try:
-            return await asyncio.to_thread(self._transaction_import_sync, False, file_path, format, create_securities, include_historical, strategies, campaign_opened_at, None, accept_aliases)
+            return await asyncio.to_thread(self._transaction_import_sync, False, file_path, format, create_securities, include_historical, strategies, campaign_opened_at, None, accept_aliases, start_campaigns)
         except Exception as exc:
             return {"ok": False, "operation": "check_transaction_import", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:300]}
 
@@ -1372,6 +1375,7 @@ class Tools:
         strategies: list[str] | None = None,
         campaign_opened_at: list[str] | None = None,
         accept_aliases: list[str] | None = None,
+        start_campaigns: bool = True,
     ) -> dict:
         """ACTION (writes the database; for the desktop GUI only): import a transaction export in ONE transaction, after check_transaction_import.
 
@@ -1390,11 +1394,12 @@ class Tools:
         :param strategies: same value as in the check
         :param campaign_opened_at: same value as in the check
         :param accept_aliases: same value as in the check
+        :param start_campaigns: same value as in the check
         """
         try:
             if not plan_token:
                 raise ValueError("plan_token is required (run check_transaction_import first)")
-            return await asyncio.to_thread(self._transaction_import_sync, True, file_path, format, create_securities, include_historical, strategies, campaign_opened_at, plan_token, accept_aliases)
+            return await asyncio.to_thread(self._transaction_import_sync, True, file_path, format, create_securities, include_historical, strategies, campaign_opened_at, plan_token, accept_aliases, start_campaigns)
         except Exception as exc:
             return {"ok": False, "operation": "import_transactions", "result": "ERROR", "changed": False, "error": type(exc).__name__, "message": str(exc)[:300]}
 

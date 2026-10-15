@@ -133,6 +133,7 @@ class ImportOptions:
     strategies: tuple[tuple[str, str], ...] = ()  # (security key, swing|long_term)
     campaign_opened_at: tuple[tuple[str, str], ...] = ()  # (security key, YYYY-MM-DD)
     accept_aliases: tuple[tuple[str, str], ...] = ()  # (identifier of the file, security key): the file's identifier IS this security (recorded as a source symbol)
+    start_campaigns: bool = True  # False: no Swing campaign is derived and started automatically (an explicit --campaign-opened-at still is honoured)
     as_of_date: Optional[str] = None  # "today" for assignment lookups (tests); default: current UTC date
 
     @property
@@ -1141,7 +1142,9 @@ def _masterdata_changes(conn: sqlite3.Connection, records: Iterable[NormalizedIm
                 reason = "the database value differs from the file; not overwritten"
                 if field_name == "isin" and row["wkn"] and {w.upper() for w in wanted[security_id]["wkn"]} == {str(row["wkn"]).upper()}:
                     reason += f"; the WKN is the same - if it is the same instrument (ADR / GDR / other listing), record the identifier with --accept-identifier-alias {values[0]}={row['symbol'] or security_id}"
-                conflicts.append({**base, "database": current, "file": values[0], "reason": reason})
+                same_wkn = field_name == "isin" and bool(row["wkn"]) and {w.upper() for w in wanted[security_id]["wkn"]} == {str(row["wkn"]).upper()}
+                candidate = {"identifier": values[0], "security": row["symbol"] or str(security_id), "same_wkn": same_wkn} if field_name == "isin" else None
+                conflicts.append({**base, "database": current, "file": values[0], "reason": reason, "name": row["name"], "wkn": row["wkn"], **({"alias_candidate": candidate} if candidate else {})})
     return updates, conflicts
 
 
@@ -1169,7 +1172,7 @@ def build_import_plan(
     token_payload = {
         "file_sha256": source_hash, "db_state": db_token, "adapter": adapter.name, "rows": [record.primitive() for record in records],
         "masterdata": [updates, conflicts, aliases],
-        "options": {"create_securities": options.create_securities, "strategies": options.strategies, "campaign_opened_at": options.campaign_opened_at, "accept_aliases": options.accept_aliases},
+        "options": {"create_securities": options.create_securities, "strategies": options.strategies, "campaign_opened_at": options.campaign_opened_at, "accept_aliases": options.accept_aliases, "start_campaigns": options.start_campaigns},
     }
     plan_token = hashlib.sha256(json.dumps(token_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     return ImportPlan(str(path), source_hash, len(records), latest_date, db_token, plan_token, tuple(records), adapter.name, options, tuple(updates), tuple(conflicts), tuple(aliases))
@@ -1280,6 +1283,17 @@ def _plan_campaign(
     cost, currency = _reference(before["currency"], before["remaining_after"] / quantity)
     return {"status": "CREATE", "opened_at": explicit_date, "original_quantity": quantity, "reference_avg_cost": cost,
             "reference_currency": currency, "baseline_transaction_id": None, "start_basis": "explicit start (quantity held before that day)"}
+
+
+def _strategy_key(conn: sqlite3.Connection, security_id: int) -> Optional[str]:
+    """The key ``--strategy`` accepts for a security: its symbol, else its ISIN (what ``_security_index`` knows)."""
+    row = conn.execute("SELECT symbol, isin FROM security WHERE id = ?", (security_id,)).fetchone()
+    return str(row["symbol"] or row["isin"] or "") or None if row else None
+
+
+def _security_name(conn: sqlite3.Connection, security_id: int) -> Optional[str]:
+    row = conn.execute("SELECT name FROM security WHERE id = ?", (security_id,)).fetchone()
+    return row["name"] if row else None
 
 
 def _security_label(conn: sqlite3.Connection, security_id: int) -> str:
@@ -1400,8 +1414,9 @@ def _initialize_strategies_and_campaigns(
     today: str,
     adapter: ImportAdapter,
     open_items: list[dict[str, Any]],
+    start_campaigns: bool = True,
 ) -> dict[str, Any]:
-    """Strategy assignment and (Swing) campaign initialization for every held security; never guesses."""
+    """Strategy assignment and (Swing) campaign initialization for every held security; never guesses.  ``start_campaigns=False`` derives no campaign start by itself."""
     out: dict[str, Any] = {"assignments": [], "campaigns": [], "reconciliation": [], "campaign_security_ids": []}
     source = f"{adapter.name}_import"
     strategy_ok, lifecycle_ok = _strategy_schema_ok(conn), _lifecycle_available(conn)
@@ -1421,7 +1436,8 @@ def _initialize_strategies_and_campaigns(
         out["assignments"].append({"security_id": security_id, "symbol": _security_label(conn, security_id), **assignment})
         action = assignment["action"]
         if action == "required":
-            item(STRATEGY_ASSIGNMENT_REQUIRED, security_id, detail="no active strategy assignment; pass --strategy SYMBOL=swing|long_term")
+            item(STRATEGY_ASSIGNMENT_REQUIRED, security_id, detail="no active strategy assignment; pass --strategy SYMBOL=swing|long_term", strategy_key=_strategy_key(conn, security_id),
+                 name=_security_name(conn, security_id), shares=_position_shares(conn, security_id))
             continue
         if action == "conflict":
             item(STRATEGY_CONFLICT, security_id, detail=f"active assignment is {assignment['strategy']}, --strategy asked for {assignment['requested']}")
@@ -1439,6 +1455,9 @@ def _initialize_strategies_and_campaigns(
             continue
         if _open_campaign_id(conn, security_id) is not None:
             continue  # existing campaign: reconciled below, never recreated
+        if not start_campaigns and not explicit:
+            item(CAMPAIGN_INITIALIZATION_REQUIRED, security_id, detail="CAMPAIGN_START_NOT_REQUESTED: this import started no campaign; start it deliberately (--campaign-opened-at SYMBOL=YYYY-MM-DD)")
+            continue
         start_index = _current_run_start(steps)
         opener_in_file = start_index is not None and steps[start_index]["id"] in file_transaction_ids
         plan = _plan_campaign(steps, explicit_date=explicit, opener_in_file=opener_in_file, today=today)
@@ -1623,7 +1642,7 @@ def apply_import_plan(
         open_items: list[dict[str, Any]] = []
         phase = _initialize_strategies_and_campaigns(
             conn, candidates=candidates, file_transaction_ids=file_transaction_ids, strategies=strategies, campaign_dates=campaign_dates,
-            today=today, adapter=adapter, open_items=open_items,
+            today=today, adapter=adapter, open_items=open_items, start_campaigns=options.start_campaigns,
         )
         reconcile_ids = sorted(set(affected) | set(phase["campaign_security_ids"]))
         remaining_ids = [security_id for security_id in reconcile_ids if security_id not in phase["campaign_security_ids"]]

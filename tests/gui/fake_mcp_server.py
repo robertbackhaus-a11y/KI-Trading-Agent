@@ -267,23 +267,53 @@ async def get_effective_exposure(as_of: str | None = None, top: int = 25) -> str
     return _text({"ok": True, "operation": "get_effective_exposure", "as_of": "2026-10-13", "total_market_value_eur": 0.0, "top": [], "etfs": [], "coverage": {}, "checks": {}, "warnings": []})
 
 
+def _import_token(file_path, format, create_securities, include_historical, strategies, campaign_opened_at, accept_aliases, start_campaigns) -> str:
+    """The plan token of the fake: a digest of everything that makes up a plan (like the real one), so every decision gives another token."""
+    import hashlib
+
+    payload = [file_path, format, bool(create_securities), bool(include_historical), sorted(strategies or []), sorted(campaign_opened_at or []), sorted(accept_aliases or []), bool(start_campaigns)]
+    return "tok-" + hashlib.sha1(_text(payload).encode("utf-8")).hexdigest()[:10]
+
+
+def _decided(envelope: dict, strategies, accept_aliases) -> dict:
+    """The fixture answer with the decisions applied: a decided alias / strategy is no longer open; an alias to NOSUCH is refused like the real server does."""
+    diff = envelope.get("diff") or {}
+    for item in accept_aliases or []:
+        identifier, _, security = item.partition("=")
+        diff["alias_candidates"] = [c for c in diff.get("alias_candidates", []) if c["identifier"] != identifier]
+        refused = security.upper() == "NOSUCH"
+        diff.setdefault("identifier_aliases", []).append({"identifier": identifier, "security": security, "security_id": None if refused else 6, "symbol": None if refused else security,
+                                                           "status": "REFUSED" if refused else "NEW", "reason": "no security with that symbol, ISIN or id" if refused else ""})
+        if not refused:
+            diff["masterdata_conflicts"] = [c for c in diff.get("masterdata_conflicts", []) if c.get("file") != identifier]
+    chosen = {item.partition("=")[0] for item in strategies or []}
+    diff["strategy_needed"] = [n for n in diff.get("strategy_needed", []) if n["key"] not in chosen]
+    return envelope
+
+
 async def check_transaction_import(file_path: str, format: str = "parqet", create_securities: bool = False, include_historical: bool = False,
-                                   strategies: list[str] | None = None, campaign_opened_at: list[str] | None = None) -> str:
-    """Action tool (fake): the dry run of a transaction import; the answer is the fixture file named by FAKE_IMPORT_FILE (mode check)."""
+                                   strategies: list[str] | None = None, campaign_opened_at: list[str] | None = None, accept_aliases: list[str] | None = None,
+                                   start_campaigns: bool = True) -> str:
+    """Action tool (fake): the dry run of a transaction import; the answer is the fixture file named by FAKE_IMPORT_FILE (mode check) with the decisions applied."""
     _calls("check_transaction_import", {"file_path": file_path, "format": format, "create_securities": create_securities, "include_historical": include_historical,
-                                         "strategies": strategies, "campaign_opened_at": campaign_opened_at})
+                                         "strategies": strategies, "campaign_opened_at": campaign_opened_at, "accept_aliases": accept_aliases, "start_campaigns": start_campaigns})
     if file_path.endswith("broken.csv"):
         return _text({"ok": False, "operation": "check_transaction_import", "result": "ERROR", "changed": False, "error": "FileNotFoundError", "message": "file not found: broken.csv"})
     path = os.environ.get("FAKE_IMPORT_FILE")
-    return Path(path).read_text(encoding="utf-8") if path and Path(path).exists() else _text({"ok": False, "message": "no fixture"})
+    if not (path and Path(path).exists()):
+        return _text({"ok": False, "message": "no fixture"})
+    envelope = _decided(json.loads(Path(path).read_text(encoding="utf-8")), strategies, accept_aliases)
+    envelope["plan_token"] = _import_token(file_path, format, create_securities, include_historical, strategies, campaign_opened_at, accept_aliases, start_campaigns)
+    return _text(envelope)
 
 
 async def import_transactions(file_path: str, plan_token: str, format: str = "parqet", create_securities: bool = False, include_historical: bool = False,
-                              strategies: list[str] | None = None, campaign_opened_at: list[str] | None = None) -> str:
-    """Action tool (fake): the import; the answer is the fixture file named by FAKE_IMPORT_DONE_FILE (mode write); a wrong token is refused like the real tool does."""
+                              strategies: list[str] | None = None, campaign_opened_at: list[str] | None = None, accept_aliases: list[str] | None = None,
+                              start_campaigns: bool = True) -> str:
+    """Action tool (fake): the import; the answer is the fixture file named by FAKE_IMPORT_DONE_FILE (mode write); a token that is not the one of these arguments is refused like the real tool does."""
     _calls("import_transactions", {"file_path": file_path, "plan_token": plan_token, "format": format, "create_securities": create_securities, "include_historical": include_historical,
-                                    "strategies": strategies, "campaign_opened_at": campaign_opened_at})
-    if plan_token != "tok-check-1":
+                                    "strategies": strategies, "campaign_opened_at": campaign_opened_at, "accept_aliases": accept_aliases, "start_campaigns": start_campaigns})
+    if plan_token != _import_token(file_path, format, create_securities, include_historical, strategies, campaign_opened_at, accept_aliases, start_campaigns):
         return _text({"ok": False, "operation": "import_transactions", "result": "ERROR", "changed": False, "error": "TransactionImportError", "message": "import plan is stale; check again before writing"})
     path = os.environ.get("FAKE_IMPORT_DONE_FILE")
     return Path(path).read_text(encoding="utf-8") if path and Path(path).exists() else _text({"ok": False, "message": "no fixture"})

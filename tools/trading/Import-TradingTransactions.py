@@ -144,6 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--accept-identifier-alias", action="append", default=[], metavar="IDENTIFIER=SYMBOL", dest="accept_alias",
                         help="Declare that an identifier (ISIN) of the file IS an existing security (an ADR / GDR or another listing of the same instrument). Needs the same WKN in the file and in the "
                              "security master; stored as a source symbol, so later imports resolve it without a master data conflict (repeatable)")
+    parser.add_argument("--no-campaign-start", action="store_true", help="Do not derive and start a Swing campaign automatically (an explicit --campaign-opened-at still starts one)")
     parser.add_argument("--json", action="store_true", help="Emit deterministic JSON")
     return parser
 
@@ -182,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         # One flow for both modes (import_workflow): check = complete dry run + difference + reconciliation of the simulated end state; write = backup, one transaction, then the
         # reconciliation of the file against the database.
         common = dict(fmt=args.format, create_securities=args.create_securities, strategies=args.strategy, campaign_opened_at=args.campaign_opened_at,
-                      include_historical=args.include_historical, accept_aliases=args.accept_alias)
+                      include_historical=args.include_historical, accept_aliases=args.accept_alias, start_campaigns=not args.no_campaign_start)
         if not args.write:
             result = import_workflow.check(args.db_path, args.csv, **common)
             print(json.dumps(result, sort_keys=True)) if args.json else _print_human(result, write=False)

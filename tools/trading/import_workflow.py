@@ -71,6 +71,11 @@ def _diff(plan: ti.ImportPlan, include_historical: bool, planned_or_result: dict
         "masterdata_updates": list(plan.masterdata_updates),
         "masterdata_conflicts": list(plan.masterdata_conflicts),
         "identifier_aliases": list(plan.identifier_aliases),
+        # what the caller can decide on the spot (the Import page): an identifier alias per ISIN conflict, a strategy per newly held position without one
+        "alias_candidates": [{**c["alias_candidate"], "security_id": c["security_id"], "name": c.get("name"), "wkn": c.get("wkn"), "database_isin": c.get("database")}
+                             for c in plan.masterdata_conflicts if c.get("alias_candidate")],
+        "strategy_needed": [{"security_id": i["security_id"], "symbol": i.get("symbol"), "name": i.get("name"), "key": i.get("strategy_key"), "shares": i.get("shares")}
+                            for i in planned_or_result.get("open_items", []) if i["code"] == ti.STRATEGY_ASSIGNMENT_REQUIRED and i.get("strategy_key")],
         "new_transactions": {"count": len(approved), "by_type": by_type},
         "existing_transactions": plan.counts[ti.CLASS_DUPLICATE.lower()],
         "historical_skipped": len(skipped),
@@ -220,13 +225,14 @@ def validate_source_file(file_path: Any) -> Path:
         raise ti.TransactionImportError("the file is larger than 20 MB")
     return path
 
-def _options(create_securities: bool, strategies: Iterable[str], campaign_opened_at: Iterable[str], accept_aliases: Iterable[str] = ()) -> ti.ImportOptions:
+def _options(create_securities: bool, strategies: Iterable[str], campaign_opened_at: Iterable[str], accept_aliases: Iterable[str] = (), start_campaigns: bool = True) -> ti.ImportOptions:
     return ti.ImportOptions(create_securities=create_securities, strategies=ti.parse_key_value_options(strategies, kind="strategy"),
-                            campaign_opened_at=ti.parse_key_value_options(campaign_opened_at, kind="date"), accept_aliases=ti.parse_key_value_options(accept_aliases, kind="alias"))
+                            campaign_opened_at=ti.parse_key_value_options(campaign_opened_at, kind="date"), accept_aliases=ti.parse_key_value_options(accept_aliases, kind="alias"),
+                            start_campaigns=bool(start_campaigns))
 
 
 def check(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", create_securities: bool = False, strategies: Iterable[str] = (),
-          campaign_opened_at: Iterable[str] = (), include_historical: bool = False, accept_aliases: Iterable[str] = ()) -> dict[str, Any]:
+          campaign_opened_at: Iterable[str] = (), include_historical: bool = False, accept_aliases: Iterable[str] = (), start_campaigns: bool = True) -> dict[str, Any]:
     """The complete dry run: the real database is opened read-only, the import is simulated on an in-memory copy.  Nothing is written."""
     path = Path(db_path)
     if not path.is_file():
@@ -236,7 +242,7 @@ def check(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", cre
     conn.execute("PRAGMA query_only = ON")
     try:
         adapter = ti.get_adapter(fmt)
-        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases)
+        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases, start_campaigns)
         before = _positions(conn)
         captured: dict[str, Any] = {}
 
@@ -254,7 +260,7 @@ def check(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", cre
 
 
 def run(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", create_securities: bool = False, strategies: Iterable[str] = (),
-        campaign_opened_at: Iterable[str] = (), include_historical: bool = False, expected_plan_token: Optional[str] = None, accept_aliases: Iterable[str] = ()) -> dict[str, Any]:
+        campaign_opened_at: Iterable[str] = (), include_historical: bool = False, expected_plan_token: Optional[str] = None, accept_aliases: Iterable[str] = (), start_campaigns: bool = True) -> dict[str, Any]:
     """The write: backup, then everything in ONE transaction (securities, master data, transactions, positions, strategy / campaign rules); any error rolls everything back.
     ``expected_plan_token`` (from ``check``) makes the write fail when the file or the database changed since the check."""
     path = Path(db_path)
@@ -264,7 +270,7 @@ def run(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", creat
     conn.row_factory = sqlite3.Row
     try:
         adapter = ti.get_adapter(fmt)
-        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases)
+        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases, start_campaigns)
         plan = ti.build_import_plan(conn, csv_path, adapter=adapter, options=options)
         if expected_plan_token is not None and expected_plan_token != plan.plan_token:
             raise ti.TransactionImportError("import plan is stale; check again before writing")

@@ -33,7 +33,10 @@ CLOSING = {"status": "MATCH", "counts": {"securities": 3, "transactions": 12, "p
 DIFF = {"classification_counts": {"duplicate": 9, "new": 3}, "new_securities": [{"security_id": 90, "symbol": None, "isin": "TESTISIN-T1", "wkn": "TST123", "name": "Test Corp", "currency": "EUR",
                                                                                 "asset_type": "stock", "asset_type_defaulted": True}],
         "masterdata_updates": [{"security_id": 5, "symbol": "OLD", "field": "isin", "from": None, "to": "TESTISIN-T2"}],
-        "masterdata_conflicts": [{"security_id": 6, "symbol": "SIX", "field": "isin", "database": "TESTISIN-D", "file": "TESTISIN-F", "reason": "the database value differs from the file; not overwritten"}],
+        "masterdata_conflicts": [{"security_id": 6, "symbol": "SIX", "field": "isin", "database": "TESTID-D", "file": "TESTID-F", "reason": "the database value differs from the file; not overwritten"}],
+        "alias_candidates": [{"identifier": "TESTID-F", "security": "SIX", "security_id": 6, "name": "Six Corp", "wkn": "TST600", "database_isin": "TESTID-D", "same_wkn": True}],
+        "strategy_needed": [{"security_id": 90, "symbol": None, "name": "Test Corp", "key": "TESTKEY-1", "shares": 4.0}],
+        "identifier_aliases": [],
         "new_transactions": {"count": 3, "by_type": {"BUY": 2, "SELL": 1}}, "existing_transactions": 9, "historical_skipped": 0,
         "problem_rows": [{"row": 7, "classification": "CONFLICT", "reason": "identical row occurs more than once in this file", "identifier": "TESTISIN-X", "holding": "Dup Corp"}], "problem_row_count": 1,
         "position_changes": [{"security_id": 90, "symbol": "Test Corp", "kind": "new", "shares_before": 0.0, "shares_after": 4.0, "cost_basis_before": 0.0, "cost_basis_after": 200.0},
@@ -51,7 +54,11 @@ def envelope(mode: str = "check", written: bool = False, **more) -> dict:
 
 class ViewModelTests(unittest.TestCase):
     def test_the_arguments_are_exactly_what_was_chosen(self) -> None:
-        self.assertEqual(vm.request_arguments(" a.csv ", "Parqet-Export", True, False), {"file_path": "a.csv", "format": "parqet", "create_securities": True, "include_historical": False})
+        self.assertEqual(vm.request_arguments(" a.csv ", "Parqet-Export", True, False),
+                         {"file_path": "a.csv", "format": "parqet", "create_securities": True, "include_historical": False, "strategies": [], "accept_aliases": [], "start_campaigns": False})
+        decided = vm.request_arguments("a.csv", "Parqet-Export", True, False, {"K2": "none", "K1": "swing", "K3": "long_term"}, {"ID-1": "SIX"})
+        self.assertEqual((decided["strategies"], decided["accept_aliases"]), (["K1=swing", "K3=long_term"], ["ID-1=SIX"]))  # "none" is a decision of the page, not an argument
+        self.assertIs(decided["start_campaigns"], False)  # the page never starts a campaign
         self.assertEqual(vm.request_arguments("b.csv", "Kanonisches CSV", False, True)["format"], "canonical")
 
     def test_a_check_shows_the_difference_and_allows_the_import(self) -> None:
@@ -70,6 +77,25 @@ class ViewModelTests(unittest.TestCase):
         self.assertIn("Übereinstimmung", view.closing[0])
         self.assertIn("12.345,60 EUR", view.closing[2])
         self.assertIn("integrity_check ok", view.closing[4])
+
+    def test_the_open_decisions_are_taken_from_the_check(self) -> None:
+        view = vm.build(True, envelope())
+        self.assertEqual(view.alias_infos["TESTID-F"]["security"], "SIX")
+        self.assertTrue(view.alias_infos["TESTID-F"]["same_wkn"])
+        self.assertEqual(view.alias_infos["TESTID-F"]["status"], "OFFEN")
+        self.assertEqual(view.strategy_infos["TESTKEY-1"]["name"], "Test Corp")
+        self.assertEqual(view.refused, [])
+
+    def test_a_refused_alias_blocks_the_import_and_says_why(self) -> None:
+        data = envelope()
+        data["diff"]["alias_candidates"] = []
+        data["diff"]["identifier_aliases"] = [{"identifier": "TESTID-F", "security": "NOSUCH", "security_id": None, "symbol": None, "status": "REFUSED", "reason": "no security with that symbol, ISIN or id"}]
+        view = vm.build(True, data)
+        self.assertFalse(view.can_import)
+        self.assertEqual(view.refused, ["TESTID-F"])
+        self.assertEqual(view.level, "blocker")
+        self.assertIn("Zuordnung abgelehnt", view.headline)
+        self.assertEqual(view.alias_infos["TESTID-F"]["reason"], "no security with that symbol, ISIN or id")
 
     def test_open_items_are_readable_without_raw_codes(self) -> None:
         view = vm.build(True, envelope())
@@ -171,13 +197,16 @@ class ImportPageTests(unittest.TestCase):
         self.assertEqual(self.page.tables["positions"].rowCount(), 2)
         self.assertEqual(self.page.tables["securities"].rowCount(), 1)
         self.assertIn("Übereinstimmung", self.page.closing.text())
+        token = self.page._token
         asked = []
         self.page.confirm_import = lambda headline: asked.append(headline) or True
         self.page.run.click()
         self.assertTrue(pump(15, lambda: bool(self.calls("import_transactions"))))
         self.assertTrue(pump(15, lambda: "Import abgeschlossen" in self.page.message.text()), self.page.message.text())
         sent = self.calls("import_transactions")[0]
-        self.assertEqual((sent["plan_token"], sent["create_securities"], sent["format"]), ("tok-check-1", True, "parqet"))
+        self.assertEqual((sent["plan_token"], sent["create_securities"], sent["format"]), (token, True, "parqet"))
+        self.assertTrue(token.startswith("tok-"))
+        self.assertEqual((sent["strategies"], sent["accept_aliases"], sent["start_campaigns"]), ([], [], False))
         self.assertEqual(len(asked), 1)
         self.assertFalse(self.page.run.isEnabled())  # the next import needs the next check
 
@@ -212,6 +241,136 @@ class ImportPageTests(unittest.TestCase):
         self.assertTrue(pump(15, lambda: "Nicht möglich" in self.page.message.text()), self.page.message.text())
         self.assertIn("stale", self.page.message.text())
         self.assertFalse(self.page.run.isEnabled())
+
+    # -- decisions on the page -------------------------------------------------------------------------------------
+    def all_calls(self) -> list[dict]:
+        return self.calls("check_transaction_import") + self.calls("import_transactions")
+
+    def choose(self, kind: str, key: str, text: str) -> None:
+        self.page.decision_boxes[(kind, key)].setCurrentText(text)
+
+    def recheck(self) -> None:
+        self.page.run.setEnabled(False)
+        self.page.check.click()
+        self.assertTrue(pump(15, lambda: self.page.run.isEnabled() or "abgelehnt" in self.page.message.text()), self.page.message.text())
+
+    def test_the_open_points_are_shown_as_decisions(self) -> None:
+        self.check()
+        table = self.page.decisions
+        self.assertFalse(table.isHidden())
+        self.assertEqual(table.rowCount(), 2)
+        rows = {table.item(r, 0).text(): [table.item(r, c).text() for c in (1, 2, 4)] for r in range(2)}
+        self.assertEqual(rows["Kennung"][0], "SIX – Six Corp")
+        self.assertIn("Parqet-ID TESTID-F ↔ Datenbank TESTID-D", rows["Kennung"][1])
+        self.assertIn("WKN TST600", rows["Kennung"][1])
+        self.assertIn("gleiche WKN", rows["Kennung"][1])
+        self.assertEqual(rows["Kennung"][2], "offen")
+        self.assertEqual(rows["Strategie"][0], "Test Corp")
+        self.assertIn("4 Stück neu gehalten", rows["Strategie"][1])
+        self.assertEqual([self.page.decision_boxes[("strategy", "TESTKEY-1")].itemText(i) for i in range(4)], ["Offen", "Swing", "Long-Term", "Keine"])
+        self.assertEqual(self.page.decision_boxes[("strategy", "TESTKEY-1")].currentText(), "Offen")  # nothing is decided by itself
+        self.assertEqual(self.all_calls()[0]["strategies"], [])
+
+    def test_an_alias_decision_needs_a_new_check_and_gets_a_new_token(self) -> None:
+        self.check()
+        old_token = self.page._token
+        self.choose("alias", "TESTID-F", "Alias übernehmen")
+        self.assertFalse(self.page.run.isEnabled())  # the plan changed: the old token is worth nothing
+        self.assertIsNone(self.page._token)
+        self.assertIn("erneut prüfen", self.page.message.text())
+        self.assertEqual(len(self.calls("check_transaction_import")), 1)  # choosing sends nothing by itself
+        self.recheck()
+        self.assertEqual(self.calls("check_transaction_import")[-1]["accept_aliases"], ["TESTID-F=SIX"])
+        self.assertNotEqual(self.page._token, old_token)
+        row = [self.page.decisions.item(r, 4).text() for r in range(self.page.decisions.rowCount()) if self.page.decisions.item(r, 0).text() == "Kennung"][0]
+        self.assertEqual(row, "wird übernommen")
+        self.assertEqual(self.page.decision_boxes[("alias", "TESTID-F")].currentText(), "Alias übernehmen")  # the choice survives the check
+        self.page.confirm_import = lambda headline: True
+        self.page.run.click()
+        self.assertTrue(pump(15, lambda: "Import abgeschlossen" in self.page.message.text()), self.page.message.text())
+        sent = self.calls("import_transactions")[0]
+        self.assertEqual(sent["accept_aliases"], ["TESTID-F=SIX"])
+        self.assertTrue(sent["plan_token"].startswith("tok-"))
+
+    def test_a_refused_alias_is_shown_and_cannot_be_imported(self) -> None:
+        data = envelope()
+        data["diff"]["alias_candidates"][0]["security"] = "NOSUCH"
+        (self.tmp / "check.json").write_text(json.dumps(data), encoding="utf-8")
+        self.check()
+        self.choose("alias", "TESTID-F", "Alias übernehmen")
+        self.page.check.click()
+        self.assertTrue(pump(15, lambda: "Zuordnung abgelehnt" in self.page.message.text()), self.page.message.text())
+        self.assertFalse(self.page.run.isEnabled())
+        status = [self.page.decisions.item(r, 4).text() for r in range(self.page.decisions.rowCount()) if self.page.decisions.item(r, 0).text() == "Kennung"][0]
+        self.assertIn("abgelehnt: no security with that symbol, ISIN or id", status)
+        self.choose("alias", "TESTID-F", "Offen")  # taking the decision back lets the check pass again
+        self.recheck()
+        self.assertTrue(self.page.run.isEnabled())
+        self.assertEqual(self.calls("check_transaction_import")[-1]["accept_aliases"], [])
+        self.assertEqual(self.calls("import_transactions"), [])
+
+    def test_the_chosen_strategy_is_sent_and_no_campaign_is_started(self) -> None:
+        self.check()
+        self.choose("strategy", "TESTKEY-1", "Swing")
+        self.assertFalse(self.page.run.isEnabled())
+        self.recheck()
+        last = self.calls("check_transaction_import")[-1]
+        self.assertEqual((last["strategies"], last["start_campaigns"]), (["TESTKEY-1=swing"], False))
+        status = [self.page.decisions.item(r, 4).text() for r in range(self.page.decisions.rowCount()) if self.page.decisions.item(r, 0).text() == "Strategie"][0]
+        self.assertEqual(status, "wird Swing zugeordnet (ohne Campaign)")
+        self.choose("strategy", "TESTKEY-1", "Long-Term")
+        self.recheck()
+        self.assertEqual(self.calls("check_transaction_import")[-1]["strategies"], ["TESTKEY-1=long_term"])
+        self.page.confirm_import = lambda headline: True
+        self.page.run.click()
+        self.assertTrue(pump(15, lambda: "Import abgeschlossen" in self.page.message.text()), self.page.message.text())
+        self.assertEqual(self.calls("import_transactions")[0]["strategies"], ["TESTKEY-1=long_term"])
+        self.assertTrue(all(c["start_campaigns"] is False for c in self.all_calls()))  # no call of the page ever allows a campaign start
+
+    def test_none_is_a_decision_and_the_import_stays_possible(self) -> None:
+        self.check()
+        self.choose("strategy", "TESTKEY-1", "Keine")
+        self.recheck()
+        self.assertEqual(self.calls("check_transaction_import")[-1]["strategies"], [])  # nothing is sent for "Keine"
+        status = [self.page.decisions.item(r, 4).text() for r in range(self.page.decisions.rowCount()) if self.page.decisions.item(r, 0).text() == "Strategie"][0]
+        self.assertEqual(status, "bewusst ohne Strategie")
+        self.assertTrue(self.page.run.isEnabled())
+
+    def test_a_stale_token_after_a_decision_is_refused_by_the_tool(self) -> None:
+        self.check()
+        old = self.page._token
+        self.choose("strategy", "TESTKEY-1", "Swing")
+        self.page.confirm_import = lambda headline: True
+        self.page.run.click()  # the page itself refuses: no valid check for this form
+        self.assertEqual(self.calls("import_transactions"), [])
+        self.assertIn("erneut prüfen", self.page.message.text().replace("Bitte zuerst prüfen.", "erneut prüfen"))
+        self.page._checked, self.page._token = self.page.arguments(), old  # even a forged state is stopped by the server: the token belongs to other arguments
+        self.page.run.setEnabled(True)
+        self.page.run.click()
+        self.assertTrue(pump(15, lambda: "stale" in self.page.message.text()), self.page.message.text())
+
+    def test_another_file_or_option_drops_the_decisions(self) -> None:
+        self.check()
+        self.choose("strategy", "TESTKEY-1", "Swing")
+        self.choose("alias", "TESTID-F", "Alias übernehmen")
+        self.page.historical.setChecked(True)
+        self.assertEqual((self.page.strategy_choice, self.page.alias_choice), ({}, {}))
+        self.assertTrue(self.page.decisions.isHidden())
+        self.assertFalse(self.page.run.isEnabled())
+
+    def test_the_whole_flow_check_decide_check_import_reconcile(self) -> None:
+        self.check()
+        self.choose("alias", "TESTID-F", "Alias übernehmen")
+        self.choose("strategy", "TESTKEY-1", "Long-Term")
+        self.recheck()
+        self.assertEqual(self.page.tables["positions"].rowCount(), 2)
+        self.page.confirm_import = lambda headline: True
+        self.page.run.click()
+        self.assertTrue(pump(15, lambda: "Import abgeschlossen" in self.page.message.text()), self.page.message.text())
+        self.assertIn("Übereinstimmung", self.page.closing.text())  # the reconciliation after the import is on the page
+        self.assertFalse(self.page.run.isEnabled())  # one import per check
+        sent = self.calls("import_transactions")[0]
+        self.assertEqual((sent["strategies"], sent["accept_aliases"], sent["start_campaigns"]), (["TESTKEY-1=long_term"], ["TESTID-F=SIX"], False))
 
     def test_without_a_file_the_check_does_not_start(self) -> None:
         self.page.check.click()
