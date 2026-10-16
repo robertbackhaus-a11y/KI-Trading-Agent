@@ -62,7 +62,10 @@ def _iso_duration(text: str) -> str:
         return text or DASH
     days, hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
     total_h = days * 24 + hours
-    parts = ([f"{total_h} Stunden"] if total_h else []) + ([f"{minutes} Minuten"] if minutes else []) + ([f"{seconds} Sekunden"] if seconds else [])
+    def unit(n: int, one: str, many: str) -> str:
+        return f"{n} {one if n == 1 else many}"
+
+    parts = ([unit(total_h, "Stunde", "Stunden")] if total_h else []) + ([unit(minutes, "Minute", "Minuten")] if minutes else []) + ([unit(seconds, "Sekunde", "Sekunden")] if seconds else [])
     return " ".join(parts) or DASH
 
 

@@ -462,7 +462,7 @@ class MainWindow(QMainWindow):
         """"Jetzt ausführen": starts the existing scheduled task (the same job, action, settings and log as the schedule; no console window - the scheduler runs it with pythonw) and
         follows it on this page until the scheduler reports its end.  A task that is running, disabled or already being started is not started again."""
         if name in self._watched:
-            self.tasks.show_run_status("Dieser Task wurde bereits von hier gestartet und läuft oder startet gerade – kein zweiter Start.", "warning")
+            self.statusBar().showMessage("Dieser Task läuft oder startet gerade – kein zweiter Start.", 6000)  # a hint only: the run status above stays
             return
         self.log.info("Task-Start angefordert: %s", name)
         self._watched[name] = RunWatch(name, datetime.now())  # claimed at once: a second click before the first answer cannot start it twice

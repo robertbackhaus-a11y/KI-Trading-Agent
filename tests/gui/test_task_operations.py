@@ -188,6 +188,8 @@ class DefinitionTests(unittest.TestCase):
         self.assertIn("Keine zweite Instanz (IgnoreNew): Ja", details)
         self.assertIn("Zeitlimit: 72 Stunden", details)
         self.assertIn("Zeitlimit: 2 Stunden", rows(overrides={MI: {"time_limit": "PT2H"}})[MI].details)
+        for iso, text in (("PT1H", "1 Stunde"), ("PT1H1M", "1 Stunde 1 Minute"), ("PT2H30M", "2 Stunden 30 Minuten"), ("PT1S", "1 Sekunde"), ("PT30S", "30 Sekunden"), ("P1D", "24 Stunden")):
+            self.assertIn(f"Zeitlimit: {text}", rows(overrides={MI: {"time_limit": iso}})[MI].details + "\n", iso)
         self.assertIn("Verpasste Läufe: 0", details)
         self.assertIn("Auslöser: bei Anmeldung; täglich 17:15", details)
         off = rows(overrides={MD: {"start_when_available": False, "multiple_instances": "Parallel"}})[MD].details
@@ -741,7 +743,12 @@ class OperationsPageTests(unittest.TestCase):
         self.window.run_task(MD)  # a second click before the first answer
         self.assertTrue(pump(10, lambda: "läuft seit" in self.window.tasks.run_status.text()))
         self.window.run_task(MD)  # and while it runs
-        self.assertIn("kein zweiter Start", self.window.tasks.run_status.text())
+        before = self.window.tasks.run_status.text()
+        self.window.run_task(MD)  # and while it runs
+        self.assertIn("kein zweiter Start", self.window.statusBar().currentMessage())  # the hint is separate ...
+        self.assertNotIn("kein zweiter Start", self.window.tasks.run_status.text())  # ... and the run status keeps its text
+        self.assertIn("läuft seit", self.window.tasks.run_status.text())
+        self.assertEqual(self.window.tasks.run_status.text().split("seit")[0], before.split("seit")[0])
         pump(0.3)
         self.assertEqual(backend.started, [MD])
 
