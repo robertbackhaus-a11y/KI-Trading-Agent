@@ -14,7 +14,12 @@ Nothing is invented here:
   ``etf_lookthrough`` contribution, a category that does not (spans several groups, no group, not a sector) forms its own *unmapped* category group and is
   never put into a group by name or size.  An ETF without a usable allocation stays one unresolved position (its own sector entry or "not assigned"),
   visible with its status.  The split replaces the ETF's single position, so nothing is counted twice (``checks`` compares the sum with the portfolio context).
-  Every contribution says whether it is ``direct`` or ``etf_lookthrough``;
+* **Company-based assignment** (``etf_company``): where the ETF's holdings are usable, every holding is resolved to a security of the database by the one matching of
+  ``effective_exposure`` (ISIN, reviewed alias, ticker + exchange; no fuzzy matching).  A company whose security has a sector in ``sector_assignment`` contributes its ETF value
+  to *that* project sector -- the same sector its direct position has -- and this value is taken out of the provider category it belongs to (the holding's own GICS sector;
+  a provider that publishes none: the category group that fits, else the unmapped categories, pro rata, reported as ``estimated_value_eur``).  A company without a sector, or not
+  in the database, is not forced anywhere: its value stays in the provider category (mapped one-to-one or unmapped / ``NOT_ASSESSED``).  The total is unchanged.
+  Every contribution says whether it is ``direct``, ``etf_company`` or ``etf_lookthrough``;
 * the weight is the share of the invested value (the sum of the valued positions), the basis of the sector guard; ``limit_pct`` is the guard limit
   (``RiskGuardConfig.max_sector_weight``) and ``guard_status`` says ``OVER_LIMIT`` / ``OK`` / ``NOT_ASSESSED`` for the *effective* exposure (direct + look-through).
   The risk guard itself is NOT changed: it still reads direct sectors only; this view reads no guard result;
@@ -32,6 +37,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+import effective_exposure
+import etf_holdings as eh
 import etf_lookthrough
 import sector_assignment
 from strategy_config import RiskGuardConfig
@@ -41,7 +48,9 @@ GUARD_OK = "OK"
 GUARD_OVER = "OVER_LIMIT"
 GUARD_NOT_ASSESSED = "NOT_ASSESSED"
 KIND_SECTOR, KIND_ETF_CATEGORY, KIND_UNASSIGNED = "sector", "etf_category", "unassigned"
-ORIGIN_DIRECT, ORIGIN_ETF = "direct", "etf_lookthrough"
+ORIGIN_DIRECT, ORIGIN_ETF, ORIGIN_COMPANY = "direct", "etf_lookthrough", "etf_company"
+COMPANIES_SHOWN = 5  # companies named in an etf_company entry
+_NOT_A_SECTOR = "not a sector"
 STALE_BAR_DAYS = 5  # the latest daily bar may be at most this many calendar days older than the evaluation date
 BAR_GAP_DAYS = 7  # the previous bar must lie at most this many days before the latest one
 SOURCE_NAME = "Yahoo Finance"
@@ -147,6 +156,68 @@ def _lookthrough_layers(universe_dir: Optional[Path], valid_groups: Optional[set
         return None
 
 
+def _company_group(conn: sqlite3.Connection, layers, row: Mapping[str, Any]) -> Optional[str]:
+    """The project sector of a company (all its securities agree; a conflict or no entry means none)."""
+    found = set()
+    for sid in row.get("security_ids") or []:
+        try:
+            key = sector_assignment.listing_key(conn, int(sid))
+        except sqlite3.Error:
+            continue
+        sector = sector_assignment.resolve(layers, key)["sector"]
+        if sector:
+            found.add(sector)
+    return next(iter(found)) if len(found) == 1 else None
+
+
+def company_items(conn: sqlite3.Connection, layers, exposure: Mapping[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    """``{etf security_id: [{"name", "group", "gics", "value"}]}``: the ETF part of every company that has a project sector (rows of ``effective_exposure``)."""
+    out: dict[int, list[dict[str, Any]]] = {}
+    for row in exposure.get("companies") or []:
+        if not row.get("etf_value_eur"):
+            continue
+        group = _company_group(conn, layers, row)
+        if group is None:
+            continue
+        for c in row["contributors"]:
+            out.setdefault(int(c["etf_security_id"]), []).append({"name": row["name"], "group": group, "gics": str(c.get("gics_sector") or ""), "value": float(c["value_eur"])})
+    return out
+
+
+def _take(pools: list[dict[str, Any]], amount: float) -> float:
+    """Takes up to ``amount`` EUR out of the categories, pro rata to their value; returns what could not be taken."""
+    available = sum(p["value_eur"] for p in pools)
+    if available <= _EPS:
+        return amount
+    used = min(amount, available)
+    for p in pools:
+        p["value_eur"] -= used * p["value_eur"] / available
+    return amount - used
+
+
+def deduct_companies(parts: list[dict[str, Any]], items: list[dict[str, Any]]) -> float:
+    """Takes the value of the company-assigned holdings out of the ETF's provider categories (``parts``, changed in place) and sets ``accepted`` on every item.
+
+    Known category (the holding's own GICS sector is a category of the allocation): taken from it.  Otherwise the value is *estimated* out of the categories mapped to the
+    company's own group, else out of the unmapped ones that are sectors, pro rata.  Returns the estimated EUR."""
+    estimated = 0.0
+    for item in items:
+        pools = [p for p in parts if item["gics"] and p["category"].strip().lower() == item["gics"].strip().lower()]
+        guess = not pools
+        if guess:
+            pools = [p for p in parts if p["group"] == item["group"]]
+            if not pools:
+                pools = [p for p in parts if p["group"] is None and not str(p.get("reason") or "").startswith(_NOT_A_SECTOR)]
+        left = _take(pools, item["value"])
+        if left > _EPS:  # not enough in the likely categories: the rest from all of them
+            guess = True
+            left = _take(parts, left)
+        item["accepted"] = item["value"] - left
+        if guess:
+            estimated += item["accepted"]
+    return estimated
+
+
 def build_sector_overview(
     conn: sqlite3.Connection,
     *,
@@ -200,6 +271,16 @@ def build_sector_overview(
 
     entries: list[dict[str, Any]] = []
     etfs: list[dict[str, Any]] = []
+    by_etf: dict[int, list[dict[str, Any]]] = {}
+    if lookthrough and layers is not None and lt is not None and any(p["is_etf"] for p in positions):
+        try:
+            exposure = effective_exposure.build_effective_exposure(conn, as_of=as_of, universe_dir=universe_dir, top=1, context=context, with_companies=True)
+            by_etf = company_items(conn, layers, exposure)
+            for held in exposure["etfs"]:
+                if held["status"] not in (eh.APPLIED, eh.STALE):
+                    warnings.append(f"COMPANY_SPLIT_UNAVAILABLE_{held['status']}: {held['symbol']} is split by provider category only ({held['detail']})")
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            warnings.append(f"COMPANY_ASSIGNMENT_UNAVAILABLE: {exc}; ETFs are split by provider category only")
     for position in positions:
         position["origin"], position["category"], position["etf_weight_pct"] = ORIGIN_DIRECT, None, None
         if not (lookthrough and position["is_etf"]):
@@ -211,13 +292,37 @@ def build_sector_overview(
             status, allocation, detail = etf_lookthrough.status_of(lt, position["isin"], evaluation)
         item = {"security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "isin": position["isin"], "market_value_eur": position["market_value_eur"],
                 "status": status, "detail": detail, "as_of": allocation.as_of if allocation else None, "provider": allocation.provider if allocation else None,
-                "source": allocation.source if allocation else None, "mapped_value_eur": 0.0, "mapped_pct": None, "categories": 0}
+                "source": allocation.source if allocation else None, "mapped_value_eur": 0.0, "mapped_pct": None, "categories": 0,
+                "company_value_eur": 0.0, "company_count": 0, "estimated_value_eur": 0.0}
         etfs.append(item)
         if allocation is None:
             entries.append(position)  # stays one unresolved position (its own sector entry, or not assigned)
             continue
-        parts = etf_lookthrough.contributions(allocation, position["market_value_eur"], lt.mapping)
+        parts = [dict(part) for part in etf_lookthrough.contributions(allocation, position["market_value_eur"], lt.mapping)]
+        resolved = by_etf.get(position["security_id"], [])
+        item["estimated_value_eur"] = deduct_companies(parts, resolved) if resolved else 0.0
+        parts = [part for part in parts if part["value_eur"] > _EPS]
         item["categories"] = len(parts)
+        by_group: dict[str, list[dict[str, Any]]] = {}
+        for company in resolved:
+            if company["accepted"] > _EPS:
+                by_group.setdefault(company["group"], []).append(company)
+        for group, members in sorted(by_group.items()):
+            value = sum(m["accepted"] for m in members)
+            members.sort(key=lambda m: (-m["accepted"], m["name"]))
+            entries.append({
+                "security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "asset_type": position["asset_type"], "is_etf": True, "isin": position["isin"],
+                "strategy": position["strategy"], "quantity": position["quantity"], "sector": group, "sector_source": "etf_holdings_company",
+                "market_value_eur": value, "day_change_pct": position["day_change_pct"], "day_change_date": position["day_change_date"],
+                "origin": ORIGIN_COMPANY, "category": "", "category_reason": "", "etf_weight_pct": value / position["market_value_eur"] * 100.0,
+                "etf_value_eur": position["market_value_eur"], "etf_as_of": allocation.as_of,
+                "company_count": len(members), "companies": [{"name": m["name"], "value_eur": m["accepted"]} for m in members[:COMPANIES_SHOWN]],
+            })
+            item["company_value_eur"] += value
+            item["company_count"] += len(members)
+            item["mapped_value_eur"] += value
+        if item["estimated_value_eur"] > _EPS:
+            warnings.append(f"COMPANY_SPLIT_ESTIMATED: {position['symbol']}: {item['estimated_value_eur']:.0f} EUR of company holdings had no provider sector and were taken from the fitting categories pro rata")
         for part in parts:
             entries.append({
                 "security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "asset_type": position["asset_type"], "is_etf": True, "isin": position["isin"],
@@ -257,6 +362,8 @@ def build_sector_overview(
         "assigned_value_eur": assigned,
         "direct_value_eur": sum(g["direct_value_eur"] for g in groups), "etf_value_eur": sum(g["etf_value_eur"] for g in groups),
         "etf_category_value_eur": sum(g["market_value_eur"] for g in groups if g["kind"] == KIND_ETF_CATEGORY),
+        "etf_company_value_eur": sum(e["company_value_eur"] for e in etfs),
+        "not_assessed_value_eur": sum(g["market_value_eur"] for g in groups if g["kind"] != KIND_SECTOR),
         "unassigned_value_eur": sum(g["market_value_eur"] for g in groups if g["kind"] == KIND_UNASSIGNED),
         "lookthrough": {"etf_count": len(etfs), "etf_value_eur": etf_total, "covered_value_eur": covered, "coverage_pct": covered / etf_total * 100.0 if etf_total > _EPS else None,
                         "mapped_value_eur": sum(e["mapped_value_eur"] for e in etfs), "mapped_pct": sum(e["mapped_value_eur"] for e in etfs) / etf_total * 100.0 if etf_total > _EPS else None},
@@ -264,6 +371,6 @@ def build_sector_overview(
         "checks": {"sector_sum_eur": sector_sum, "context_total_eur": context_total,
                    "reconciles": None if context_total is None else abs(context_total - total) <= 0.01 and abs(sector_sum - total) <= 0.01,  # None while the context has no total (an unvalued position)
                    "groups_sum_matches_total": abs(sector_sum - total) <= 0.01},
-        "etf_note": "ETFs with an official sector allocation are split into their categories (etf_lookthrough); categories that fit no single sector group stay unmapped.",
+        "etf_note": "Companies of an ETF with a project sector go to that sector (etf_company); the rest of an ETF with an official sector allocation is split into its categories (etf_lookthrough); categories that fit no single sector group stay unmapped (NOT_ASSESSED).",
         "warnings": warnings,
     }

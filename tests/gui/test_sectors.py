@@ -170,6 +170,22 @@ class ViewModelTests(unittest.TestCase):
         self.assertIn("31.07.2026", part.tip)
         self.assertEqual((direct.lookthrough, part.lookthrough), (False, True))
 
+    def test_company_entries_of_an_etf_are_named_and_marked(self) -> None:
+        env = copy.deepcopy(ENVELOPE)
+        company = position(3, "WORLD", 50.0, None, etf=True, sector="ALPHA", origin="etf_company", etf_weight=16.7, etf_value=300.0)
+        company.update(companies=[{"name": "Position Corp", "value_eur": 30.0}, {"name": "Tkr Corp", "value_eur": 20.0}], company_count=3, etf_as_of="2026-10-14")
+        env["sectors"][0]["positions"].append(company)
+        env["etf_company_value_eur"] = 50.0
+        vm = vs.build_sectors(env)
+        row = next(r for r in vm.position_rows if r[0] == "WORLD ETF · Einzelfirmen")
+        self.assertEqual(row[2], "ETF-Einzelfirmen (Position Corp, Tkr Corp +1; 16,7 % des ETF)")
+        entry = vm.sectors[0].positions[-1]
+        self.assertTrue(entry.lookthrough)
+        self.assertIn("Beitrag aus ETF-Einzelfirmen", entry.tip)
+        self.assertIn("14.10.2026", entry.tip)
+        self.assertIn(("Davon ETF-Einzelfirmen (Sektor der Firma bekannt)", "50 € (5,0 %)"), vm.summary)
+        self.assertTrue(any("Einzelfirmen" in n for n in vm.notes))
+
     def test_the_totals_match_the_portfolio_value(self) -> None:
         vm = vs.build_sectors(ENVELOPE)
         self.assertAlmostEqual(sum(s.value for s in vm.sectors), 750.0 + 150.0 + 100.0)

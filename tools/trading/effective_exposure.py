@@ -15,6 +15,8 @@
   ``ambiguous_unmatched`` (holdings whose match is ambiguous or that carry neither ISIN nor ticker, plus ETFs without usable holdings), ``other`` (cash, derivatives,
   the part a physical fund's weights do not explain) and ``rounding_drift`` (negative, synthetic index lists).  The buckets add up to the invested value (``checks``).
 
+``contributors`` also carry the provider's own ``gics_sector`` and ``location`` of the holding (empty where the provider publishes none).
+
 Only SELECTs and file reads; no write, no network, no order, and no risk guard is read or changed.
 """
 
@@ -118,8 +120,11 @@ def build_effective_exposure(
     universe_dir: Optional[Path] = None,
     top: int = DEFAULT_TOP,
     context: Optional[Any] = None,
+    with_companies: bool = False,
 ) -> dict[str, Any]:
-    """The effective exposure of every company (direct + ETF holdings) of the open positions.  Read-only.  At most ``MAX_TOP`` companies are listed."""
+    """The effective exposure of every company (direct + ETF holdings) of the open positions.  Read-only.  At most ``MAX_TOP`` companies are listed.
+
+    ``with_companies`` adds ``companies`` (every company row, not capped) for in-process users such as the sector overview; the MCP tool never asks for it (size limit)."""
     import analysis_engine
 
     top = max(1, min(int(top), MAX_TOP))
@@ -231,7 +236,7 @@ def build_effective_exposure(
             if security_id is not None and security_id not in c["security_ids"]:
                 c["security_ids"].append(security_id)
             c["contributors"].append({"etf": p["symbol"], "etf_security_id": p["security_id"], "value_eur": value, "weight_in_etf_pct": w, "match": basis,
-                                      "holding_name": h.name, "etf_as_of": data.as_of})
+                                      "holding_name": h.name, "etf_as_of": data.as_of, "gics_sector": h.sector, "location": h.location})
             if basis not in c["match_bases"]:
                 c["match_bases"].append(basis)
             if basis in (AMBIGUOUS, NAME_ONLY):
@@ -301,4 +306,5 @@ def build_effective_exposure(
         "unvalued": unvalued,
         "checks": {"companies_eur": sum_companies, "other_eur": other_eur, "rounding_drift_eur": drift_eur, "unresolved_eur": unresolved_eur, "context_total_eur": context_total, "reconciles": reconciled and (context_total is None or abs(context_total - total) <= 0.01)},
         "warnings": warnings,
+        **({"companies": rows} if with_companies else {}),
     }
