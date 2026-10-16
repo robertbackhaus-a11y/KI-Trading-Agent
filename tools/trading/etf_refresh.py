@@ -13,6 +13,11 @@ Sources, one strict parser per provider format (no generic heuristic; a changed 
   Its weights add up to more than 100 % (coarse rounding); they are stored as published, never normalised (the excess is the rounding drift of ``effective_exposure``: a
   reconciliation item, never a company).  Invesco publishes no structured sector allocation (only the factsheet PDF), so the look-through entry of SPXS is not refreshed here.
 
+Rows that cannot carry exposure are not stored: a NON-equity row (FX forward, cash, future, money market ...) whose published weight is exactly 0 contributes nothing to the
+effective exposure, to the "other" part of the fund or to the sum of the published weights, so dropping it changes no figure (the provider's raw row count, the stored count and the
+omitted rows per asset class are reported and kept in the entry as ``provider_rows`` / ``omitted_zero_weight_rows``).  Everything else is stored exactly as published: every
+equity row (also one whose rounded weight is 0.00 -- it still names a company and its identifiers), every row with a weight other than 0 (also a tiny one, also a negative cash line).
+
 Rules:
 
 * everything is validated BEFORE anything is written: the ETF is the expected one, data is not empty, the date is present and not older than the stored one, the loaders' own
@@ -98,6 +103,21 @@ INVESCO_FUND_URL = "https://dng-api.invesco.com/cache/v1/accounts/en_IE/sharecla
 INVESCO_NAME_PART = "S&P 500"
 
 Fetcher = Callable[[str], bytes]
+
+
+def is_zero_noise(holding: dict[str, Any]) -> bool:
+    """A row that can never carry exposure: not an equity and a published weight of exactly 0."""
+    return holding.get("asset_class", eh.EQUITY) != eh.EQUITY and holding["weight"] == 0
+
+
+def split_zero_noise(holdings: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """``(rows to store, {asset class: number of omitted rows})``.  The order of the stored rows is the provider's."""
+    kept = [h for h in holdings if not is_zero_noise(h)]
+    omitted: dict[str, int] = {}
+    for h in holdings:
+        if is_zero_noise(h):
+            omitted[h.get("asset_class", "?")] = omitted.get(h.get("asset_class", "?"), 0) + 1
+    return kept, dict(sorted(omitted.items()))
 
 
 # ------------------------------------------------------------------------------------------------------------------------ download
@@ -298,7 +318,7 @@ def validate_holdings(spec: EtfSpec, as_of: str, holdings: list[dict[str, Any]],
     if unlisted > max(old_unlisted, 0.0) + MAX_UNLISTED_RATIO and spec.kind == eh.PHYSICAL:
         errors.append(f"IDENTIFIER_LOST: {unlisted:.1%} of the equity rows have no ticker / exchange (before: {old_unlisted:.1%})")
     if old and old.get("holdings"):
-        old_rows = old["holdings"]
+        old_rows = split_zero_noise(old["holdings"])[0]  # an older file may still hold the zero rows; they do not count for the comparison
         if len(holdings) < MIN_COUNT_RATIO * len(old_rows):
             errors.append(f"HOLDINGS_COUNT_DROPPED: {len(holdings)} rows instead of {len(old_rows)}")
         old_keys = {_key(h) for h in old_rows if h.get("asset_class", eh.EQUITY) == eh.EQUITY}
@@ -337,14 +357,16 @@ def validate_sectors(spec: EtfSpec, as_of: str, sectors: dict[str, float], old: 
 # ------------------------------------------------------------------------------------------------------------------------ comparison
 def _holding_summary(entry: dict[str, Any]) -> dict[str, Any]:
     rows = entry["holdings"]
-    return {"count": len(rows), "total_weight": round(sum(h["weight"] for h in rows), 4), "equity_count": sum(1 for h in rows if h.get("asset_class", eh.EQUITY) == eh.EQUITY)}
+    return {"count": len(rows), "total_weight": round(sum(h["weight"] for h in rows), 4), "equity_count": sum(1 for h in rows if h.get("asset_class", eh.EQUITY) == eh.EQUITY),
+            "zero_weight_equity_rows": sum(1 for h in rows if h.get("asset_class", eh.EQUITY) == eh.EQUITY and h["weight"] == 0)}
 
 
 def holdings_changes(old: Optional[dict[str, Any]], new: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {"new": _holding_summary(new), "old": _holding_summary(old) if old else None, "as_of_old": old.get("as_of") if old else None, "as_of_new": new["as_of"]}
+    out: dict[str, Any] = {"new": _holding_summary(new), "old": _holding_summary(old) if old else None, "as_of_old": old.get("as_of") if old else None, "as_of_new": new["as_of"],
+                           "provider_rows": new.get("provider_rows"), "omitted_zero_weight_rows": new.get("omitted_zero_weight_rows", {})}
     if not old:
         return out
-    before = {_key(h): h for h in old["holdings"]}
+    before = {_key(h): h for h in split_zero_noise(old["holdings"])[0]}
     after = {_key(h): h for h in new["holdings"]}
     changed = [(abs(after[k]["weight"] - before[k]["weight"]), k, before[k], after[k]) for k in before.keys() & after.keys() if after[k]["weight"] != before[k]["weight"]]
     changed.sort(key=lambda t: -t[0])
@@ -475,6 +497,9 @@ def refresh(universe_dir: Path, *, write: bool = False, what: Iterable[str] = (H
             row["as_of"] = entry["as_of"]
             if kind == HOLDINGS:
                 row["holdings"], row["weights_total"] = len(entry["holdings"]), round(sum(h["weight"] for h in entry["holdings"]), 4)
+                row["provider_rows"] = entry.get("provider_rows", len(entry["holdings"]))
+                row["omitted_zero_weight_rows"] = entry.get("omitted_zero_weight_rows", {})
+                row["zero_weight_equity_rows"] = sum(1 for h in entry["holdings"] if h.get("asset_class", eh.EQUITY) == eh.EQUITY and h["weight"] == 0)
             else:
                 row["sectors"], row["weights_total"] = len(entry["sectors"]), round(sum(entry["sectors"].values()), 4)
             if errors:
@@ -494,7 +519,8 @@ def refresh(universe_dir: Path, *, write: bool = False, what: Iterable[str] = (H
                     report["etfs"].append({"etf": spec.symbol, "isin": spec.isin, "dataset": kind, "provider": spec.provider, "status": "NOT_AUTOMATED", "errors": [], "written": False,
                                            "warnings": ["NO_STRUCTURED_SOURCE: Invesco publishes the sector allocation only in the factsheet PDF; the stored entry is kept"
                                                         + (f" (as of {old['as_of']}, {age} days old)" if old else " (there is none)")], "as_of": old.get("as_of") if old else None})
-        info: dict[str, Any] = {"written": False, "refreshed": sorted(refreshed), "backup": None, "error": None}
+        info: dict[str, Any] = {"written": False, "refreshed": sorted(refreshed), "backup": None, "error": None, "bytes_before": len(text.encode("utf-8")) if text else 0,
+                                "bytes_after": len(_dump(payload, style).encode("utf-8")) if refreshed else (len(text.encode("utf-8")) if text else 0)}
         report["files"][file_name] = info
         if refreshed and write:
             try:
@@ -547,10 +573,17 @@ def _build_entry(spec: EtfSpec, kind: str, old: Optional[dict[str, Any]], fetche
             if INVESCO_NAME_PART not in identity:
                 raise RefreshError("NOT_THE_FUND", f"the share class behind {spec.isin} is {identity!r}")
             as_of, holdings = parse_invesco_index(fetcher(spec.holdings_url))
+        provider_rows, provider_total = len(holdings), sum(h["weight"] for h in holdings)
+        holdings, omitted = split_zero_noise(holdings)
         errors, warnings = validate_holdings(spec, as_of, holdings, old, today)
+        if abs(sum(h["weight"] for h in holdings) - provider_total) > 1e-9:
+            errors.append("SUM_CHANGED: the omitted rows changed the sum of the published weights")  # cannot happen for weight-0 rows; a guard, not an expectation
         entry: dict[str, Any] = {"name": name, "provider": spec.provider, "as_of": as_of, "kind": spec.kind, "source": spec.holdings_source}
         if spec.kind == eh.SYNTHETIC_INDEX:
             entry["note"] = _note(sum(h["weight"] for h in holdings), as_of)
+        if omitted:
+            entry["provider_rows"] = provider_rows
+            entry["omitted_zero_weight_rows"] = omitted
         entry["holdings"] = holdings
     else:
         if spec.format != "ishares" or not spec.page_url:

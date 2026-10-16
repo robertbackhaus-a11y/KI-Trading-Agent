@@ -338,6 +338,132 @@ class ValidationTests(RefreshCase):
         self.assertTrue(any("STALE_SOURCE" in w and "185 days" in w for w in row["warnings"]), row["warnings"])
 
 
+def noisy_is3n_csv(fx_rows: int = 887, as_of: str = "14/Oct/2026") -> bytes:
+    """An IS3N-like list: 60 equities, one equity with a published weight of 0.00, one tiny but not zero, cash lines (one negative, one zero), a future and many FX rows with weight 0."""
+    lines = [f'Fund Holdings as of,"{as_of}"', "", HEADER]
+    for ticker, name, weight in equal_rows(60, "EM", 99.3):
+        lines.append(f'"{ticker}","{name}","Financials","Equity","1,000.00","{weight}","1,000.00","10.00","10.00","Germany","Xetra","EUR"')
+    lines.append('"ZERO","ZERO WEIGHT CORP","Financials","Equity","12.00","0.00","12.00","1.00","12.00","Germany","Xetra","EUR"')
+    lines.append('"TINY","TINY WEIGHT CORP","Financials","Equity","12.00","0.001","12.00","1.00","12.00","Germany","Xetra","EUR"')
+    lines.append('"USD","USD CASH","Cash and/or Derivatives","Cash","1.00","0.53","1.00","1.00","1.00","United States","-","USD"')
+    lines.append('"TWD","TWD CASH","Cash and/or Derivatives","Cash","-1.00","-0.08","-1.00","1.00","1.00","Taiwan","-","TWD"')
+    lines.append('"EUR","EUR CASH","Cash and/or Derivatives","Cash","0.00","0.00","0.00","1.00","1.00","Germany","-","EUR"')
+    lines.append('"MFSZ6","MSCI EM INDEX DEC 26","Cash and/or Derivatives","Futures","0.00","0.00","19,620,720.00","126.00","3,114.40","-","Ice Futures U.S.","USD"')
+    for i in range(fx_rows):
+        lines.append(f'"FX{i}","USD/CUR{i}","Cash and/or Derivatives","FX","-1.00","0.00","-1.00","-1.00","1.00","United States","-","USD"')
+    lines += ["", '"The content contained herein is owned by BlackRock."']
+    return "\n".join(lines).encode("utf-8")
+
+
+class ZeroNoiseTests(RefreshCase):
+    def refresh_noisy(self, **kwargs) -> dict:
+        return self.run_refresh({**good_answers(), IS3N_CSV_URL: noisy_is3n_csv()}, write=True, only=["IS3N"], what=[er.HOLDINGS], **kwargs)
+
+    def test_only_non_equity_rows_with_a_weight_of_exactly_zero_are_left_out(self) -> None:
+        report = self.refresh_noisy()
+        row = self.rows(report, "holdings")["IS3N"]
+        self.assertEqual(row["status"], "WRITTEN")
+        self.assertEqual(row["provider_rows"], 953)  # 62 equities, 3 cash lines, 1 future, 887 FX rows
+        self.assertEqual(row["omitted_zero_weight_rows"], {"Cash": 1, "FX": 887, "Futures": 1})
+        self.assertEqual(row["holdings"], 64)  # 62 equity rows and the two cash lines that carry a weight
+        entry = self.stored(self.hpath)["etfs"][IS3N]
+        classes = [h["asset_class"] for h in entry["holdings"]]
+        self.assertEqual((classes.count("Equity"), classes.count("Cash"), classes.count("FX"), classes.count("Futures")), (62, 2, 0, 0))
+        self.assertIn("ZERO WEIGHT CORP", {h["name"] for h in entry["holdings"]})  # an equity with a rounded weight of 0.00 still names a company: it stays
+        self.assertEqual(next(h for h in entry["holdings"] if h["name"] == "TINY WEIGHT CORP")["weight"], 0.001)  # tiny but not zero: kept
+        self.assertEqual([h["weight"] for h in entry["holdings"] if h["asset_class"] == "Cash"], [0.53, -0.08])  # a negative cash line is exposure information
+        self.assertEqual(row["zero_weight_equity_rows"], 1)
+
+    def test_the_providers_sum_is_documented_and_not_changed(self) -> None:
+        report = self.refresh_noisy()
+        row = self.rows(report, "holdings")["IS3N"]
+        raw_sum = sum(h["weight"] for h in er.parse_ishares_holdings(noisy_is3n_csv())[1])
+        entry = self.stored(self.hpath)["etfs"][IS3N]
+        self.assertAlmostEqual(raw_sum, sum(h["weight"] for h in entry["holdings"]), places=9)
+        self.assertAlmostEqual(row["weights_total"], round(raw_sum, 4), places=4)
+        self.assertEqual((entry["provider_rows"], entry["omitted_zero_weight_rows"]), (953, {"Cash": 1, "FX": 887, "Futures": 1}))  # the file says what was left out
+        self.assertEqual(row["changes"]["provider_rows"], 953)
+        self.assertEqual(eh.read_layers(self.dir).etfs[IS3N].total_weight, entry and sum(h["weight"] for h in entry["holdings"]))
+
+    def test_the_stored_holdings_shrink(self) -> None:
+        report = self.refresh_noisy()
+        info = report["files"][er.HOLDINGS_FILE]
+        self.assertEqual(info["bytes_after"], self.hpath.stat().st_size)
+        stored = json.dumps(self.stored(self.hpath)["etfs"][IS3N]["holdings"], separators=(",", ":"))
+        raw = json.dumps(er.parse_ishares_holdings(noisy_is3n_csv())[1], separators=(",", ":"))
+        self.assertLess(len(stored), len(raw) / 5)  # 64 rows instead of 953
+
+    def test_an_older_file_with_the_zero_rows_does_not_make_the_new_list_look_collapsed(self) -> None:
+        payload = stored_payload()
+        payload["etfs"][IS3N]["holdings"] += [{"name": f"USD/CUR{i}", "ticker": f"FX{i}", "weight": 0.0, "asset_class": "FX", "sector": "Cash and/or Derivatives", "location": "United States",
+                                               "exchange": "-"} for i in range(900)]
+        self.hpath.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        report = self.run_refresh({**good_answers(), IS3N_CSV_URL: ishares_csv(equal_rows(60, "EM", 99.8))}, write=True, only=["IS3N"], what=[er.HOLDINGS])
+        row = self.rows(report, "holdings")["IS3N"]
+        self.assertEqual(row["status"], "WRITTEN", row["errors"])  # 61 rows against 960 stored would look like a collapse without the filter on the stored side
+        self.assertEqual(row["changes"]["old"]["count"], 960)  # the stored count is what is in the file; the comparison ignores its zero rows
+
+    def test_the_same_list_again_is_unchanged(self) -> None:
+        self.refresh_noisy()
+        digest = self.digest(self.hpath)
+        report = self.run_refresh({**good_answers(), IS3N_CSV_URL: noisy_is3n_csv()}, write=True, only=["IS3N"], what=[er.HOLDINGS])
+        self.assertEqual(self.rows(report, "holdings")["IS3N"]["status"], "UNCHANGED")
+        self.assertEqual(self.digest(self.hpath), digest)
+
+    def test_a_list_made_only_of_zero_noise_is_still_an_error(self) -> None:
+        rows = [f'"FX{i}","USD/CUR{i}","Cash and/or Derivatives","FX","-1.00","0.00","-1.00","-1.00","1.00","US","-","USD"' for i in range(80)]
+        only_noise = "\n".join(['Fund Holdings as of,"14/Oct/2026"', "", HEADER] + rows).encode()
+        report = self.run_refresh({**good_answers(), IS3N_CSV_URL: only_noise}, write=True, only=["IS3N"], what=[er.HOLDINGS])
+        row = self.rows(report, "holdings")["IS3N"]
+        self.assertEqual(row["status"], "REJECTED")
+        self.assertFalse(row["written"])
+
+    def test_spxs_and_the_clean_ishares_lists_are_untouched_by_the_filter(self) -> None:
+        report = self.run_refresh(write=True, what=[er.HOLDINGS])
+        self.assertEqual(self.rows(report, "holdings")["SPXS"]["omitted_zero_weight_rows"], {})
+        data = self.stored(self.hpath)
+        self.assertNotIn("omitted_zero_weight_rows", data["etfs"][SPXS])
+        published = json.loads(good_answers()[SPXS_INDEX_URL])["holdings"]
+        self.assertEqual([h["weight"] for h in data["etfs"][SPXS]["holdings"]], [h["weight"] for h in published])  # still exactly as published, not normalised
+        self.assertGreater(sum(h["weight"] for h in data["etfs"][SPXS]["holdings"]), 100.0)
+        self.assertNotIn("omitted_zero_weight_rows", data["etfs"][XUSE])
+        self.assertEqual(data["aliases"], stored_payload()["aliases"])
+        self.assertEqual(data["issuer_groups"], stored_payload()["issuer_groups"])
+
+
+class ExposureUnchangedTests(unittest.TestCase):
+    def test_effective_exposure_is_identical_with_and_without_the_zero_rows(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_effective_exposure import ETF1, ETF2, ExposureCase, etf_entry, holding
+
+        class Case(ExposureCase):
+            def runTest(self) -> None:  # driven by the test below
+                pass
+
+        case = Case()
+        case.setUp()
+        try:
+            rows = [holding("Pos Corp", 10.0, isin="US0000POS001"), holding("Other Inc", 60.0, isin="US0000OTH001"), holding("USD CASH", 5.0, asset="Cash"), holding("Third", 25.0, isin="US0000THR001")]
+            noise = [holding(f"USD/CUR{i}", 0.0, ticker=f"FX{i}", asset="FX") for i in range(50)] + [holding("EUR CASH", 0.0, asset="Cash"), holding("INDEX FUT", 0.0, asset="Futures")]
+            second = etf_entry([holding("Pos Corp", 5.0, isin="US0000POS001"), holding("Other Inc", 95.0, isin="US0000OTH001")])
+            case.write({ETF1: etf_entry(rows + noise), ETF2: second})
+            noisy = case.run_ee()
+            kept, omitted = er.split_zero_noise(rows + noise)
+            self.assertEqual(sum(omitted.values()), 52)
+            case.write({ETF1: etf_entry(kept), ETF2: second})
+            clean = case.run_ee()
+            for key in ("top", "buckets", "guard", "company_count", "top_share_pct", "total_market_value_eur", "warnings"):
+                self.assertEqual(noisy[key], clean[key], key)
+            for field in ("etf_value_eur", "resolved_etf_value_eur", "other_value_eur", "rounding_drift_eur"):
+                self.assertEqual(noisy["coverage"][field], clean["coverage"][field], field)
+            self.assertTrue(noisy["checks"]["reconciles"] and clean["checks"]["reconciles"])
+            n_etf, c_etf = (next(e for e in r["etfs"] if e["symbol"] == "ETF") for r in (noisy, clean))
+            self.assertEqual(n_etf["holdings_count"] - c_etf["holdings_count"], 52)  # the only figure that moves: the number of listed rows
+            self.assertEqual((n_etf["other_weight_pct"], n_etf["weights_total_pct"]), (c_etf["other_weight_pct"], c_etf["weights_total_pct"]))
+        finally:
+            case.tearDown()
+
+
 class AtomicTests(RefreshCase):
     def test_an_error_during_the_replacement_leaves_the_old_file_and_no_debris(self) -> None:
         before = self.digest(self.hpath)
@@ -427,7 +553,7 @@ class CliTests(RefreshCase):
         self.assertIn("dry run - nothing is written", text)
         self.assertIn("XUSE  holdings    READY", text)
         self.assertIn("sum of the published weights", text)
-        self.assertIn("etf_holdings_local.json: written=no", text)
+        self.assertRegex(text, r"etf_holdings_local.json: [\d,]+ -> [\d,]+ bytes; written=no")
         self.assertEqual(self.digest(self.hpath), before)
 
     def test_write_with_json(self) -> None:

@@ -38,7 +38,10 @@ def _print(report: dict[str, Any]) -> None:
         changes = row.get("changes")
         if changes and row["dataset"] == "holdings":
             new = changes["new"]
-            print(f"      holdings {new['count']} ({new['equity_count']} equity), sum of the published weights {new['total_weight']:.2f} %")
+            omitted = changes.get("omitted_zero_weight_rows") or {}
+            print(f"      provider rows {changes.get('provider_rows') or new['count']}, stored {new['count']} ({new['equity_count']} equity, {new['zero_weight_equity_rows']} of them with a published weight of 0.00), "
+                  f"omitted zero-weight rows {sum(omitted.values())}" + (f" ({', '.join(f'{k} {v}' for k, v in omitted.items())})" if omitted else ""))
+            print(f"      sum of the published weights {new['total_weight']:.2f} % (the same raw and stored)")
             if changes.get("old"):
                 print(f"      stored: as of {changes['as_of_old']}, {changes['old']['count']} holdings, sum {changes['old']['total_weight']:.2f} %; "
                       f"added {changes['added']}, removed {changes['removed']}, weight changed {changes['weight_changed']}, unchanged {changes['unchanged']}")
@@ -53,7 +56,7 @@ def _print(report: dict[str, Any]) -> None:
         for message in row.get("warnings", []):
             print(f"      warning {message}")
     for name, info in report["files"].items():
-        print(f"{name}: written={'yes' if info['written'] else 'no'}" + (f", backup {info['backup']}" if info.get("backup") else "") + (f", {info['error']}" if info.get("error") else ""))
+        print(f"{name}: {info['bytes_before']:,} -> {info['bytes_after']:,} bytes; written={'yes' if info['written'] else 'no'}" + (f", backup {info['backup']}" if info.get("backup") else "") + (f", {info['error']}" if info.get("error") else ""))
     print("summary: " + ", ".join(f"{k}={v}" for k, v in report["summary"].items() if v))
 
 
