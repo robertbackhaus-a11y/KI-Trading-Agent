@@ -35,9 +35,10 @@ TASKS: tuple[TaskDef, ...] = (
     TaskDef("Trading-Fundamentals-SEC", "fundamentals-sec-backfill.log"),
     TaskDef("Trading-Candidate-Discovery", "candidate-discovery.log"),
     TaskDef("Trading-Market-Intelligence", "market-intelligence.log"),
+    TaskDef("Trading-ETF-Refresh", "etf-refresh.log"),
 )
 TASK_NAMES = tuple(t.name for t in TASKS)
-RESULT_TEXT = {0: "OK", 267009: "läuft", 267010: "nicht geplant", 267011: "noch nie gelaufen", 267014: "beendet (Zeitlimit/Abbruch)", 1: "Fehler (1)"}
+RESULT_TEXT = {0: "OK", 267009: "läuft", 267010: "nicht geplant", 267011: "noch nie gelaufen", 267014: "beendet (Zeitlimit/Abbruch)", 1: "Fehler (Exitcode 1)"}
 CREATE_NO_WINDOW = 0x08000000
 
 
@@ -86,6 +87,14 @@ class TaskInfo:
     log_modified: Optional[datetime] = None  # when the log file was last written (about the end of the last run)
     log_size: Optional[int] = None
     log_hint: str = ""  # the last error-looking line at the end of the log
+    action_execute: str = ""  # the program the task starts (pythonw.exe = no window; cmd.exe / python.exe = a console window on every run)
+
+    @property
+    def silent(self) -> Optional[bool]:
+        """True if the task starts a program without a console (pythonw), False if it starts a console program, None if the action is not known."""
+        if not self.action_execute:
+            return None
+        return ntpath.basename(self.action_execute).lower() == "pythonw.exe"
 
     @property
     def running(self) -> bool:
@@ -122,7 +131,7 @@ def query_script() -> str:
         "[pscustomobject]@{ name = $n; found = $true; state = [string]$t.State; "
         "last_run = $(if ($i.LastRunTime -gt [datetime]'2001-01-01') { $i.LastRunTime.ToString('o') } else { $null }); "
         "next_run = $(if ($i.NextRunTime -gt [datetime]'2001-01-01') { $i.NextRunTime.ToString('o') } else { $null }); "
-        "last_result = [int64]$i.LastTaskResult; missed_runs = [int]$i.NumberOfMissedRuns; "
+        "last_result = [int64]$i.LastTaskResult; missed_runs = [int]$i.NumberOfMissedRuns; action_execute = [string]$t.Actions[0].Execute; "
         "start_when_available = [bool]$t.Settings.StartWhenAvailable; multiple_instances = [string]$t.Settings.MultipleInstances; time_limit = [string]$t.Settings.ExecutionTimeLimit; "
         "triggers = @($t.Triggers | ForEach-Object { [pscustomobject]@{ type = [string]$_.CimClass.CimClassName; start = [string]$_.StartBoundary; "
         "days_interval = [int]$_.DaysInterval; weeks_interval = [int]$_.WeeksInterval; days_of_week = [int]$_.DaysOfWeek; enabled = [bool]$_.Enabled } }) } } }; "
@@ -131,7 +140,8 @@ def query_script() -> str:
 
 
 def run_now_command(name: str) -> list[str]:
-    """The exact command for "Run now"; ``name`` must be one of the six known tasks."""
+    """The exact command for "Run now": the scheduled task itself is started (``Start-ScheduledTask``), so the manual run is the same job with the same action, settings and log as
+    the scheduled one -- no second way to run a script.  ``name`` must be one of the seven known tasks."""
     if name not in TASK_NAMES:
         raise ValueError(f"unbekannter Task: {name}")
     return powershell_args(f"Start-ScheduledTask -TaskName '{name}' -ErrorAction Stop")
@@ -183,6 +193,7 @@ def parse_tasks(text: str) -> list[TaskInfo]:
             int(result) if isinstance(result, (int, float)) else None, task.log_file,
             triggers, item.get("start_when_available") if isinstance(item.get("start_when_available"), bool) else None, str(item.get("multiple_instances") or ""),
             str(item.get("time_limit") or ""), int(missed) if isinstance(missed, (int, float)) else None,
+            action_execute=str(item.get("action_execute") or ""),
         ))
     return out
 
@@ -228,6 +239,8 @@ def result_text(code: Optional[int]) -> str:
         return "—"
     if code in RESULT_TEXT:
         return RESULT_TEXT[code]
+    if 0 < code < 256:
+        return f"Fehler (Exitcode {code})"  # the exit code of the script (the launcher hands it on to the scheduler)
     return f"Fehler (0x{code & 0xFFFFFFFF:08X})"
 
 

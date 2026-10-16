@@ -113,7 +113,7 @@ class MainWindowTests(unittest.TestCase):
         self.start()
         w = self.window
         w.sidebar.setCurrentRow(TASKS_PAGE)
-        self.assertTrue(pump(10, lambda: w.tasks.table.rowCount() == 6 and len(w.tasks.run_buttons) == 6))
+        self.assertTrue(pump(10, lambda: w.tasks.table.rowCount() == 7 and len(w.tasks.run_buttons) == 7))
         name = TASKS[5].name
         button = w.tasks.run_buttons[name]
         self.assertTrue(button.isEnabled())
@@ -126,7 +126,7 @@ class MainWindowTests(unittest.TestCase):
         button.click()
         self.assertTrue(pump(10, lambda: self.backend.started == [name]))
         self.assertEqual(self.backend.started, [name])
-        self.assertTrue(pump(10, lambda: "gestartet" in w.tasks.message.text()))
+        self.assertTrue(pump(10, lambda: "gestartet" in w.tasks.run_status.text()))
 
     def test_the_confirmation_dialog_names_the_task_and_defaults_to_cancel(self) -> None:
         from gui.views.tasks import TasksView
@@ -140,7 +140,7 @@ class MainWindowTests(unittest.TestCase):
         self.start()
         w = self.window
         w.sidebar.setCurrentRow(TASKS_PAGE)
-        self.assertTrue(pump(10, lambda: len(w.tasks.run_buttons) == 6))
+        self.assertTrue(pump(10, lambda: len(w.tasks.run_buttons) == 7))
         self.assertFalse(w.tasks.run_buttons[TASKS[1].name].isEnabled())
         self.assertTrue(w.tasks.run_buttons[TASKS[0].name].isEnabled())
         self.assertTrue(w.tasks.table.item(1, 2).text().startswith("läuft"))

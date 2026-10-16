@@ -2,7 +2,8 @@
 
 Without ``--write`` this is a complete dry run: everything is downloaded and validated and the report shows what would change; no file is touched.  With ``--write`` each file is
 replaced atomically only after every refreshed entry passed the validation and the candidate file was read back through the real loaders; the previous file is kept as
-``<file>.bak-refresh-<time>``.  A failing ETF keeps its stored entry; the holdings file and the look-through file are independent.  Not part of the scheduler.
+``<file>.bak-refresh-<time>``.  A failing ETF keeps its stored entry; the holdings file and the look-through file are independent.  The exit code is 0 only when nothing failed (unchanged data and the manual SPXS sector allocation are no failure); 3 = partly refreshed, 2 = failed - so a scheduled run shows a
+provider, parser or validation problem as a failed run.  Scheduled weekly by Manage-TradingTasks.ps1 (Trading-ETF-Refresh); no retry here.
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ def _print(report: dict[str, Any]) -> None:
     for name, info in report["files"].items():
         print(f"{name}: {info['bytes_before']:,} -> {info['bytes_after']:,} bytes; written={'yes' if info['written'] else 'no'}" + (f", backup {info['backup']}" if info.get("backup") else "") + (f", {info['error']}" if info.get("error") else ""))
     print("summary: " + ", ".join(f"{k}={v}" for k, v in report["summary"].items() if v))
+    print(f"outcome: {report['outcome']}" + ("" if report["outcome"] == "OK" else " (exit code " + str(er.exit_code(report)) + ")"))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,8 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     what = ("holdings", "lookthrough") if args.what == "both" else (args.what,)
     report = er.refresh(args.universe_dir, write=args.write, what=what, only=args.only, fetcher=lambda url: er.fetch(url, args.timeout))
     print(json.dumps(report, sort_keys=True, ensure_ascii=False)) if args.json else _print(report)
-    failed = any(info.get("error") for info in report["files"].values())
-    return 2 if failed else 0
+    return er.exit_code(report)  # 0 = ok, 3 = some datasets failed (the rest is refreshed), 2 = nothing could be refreshed or a write failed
 
 
 if __name__ == "__main__":

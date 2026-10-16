@@ -85,6 +85,11 @@ class EtfSpec:
     page_source: Optional[str] = None
     page_tickers: tuple[str, ...] = ()  # the tickers the product page names in its title (the UK page of IS3N says EIMI, the London listing)
 
+    @property
+    def sector_automated(self) -> bool:
+        """Only iShares publishes the sector allocation in a structured form; Invesco's exists as a factsheet PDF only (maintained by hand)."""
+        return self.format == "ishares"
+
 
 SPECS: tuple[EtfSpec, ...] = (
     EtfSpec("IE000R4ZNTN3", "XUSE", "iShares MSCI World ex-USA UCITS ETF USD Acc", "iShares (BlackRock)", eh.PHYSICAL, "ishares",
@@ -541,7 +546,28 @@ def refresh(universe_dir: Path, *, write: bool = False, what: Iterable[str] = (H
                         row["errors"].append(info["error"])
     report["warnings"] = sorted({w for row in report["etfs"] for w in row.get("warnings", [])})
     report["summary"] = {s: sum(1 for r in report["etfs"] if r["status"] == s) for s in ("WRITTEN", "READY", "UNCHANGED", "REJECTED", "SKIPPED", "NOT_AUTOMATED", "NOT_WRITTEN")}
+    report["outcome"] = outcome_of(report)
     return report
+
+
+FAILING = ("REJECTED", "SKIPPED", "NOT_WRITTEN")
+EXIT_OK, EXIT_FAILED, EXIT_PARTIAL = 0, 2, 3
+
+
+def outcome_of(report: dict[str, Any]) -> str:
+    """``OK`` (nothing failed; unchanged data and the manual SPXS sector allocation are no failure), ``PARTIAL`` (some datasets were refreshed or are current, some failed: a provider
+    or parser error, a rejected validation, a failed write) or ``FAILED`` (nothing could be refreshed).  The stored files are never damaged by any of them."""
+    rows = report["etfs"]
+    failed = [r for r in rows if r["status"] in FAILING] or [name for name, info in report["files"].items() if info.get("error")]
+    if not failed:
+        return "OK"
+    good = [r for r in rows if r["status"] in ("WRITTEN", "READY", "UNCHANGED")]
+    return "PARTIAL" if good else "FAILED"
+
+
+def exit_code(report: dict[str, Any]) -> int:
+    """0 only for ``OK``; a task scheduler sees anything else as a failed run, so a provider or parser problem is never silent."""
+    return {"OK": EXIT_OK, "PARTIAL": EXIT_PARTIAL}.get(report["outcome"], EXIT_FAILED)
 
 
 def _long_date(iso: str) -> str:

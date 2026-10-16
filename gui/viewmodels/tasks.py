@@ -1,4 +1,4 @@
-"""View model of the Tasks page: the operations overview of the six scheduled tasks (pure Python).
+"""View model of the Tasks page: the operations overview of the seven scheduled tasks (pure Python).
 
 One row per task: rhythm (from its triggers), state with the last run and its result, the stand of the data it produces (from ``get_data_freshness``, not from
 the exit code), the last success (a time at which the data prove that the task produced its output, or its last run if that ended with exit code 0), the next
@@ -132,6 +132,12 @@ def build_task_rows(tasks: list[TaskInfo], freshness: Optional[Mapping[str, Any]
                              f"(Task {need.task.replace('Trading-', '')}) – {text}")
             if dep_level != "ok":
                 warnings.append(f"{'Vorläufer' if need.kind == tm.HARD else 'Optionaler Vorläufer'}: {text}")
+        if task.silent is False:  # the task still starts a console program: a window opens on every run
+            level = level or "warning"
+            warnings_exec = ("Der Task öffnet bei jedem Lauf ein Konsolenfenster (Aktion: " + ntpath.basename(task.action_execute) + "); "
+                             "einmalig Manage-TradingTasks.ps1 -Action UpdateAction ausführen.")
+        else:
+            warnings_exec = ""
         data_level = "" if fresh is None or fresh.level in (tm.OK, tm.UNKNOWN) else "warning" if fresh.level == tm.AGING else "blocker"
         if data_level or any(w.startswith("Vorläufer") for w in warnings) or task.log_hint:
             level = level or "warning"
@@ -157,6 +163,7 @@ def build_task_rows(tasks: list[TaskInfo], freshness: Optional[Mapping[str, Any]
             "Nachholen verpasster Läufe (StartWhenAvailable): " + ("Ja" if task.start_when_available else "Nein" if task.start_when_available is False else "unbekannt"),
             "Keine zweite Instanz (IgnoreNew): " + ("Ja – ein neuer Start wird ignoriert, solange der Task läuft" if task.multiple_instances == "IgnoreNew"
                                                     else f"Nein (Mehrfachinstanzen: {task.multiple_instances})" if task.multiple_instances else "unbekannt"),
+            ("Ausführung: unsichtbar (pythonw.exe, ohne Konsolenfenster)" if task.silent else f"Ausführung: {warnings_exec}" if task.silent is False else ""),
             f"Zeitlimit: {_iso_duration(task.time_limit)}" if task.time_limit else "",
             f"Verpasste Läufe: {task.missed_runs}" if task.missed_runs is not None else "",
             "Aktiviert: " + ("Nein" if task.disabled else "Ja"),
@@ -175,6 +182,74 @@ def build_task_rows(tasks: list[TaskInfo], freshness: Optional[Mapping[str, Any]
                               title, rhythm_text(task.triggers) if task.triggers else DASH, stand_text, data_level, success_text, duration_text(task, now), details,
                               "\n".join(f"• {w}" for w in warnings), dep_lines, error, status_line))
     return rows
+
+
+START_GRACE_S = 120.0  # the scheduler normally shows the new run within seconds; without a new run after this long the start is not confirmed
+WATCH_LIMIT_H = 3.0  # a manual run is followed for at most this long
+RUN_CLOCK_SLACK_S = 5.0  # LastRunTime is the scheduler's clock
+
+
+@dataclass
+class RunWatch:
+    """A task that was started from the page: followed until the scheduler reports its end (or the start was never confirmed)."""
+
+    name: str
+    started: datetime
+    seen_running: bool = False
+
+
+def run_progress(watch: RunWatch, info: Optional[TaskInfo], now: datetime) -> tuple[str, str, bool]:
+    """``(text, level, finished)`` for a manual run, from the same scheduler answer the table uses (state, last run, last result).
+
+    Nothing is inferred beyond that: the task is running (state ``Running``), or the scheduler reports a run that started after the click and its result - the exit code of the
+    script, which the launcher hands on - or, after the grace period, that no new run was seen.
+    """
+    spec = tm.SPECS.get(watch.name)
+    title = spec.title if spec else watch.name
+    if info is None or not info.found:
+        return f"{title}: nicht im Scheduler registriert.", "blocker", True
+    if info.running:
+        watch.seen_running = True
+        return f"{title}: läuft seit {_span((now - watch.started).total_seconds())} (gestartet {watch.started:%H:%M:%S}) – Status wird alle paar Sekunden aktualisiert.", "info", False
+    new_run = info.last_run is not None and (info.last_run - watch.started).total_seconds() >= -RUN_CLOCK_SLACK_S
+    if new_run:
+        code = info.last_result
+        ok = code == 0
+        text = (f"{title}: beendet ({_short(info.last_run)}) – Ergebnis {result_text(code)}" + (" (Exitcode 0)" if ok else "")
+                + (f"; Dauer {duration_text(info, now)}" if duration_text(info, now) != DASH else "") + ". Das Log steht unten.")
+        if info.log_hint and not ok:
+            text += f" Hinweis aus dem Log: {info.log_hint}"
+        return text, "info" if ok else "blocker", True
+    waited = (now - watch.started).total_seconds()
+    if waited > WATCH_LIMIT_H * 3600 or (waited > START_GRACE_S and not watch.seen_running):
+        return f"{title}: der Scheduler meldet keinen neuen Lauf – der Start ist nicht bestätigt.", "warning", True
+    return f"{title}: wird gestartet …", "info", False
+
+
+ETF_HEADERS = ["Datensatz", "Stand", "Alter", "Status", "Hinweis"]
+ETF_STATUS_TEXT = {"MISSING": "fehlt", "INVALID": "ungültig"}
+
+
+def build_etf_rows(freshness: Optional[Mapping[str, Any]], now: Optional[datetime] = None) -> tuple[list[list[str]], list[str]]:
+    """``(rows, levels)`` of the small ETF table under the tasks: the six datasets, each with its stand, age and verdict.  The SPXS sector allocation says "manuell" and shows
+    its date and age; it never turns the task red."""
+    now = now or datetime.now()
+    payload = freshness if isinstance(freshness, Mapping) and freshness.get("ok") is not False else None
+    facts = ((payload or {}).get("sources") or {}).get(tm.ETF_DATA) if isinstance(payload, Mapping) else None
+    rows: list[list[str]] = []
+    levels: list[str] = []
+    for d in tm.etf_datasets(facts, now):
+        if d.manual:
+            status = "manuell gepflegt" + (" – älter als die Grenze der Loader" if d.level != tm.UNKNOWN and d.age_days is not None and d.age_days > int(facts.get("stale_after_days") or 120) else "")
+            note = "Invesco veröffentlicht die Sektorverteilung nur als Factsheet-PDF; wird nicht automatisch aktualisiert"
+            level = "warning" if d.age_days is not None and d.age_days > tm.MANUAL_FRESH_D else ""
+        else:
+            status = ETF_STATUS_TEXT.get(d.status) or tm.LEVEL_TEXT[d.level]
+            note = f"{d.rows} Zeilen" if d.dataset == "holdings" and d.rows else ""
+            level = "" if d.level in (tm.OK, tm.UNKNOWN) else "warning" if d.level == tm.AGING else "blocker"
+        rows.append([tm.etf_label(d), tm.fmt_day(d.as_of), f"{d.age_days} Tage" if d.age_days is not None else DASH, status, note or d.detail])
+        levels.append(level)
+    return rows, levels
 
 
 def summarize(rows: list[TaskRowVM], freshness_available: bool) -> str:

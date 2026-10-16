@@ -33,6 +33,7 @@
         "Migrate-TradingStrategyAssignments.py",
         "Migrate-TradingSwingLifecycle.py",
         "Research-TradingFundamentals.py",
+        "Run-TradingTask.py",
         "Refresh-TradingEtfData.py",
         "Reset-TradingDb.py",
         "Resolve-TradingSecurities.py",

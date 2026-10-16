@@ -1,4 +1,4 @@
-"""The operational model of the six scheduled tasks: what each one produces, what it really needs, and how old its data may be.  Pure Python (no Qt, no I/O).
+"""The operational model of the seven scheduled tasks: what each one produces, what it really needs, and how old its data may be.  Pure Python (no Qt, no I/O).
 
 **Dependencies are technical facts, not a Windows task chain.**  They were derived from what each script reads (checked in the code, not guessed from the
 clock times); a task never waits for or starts another one, and no scheduler definition is touched::
@@ -13,6 +13,9 @@ clock times); a task never waits for or starts another one, and no scheduler def
     Market-Intelligence
                       reads the cached company news and SEC events of the database -> HARD on EventsNews; reads the last Discovery report for the Yahoo headlines
                       of the candidates -> SOFT on Discovery (without a report it continues with DISCOVERY_REPORT_UNAVAILABLE); it reads no prices and no FX.
+
+    ETF-Refresh       needs nothing from another task (the providers' published files); weekly (Sunday 11:00, after Fundamentals); writes the two private ETF files
+                      (holdings and sector allocation); the stand of each dataset is judged from the files, the health of a run from its exit code (0 only if nothing failed)
 
 The consumers of MarketData, FX and Fundamentals are the portfolio analysis behind the MCP tools (valuation, decisions, the planner), not another task.
 
@@ -33,12 +36,16 @@ OK, AGING, STALE, UNKNOWN = "ok", "aging", "stale", "unknown"
 
 # the data source keys of ``get_data_freshness``
 MARKET_DATA, FX, EVENTS_NEWS, FUNDAMENTALS, DISCOVERY, INTELLIGENCE = "market_data", "fx", "events_news", "fundamentals", "discovery", "market_intelligence"
+ETF_DATA = "etf_data"
 HARD, SOFT = "hard", "soft"
 
 # limits that follow from the schedule (hours): "current" up to the first, "stale" beyond the second
 NEWS_FRESH_H, NEWS_STALE_H = 36.0, 72.0  # daily collector: normal age up to ~25 h, plus a grace period; stale after more than two missed runs
 FUNDAMENTALS_FRESH_H, FUNDAMENTALS_STALE_H = 8 * 24.0, 15 * 24.0  # weekly task: the age of its last SUCCESSFUL RUN (not of the newest filing): a week plus a day; stale after a missed week and more
 DISCOVERY_FRESH_H = 36.0  # daily report; stale = the project's REPORT_STALE rule (evaluation date older than discovery_report_max_age_days)
+ISHARES_FRESH_D = 10  # iShares publishes daily; the weekly run (Sunday) leaves data of the Friday before, up to a week old, plus a grace period of a few days
+INVESCO_FRESH_D = 45  # Invesco publishes the index composition monthly (the stand is a month end): up to ~45 days is normal; the loaders' own 120-day limit decides "stale"
+MANUAL_FRESH_D = 90  # the manually kept SPXS sector allocation (factsheet): informational, never a failure of the task
 INTELLIGENCE_FRESH_H = 15.0  # twice a day (08:15 / 17:45): the longest regular gap is the night, 14.5 h; stale = the project's report_max_age_hours (24)
 
 
@@ -60,8 +67,8 @@ class TaskSpec:
     note: str = ""
 
 
-MD, FXT, EN, FS, CD, MI = ("Trading-MarketData-Backfill", "Trading-FXRates-Backfill", "Trading-EventsNews-Backfill", "Trading-Fundamentals-SEC",
-                           "Trading-Candidate-Discovery", "Trading-Market-Intelligence")
+MD, FXT, EN, FS, CD, MI, ER = ("Trading-MarketData-Backfill", "Trading-FXRates-Backfill", "Trading-EventsNews-Backfill", "Trading-Fundamentals-SEC",
+                               "Trading-Candidate-Discovery", "Trading-Market-Intelligence", "Trading-ETF-Refresh")
 
 SPECS: dict[str, TaskSpec] = {
     MD: TaskSpec(MD, "Marktdaten", MARKET_DATA, (), "Bewertung, Entscheidungen und Planner der MCP-Tools",
@@ -76,9 +83,13 @@ SPECS: dict[str, TaskSpec] = {
         Need(EVENTS_NEWS, EN, HARD, "liest die gespeicherten Unternehmens-News und SEC-Events aus der Datenbank"),
         Need(DISCOVERY, CD, SOFT, "liest den letzten Discovery-Report für die Yahoo-Headlines der Kandidaten (ohne Report läuft der Task weiter: DISCOVERY_REPORT_UNAVAILABLE)"),
     ), "get_market_intelligence, Opportunity View, Watchlist (News-Status)", "Braucht weder Marktdaten noch FX."),
+    ER: TaskSpec(ER, "ETF-Daten", ETF_DATA, (), "Effective Exposure und Einzelwert-Guard, Sektor-Look-through der MCP-Tools",
+                 "Wöchentlich sonntags; Holdings (XUSE, IS3N, SPXS) und Sektoren (XUSE, IS3N) aus den Anbieterdaten. Der SPXS-Sektor ist manuell (Invesco veröffentlicht ihn nur als PDF) "
+                 "und macht den Task nie zu einem Fehler. Bei einem Fehler bleiben die alten gültigen Dateien bestehen."),
 }
 
-SOURCE_TEXT = {MARKET_DATA: "Marktdaten", FX: "FX-Kurse", EVENTS_NEWS: "Events / News", FUNDAMENTALS: "Fundamentals", DISCOVERY: "Discovery-Report", INTELLIGENCE: "Intelligence-Report"}
+SOURCE_TEXT = {MARKET_DATA: "Marktdaten", FX: "FX-Kurse", EVENTS_NEWS: "Events / News", FUNDAMENTALS: "Fundamentals", DISCOVERY: "Discovery-Report", INTELLIGENCE: "Intelligence-Report",
+               ETF_DATA: "ETF-Daten"}
 LEVEL_TEXT = {OK: "aktuell", AGING: "älter", STALE: "veraltet", UNKNOWN: "unbekannt"}
 NO_ERROR_RESULTS = (0, 267009, 267011)  # OK, running, never run
 
@@ -213,6 +224,8 @@ def evaluate(source: str, payload: Optional[Mapping[str, Any]], now: datetime, r
                          f"letztes SEC-Event gespeichert: {fmt_dt(events)} (Event vom {fmt_day(_day(facts.get('latest_event_date')))}). "
                          f"Regel (aus dem Rhythmus): aktuell bis {NEWS_FRESH_H:.0f} h, veraltet nach {NEWS_STALE_H:.0f} h; SEC-Events erscheinen unregelmäßig und zählen nicht in die Bewertung. "
                          "Es werden nur neue Zeilen geschrieben: ein Lauf ohne neue Artikel ändert den Stand nicht.")
+    elif source == ETF_DATA:
+        return _etf_freshness(facts, now)
     elif source == FUNDAMENTALS:  # without the scheduler facts only the information can be shown: the age of the newest filing says nothing about the health of the task
         result.as_of = "—"
         result.detail = _fundamentals_info(facts) + " Ohne Scheduler-Daten ist keine Bewertung möglich (es werden nur neue Filings geschrieben)."
@@ -238,6 +251,81 @@ def evaluate(source: str, payload: Optional[Mapping[str, Any]], now: datetime, r
             result.level = UNKNOWN if age is None else OK if age <= INTELLIGENCE_FRESH_H else AGING if age <= limit_h else STALE
             result.detail = (f"Letzter erfolgreicher Lauf (Report erzeugt): {fmt_dt(generated)}, Stand der Auswertung {fmt_day(evaluation)}. "
                              f"Regel: aktuell bis {INTELLIGENCE_FRESH_H:.0f} h (längste reguläre Pause: die Nacht), veraltet nach {limit_h:.0f} h (report_max_age_hours, wie get_market_intelligence).")
+    return result
+
+
+@dataclass(frozen=True)
+class EtfDataset:
+    """One dataset of the private ETF files (holdings or sector allocation of one ETF) with the verdict on its stand."""
+
+    symbol: str
+    dataset: str  # "holdings" | "lookthrough"
+    provider: str
+    manual: bool
+    as_of: Optional[date]
+    age_days: Optional[int]
+    status: str  # the loader's verdict: APPLIED / STALE / MISSING / INVALID
+    level: str  # ok / aging / stale / unknown (a manual dataset is judged for display only)
+    rows: Optional[int] = None
+    detail: str = ""
+
+
+def etf_datasets(facts: Optional[Mapping[str, Any]], now: datetime) -> list[EtfDataset]:
+    """The six datasets in the order of the page (holdings of XUSE, IS3N, SPXS, then the sector allocations) from the ``etf_data`` source of ``get_data_freshness``.
+
+    The loaders' own limit (``stale_after_days``, 120) decides "stale"; below it the stand is "current" up to the provider's cadence (iShares: ``ISHARES_FRESH_D`` days,
+    Invesco's monthly list: ``INVESCO_FRESH_D``) and "older" beyond.  The manual SPXS sector allocation is judged against ``MANUAL_FRESH_D`` and the loader limit for the display only.
+    """
+    if not isinstance(facts, Mapping) or facts.get("available") is False:
+        return []
+    stale_after = int(facts.get("stale_after_days") or 120)
+    today = now.date()
+    out: list[EtfDataset] = []
+    for kind in ("holdings", "lookthrough"):
+        for item in facts.get(kind) or []:
+            as_of = _day(item.get("as_of"))
+            age = (today - as_of).days if as_of else None
+            status = str(item.get("status") or "MISSING")
+            manual = bool(item.get("manual"))
+            invesco = str(item.get("provider") or "").lower().startswith("invesco")
+            limit = MANUAL_FRESH_D if manual else INVESCO_FRESH_D if invesco else ISHARES_FRESH_D
+            if status in ("MISSING", "INVALID") or age is None:
+                level = STALE if not manual else UNKNOWN
+            elif age > stale_after:
+                level = STALE
+            else:
+                level = OK if age <= limit else AGING
+            out.append(EtfDataset(str(item.get("symbol") or "?"), kind, str(item.get("provider") or ""), manual, as_of, age, status, level, item.get("rows"), str(item.get("detail") or "")))
+    return out
+
+
+def etf_overall(datasets: list[EtfDataset]) -> str:
+    """The worst level of the AUTOMATICALLY refreshed datasets; the manual one never decides (it is shown, not counted)."""
+    automatic = [d.level for d in datasets if not d.manual]
+    if not automatic:
+        return UNKNOWN
+    return STALE if STALE in automatic else AGING if AGING in automatic else UNKNOWN if UNKNOWN in automatic else OK
+
+
+def etf_label(d: EtfDataset) -> str:
+    return f"{d.symbol} {'Holdings' if d.dataset == 'holdings' else 'Sektoren'}" + (" (manuell)" if d.manual else "")
+
+
+def _etf_freshness(facts: Optional[Mapping[str, Any]], now: datetime) -> Freshness:
+    result = Freshness(ETF_DATA)
+    datasets = etf_datasets(facts, now)
+    if not datasets:
+        result.detail = "Kein ETF-Datenstand verfügbar (MCP nicht verbunden oder Quelle nicht gemeldet)."
+        return result
+    result.level = etf_overall(datasets)
+    weekly = [d for d in datasets if not d.manual and d.as_of and not d.provider.lower().startswith("invesco")]
+    monthly = [d for d in datasets if not d.manual and d.as_of and d.provider.lower().startswith("invesco")]
+    oldest = min((d.as_of for d in weekly), default=None)
+    result.as_of = (fmt_day(oldest) if oldest else "—") + "".join(f" · {d.symbol} {fmt_day(d.as_of)}" for d in monthly if oldest is None or d.as_of < oldest)
+    lines = [f"{etf_label(d)}: {fmt_day(d.as_of)} ({d.age_days} Tage alt, {LEVEL_TEXT[d.level]}{', ' + d.status if d.status not in ('APPLIED',) else ''})" if d.as_of
+             else f"{etf_label(d)}: {d.status}" for d in datasets]
+    result.detail = ("Stand je Datensatz: " + "; ".join(lines) + f". Regel: aktuell bis {ISHARES_FRESH_D} Tage (iShares, wöchentlicher Lauf) bzw. {INVESCO_FRESH_D} Tage (Invesco, monatliche Liste), "
+                     f"veraltet nach {int(facts.get('stale_after_days') or 120)} Tagen (Grenze der Loader, unverändert). Der manuelle SPXS-Sektor wird gezeigt, bestimmt aber weder den Stand noch den Task-Status.")
     return result
 
 

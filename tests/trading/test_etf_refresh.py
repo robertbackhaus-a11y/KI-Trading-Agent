@@ -562,11 +562,6 @@ class CliTests(RefreshCase):
         self.assertEqual((code, report["write"], report["files"][er.HOLDINGS_FILE]["written"]), (0, True, True))
         self.assertEqual(self.stored(self.hpath)["etfs"][XUSE]["as_of"], "2026-10-13")
 
-    def test_the_refresh_is_not_part_of_the_scheduler(self) -> None:
-        for path in (ROOT / "scheduler").glob("*.ps1"):
-            text = path.read_text(encoding="utf-8", errors="ignore")
-            self.assertNotIn("Refresh-TradingEtfData", text, path.name)
-
 
 if __name__ == "__main__":
     unittest.main()

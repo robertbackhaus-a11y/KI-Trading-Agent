@@ -331,7 +331,7 @@ class SchedulerConfigurationTests(unittest.TestCase):
     def test_task_set_is_the_documented_one(self) -> None:
         self.assertEqual(
             [job[0] for job in self.jobs],
-            ["MarketData-Backfill", "FXRates-Backfill", "EventsNews-Backfill", "Fundamentals-SEC", "Candidate-Discovery", "Market-Intelligence"],
+            ["MarketData-Backfill", "FXRates-Backfill", "EventsNews-Backfill", "Fundamentals-SEC", "Candidate-Discovery", "Market-Intelligence", "ETF-Refresh"],
         )
 
     def test_discovery_and_market_intelligence_run_after_the_evening_backfills(self) -> None:

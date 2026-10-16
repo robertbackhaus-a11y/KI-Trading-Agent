@@ -1,5 +1,5 @@
-"""Tasks page: the operations overview of the six scheduled Trading tasks (rhythm, state, data stand, last success, next run, duration), "Run now" (an ACTION, with
-confirmation and a warning when a prerequisite is stale or failed) and a log tail."""
+"""Tasks page: the operations overview of the seven scheduled Trading tasks (rhythm, state, data stand, last success, next run, duration), "Run now" (an ACTION, with
+confirmation and a warning when a prerequisite is stale or failed), the progress and result of a manual run, and a log tail."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit, 
 
 from ..services.task_service import LogTail
 from ..viewmodels.portfolio import DASH
-from ..viewmodels.tasks import TaskRowVM
+from ..viewmodels.tasks import ETF_HEADERS, TaskRowVM
 from ._common import LEVEL_COLORS, fill_table, make_table
 
 HEADERS = ["Task", "Rhythmus", "Status", "Datenstand", "Letzter Erfolg", "Nächster Lauf", "Dauer", "Aktion", "Log"]
@@ -40,9 +40,17 @@ class TasksView(QWidget):
         self.message = QLabel("")
         self.message.setWordWrap(True)
         outer.addWidget(self.message)
+        self.run_status = QLabel("")  # the manual run in progress / its result (state, exit code); the log below
+        self.run_status.setWordWrap(True)
+        outer.addWidget(self.run_status)
         self.table = make_table(HEADERS)
         self.table.setMinimumHeight(260)
         outer.addWidget(self.table)
+        self.etf_title = QLabel("ETF-Daten (Holdings und Sektor-Look-through; Stand je Datensatz)")
+        self.etf_table = make_table(ETF_HEADERS)
+        self.etf_table.setMaximumHeight(190)
+        outer.addWidget(self.etf_title)
+        outer.addWidget(self.etf_table)
         self.log_title = QLabel("Log: (Task wählen)")
         outer.addWidget(self.log_title)
         self.log = QPlainTextEdit()
@@ -68,8 +76,15 @@ class TasksView(QWidget):
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         return box.exec() == QMessageBox.StandardButton.Yes
 
-    def show_rows(self, rows: list[TaskRowVM], refreshed: str = DASH, summary: str = "") -> None:
+    def show_etf(self, rows: list[list[str]], levels: list[str]) -> None:
+        fill_table(self.etf_table, ETF_HEADERS, rows, levels)
+        self.etf_title.setVisible(bool(rows))
+        self.etf_table.setVisible(bool(rows))
+
+    def show_rows(self, rows: list[TaskRowVM], refreshed: str = DASH, summary: str = "", etf: Optional[tuple[list[list[str]], list[str]]] = None) -> None:
         self.button.setEnabled(True)
+        if etf is not None:
+            self.show_etf(*etf)
         self.refreshed.setText("Letzte Aktualisierung: " + refreshed)
         self.message.setText(summary)
         self.rows = {r.name: r for r in rows}
@@ -83,7 +98,7 @@ class TasksView(QWidget):
             data = self.table.item(index, DATA_COLUMN)
             if data is not None and row.data_level:
                 data.setForeground(QBrush(QColor(LEVEL_COLORS["blocker" if row.data_level == "blocker" else "warning"])))
-            run = QPushButton("▶ Jetzt starten …")
+            run = QPushButton("▶ Jetzt ausführen …")
             run.setEnabled(row.can_run)
             run.setToolTip(row.run_hint)
             run.clicked.connect(lambda _=False, n=row.name: self._on_run(n))
@@ -104,6 +119,11 @@ class TasksView(QWidget):
 
     def show_message(self, text: str) -> None:
         self.message.setText(text)
+
+    def show_run_status(self, text: str, level: str = "info") -> None:
+        """The progress or the result of a manual run (own line: the summary above is rewritten by every refresh)."""
+        color = LEVEL_COLORS.get(level, LEVEL_COLORS["info"])
+        self.run_status.setText(f"<span style='color:{color}'>{text}</span>" if text else "")
 
     def show_log(self, name: str, tail: LogTail) -> None:
         if not tail.available:

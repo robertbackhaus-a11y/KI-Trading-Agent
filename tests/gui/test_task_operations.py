@@ -18,10 +18,11 @@ from support import FAKE_SERVER, HAVE_QT, pump, qapp
 from gui.services import task_model as tm
 from gui.services import task_service as ts
 from gui.services.task_service import TaskInfo, TriggerInfo
-from gui.viewmodels.tasks import build_task_rows, summarize
+from gui.viewmodels.tasks import RunWatch, build_etf_rows, build_task_rows, run_progress, summarize
 
 if HAVE_QT:
     from gui.app import TASKS_PAGE, MainWindow
+    from gui.views._common import LEVEL_COLORS
     from gui.services import mcp_client as mc
     from gui.services.background import AsyncRunner
     from gui.services.settings import Settings
@@ -32,7 +33,7 @@ if HAVE_QT:
 QT = unittest.skipUnless(HAVE_QT, "PySide6 not installed (GUI venv only)")
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 10, 14, 12, 0)  # a Wednesday, local time
-MD, FX, EN, FS, CD, MI = (t.name for t in ts.TASKS)
+MD, FX, EN, FS, CD, MI, ER = (t.name for t in ts.TASKS)
 
 
 def utc(hours_ago: float = 0.0, days_ago: float = 0.0) -> str:
@@ -41,6 +42,17 @@ def utc(hours_ago: float = 0.0, days_ago: float = 0.0) -> str:
 
 def day(days_ago: int = 0) -> str:
     return (NOW - timedelta(days=days_ago)).date().isoformat()
+
+
+def etf_source(holdings=(2, 2, 45), sectors=(2, 2, 77), **extra):
+    """The ``etf_data`` source of ``get_data_freshness``: ages in days of the holdings of XUSE, IS3N, SPXS and of their sector allocations (SPXS: the manual one)."""
+    def entry(symbol, provider, kind, age, manual=False):
+        return {"symbol": symbol, "isin": "ISIN-" + symbol, "dataset": kind, "provider": provider, "manual": manual, "as_of": day(age), "age_days": age, "status": "APPLIED", "detail": "",
+                **({"rows": 700} if kind == "holdings" else {})}
+    return {"available": True, "stale_after_days": 120, "problems": [],
+            "holdings": [entry("XUSE", "iShares (BlackRock)", "holdings", holdings[0]), entry("IS3N", "iShares (BlackRock)", "holdings", holdings[1]), entry("SPXS", "Invesco", "holdings", holdings[2])],
+            "lookthrough": [entry("XUSE", "iShares (BlackRock)", "lookthrough", sectors[0]), entry("IS3N", "iShares (BlackRock)", "lookthrough", sectors[1]),
+                            entry("SPXS", "Invesco", "lookthrough", sectors[2], manual=True)], **extra}
 
 
 def payload(**overrides):
@@ -52,6 +64,7 @@ def payload(**overrides):
         "fundamentals": {"available": True, "fetched_at": utc(0, 5), "latest_period_end": day(70), "latest_filing_date": day(30)},
         "discovery": {"available": True, "status": "AVAILABLE", "generated_at": utc(20), "evaluation_as_of": day(1)},
         "market_intelligence": {"available": True, "status": "AVAILABLE", "generated_at": utc(6), "evaluation_as_of": day(0)},
+        "etf_data": etf_source(),
     }
     sources.update(overrides)
     return {"ok": True, "operation": "get_data_freshness", "now": utc(0), "sources": sources,
@@ -64,12 +77,14 @@ def triggers_for(name: str):
     logon = {"type": "MSFT_TaskLogonTrigger", "start": "", "days_interval": 0, "weeks_interval": 0, "days_of_week": 0, "enabled": True}
     return {MD: [logon, daily("17:15")], FX: [logon, daily("17:20")], EN: [logon, daily("17:25")],
             FS: [logon, {"type": "MSFT_TaskWeeklyTrigger", "start": local("10:00"), "days_interval": 0, "weeks_interval": 1, "days_of_week": 1, "enabled": True}],
-            CD: [daily("17:35")], MI: [daily("08:15"), daily("17:45")]}[name]
+            CD: [daily("17:35")], MI: [daily("08:15"), daily("17:45")],
+            ER: [{"type": "MSFT_TaskWeeklyTrigger", "start": local("11:00"), "days_interval": 0, "weeks_interval": 1, "days_of_week": 1, "enabled": True}]}[name]
 
 
 def raw(name: str, **overrides):
     item = {"name": name, "found": True, "state": "Ready", "last_run": NOW.astimezone().replace(hour=10, minute=55, second=16).isoformat(), "next_run": NOW.astimezone().replace(hour=17, minute=15).isoformat(),
-            "last_result": 0, "missed_runs": 0, "start_when_available": True, "multiple_instances": "IgnoreNew", "time_limit": "PT72H", "triggers": triggers_for(name)}
+            "last_result": 0, "missed_runs": 0, "start_when_available": True, "multiple_instances": "IgnoreNew", "time_limit": "PT72H", "triggers": triggers_for(name),
+            "action_execute": "C:\\tools\\trading\\.venv\\Scripts\\pythonw.exe"}
     item.update(overrides)
     return item
 
@@ -194,7 +209,7 @@ class DependencyTests(unittest.TestCase):
     def test_the_dependency_model_is_what_the_scripts_really_read(self) -> None:
         spec = tm.SPECS
         self.assertEqual({n: [(d.source, d.kind) for d in s.needs] for n, s in spec.items()},
-                         {MD: [], FX: [], EN: [], FS: [], CD: [(tm.FX, tm.HARD)], MI: [(tm.EVENTS_NEWS, tm.HARD), (tm.DISCOVERY, tm.SOFT)]})
+                         {MD: [], FX: [], EN: [], FS: [], CD: [(tm.FX, tm.HARD)], MI: [(tm.EVENTS_NEWS, tm.HARD), (tm.DISCOVERY, tm.SOFT)], ER: []})
         trading = ROOT / "tools" / "trading"
         discovery = (trading / "candidate_discovery.py").read_text(encoding="utf-8") + (trading / "Discover-TradingCandidates.py").read_text(encoding="utf-8")
         self.assertIn("fx_rates", discovery)  # Discovery: the EUR conversion reads the FX table ...
@@ -382,10 +397,182 @@ class ErrorStateTests(unittest.TestCase):
 
     def test_the_summary_counts_the_tasks_that_need_a_look(self) -> None:
         result = rows()
-        self.assertEqual(summarize(list(result.values()), True), "6 Tasks · alles im Plan")
+        self.assertEqual(summarize(list(result.values()), True), "7 Tasks · alles im Plan")
         self.assertIn("Datenstand nicht verfügbar", summarize(list(result.values()), False))
         bad = rows(overrides={FX: {"last_result": 1}})
         self.assertIn("mit Hinweis", summarize(list(bad.values()), True))
+
+
+class EtfRefreshTaskTests(unittest.TestCase):
+    """The seventh task (ETF-Refresh): its row, the freshness of its six datasets, and what it never does (turn red because of the manual SPXS sector allocation)."""
+
+    def etf(self, **kwargs):
+        return rows(payload(etf_data=etf_source(**kwargs)))[ER]
+
+    def test_it_is_the_seventh_task_with_its_rhythm(self) -> None:
+        self.assertEqual(list(ts.TASK_NAMES)[-1], "Trading-ETF-Refresh")
+        self.assertEqual(len(ts.TASK_NAMES), 7)
+        row = rows()[ER]
+        self.assertEqual((row.title, row.rhythm), ("ETF-Daten", "wöchentlich So 11:00"))
+        self.assertEqual(ts.rhythm_text(next(t for t in tasks() if t.name == ER).triggers), "wöchentlich So 11:00")  # no logon trigger
+        self.assertIn("ETF-Daten", tm.SOURCE_TEXT.values())
+        self.assertEqual(tm.SPECS[ER].needs, ())  # it reads nothing another task writes
+        for field in (row.last_success, row.next_run, row.duration, row.status_line, row.data_stand):
+            self.assertNotEqual(field, "")
+        self.assertIn("Zeitlimit", rows(overrides={ER: {"time_limit": "PT1H"}})[ER].details)
+
+    def test_a_good_run_with_current_data_is_in_order(self) -> None:
+        row = self.etf()
+        self.assertEqual((row.level, row.data_level), ("", ""))
+        self.assertEqual(row.data_stand, "12.10.2026 · SPXS 30.08.2026")  # the weekly iShares datasets, and Invesco's monthly list named separately
+        self.assertIn("XUSE Holdings", row.details)
+        self.assertIn("SPXS Sektoren (manuell)", row.details)
+        self.assertTrue(row.last_success.startswith("14.10."))  # exit code 0 of the last run
+
+    def test_the_freshness_rules_follow_the_providers_cadence_and_the_loaders_limit(self) -> None:
+        now = NOW
+        def worst(**kw) -> str:
+            return tm.etf_overall(tm.etf_datasets(etf_source(**kw), now))
+        self.assertEqual(worst(holdings=(10, 10, 45), sectors=(10, 10, 77)), tm.OK)
+        self.assertEqual(worst(holdings=(11, 2, 45)), tm.AGING)  # an iShares list older than a week and a bit: the weekly run missed it
+        self.assertEqual(worst(holdings=(2, 2, 46)), tm.AGING)  # Invesco's monthly list
+        self.assertEqual(worst(holdings=(2, 2, 120)), tm.AGING)
+        self.assertEqual(worst(holdings=(2, 2, 121)), tm.STALE)  # the loaders' own 120 days, unchanged
+        self.assertEqual(worst(sectors=(121, 2, 77)), tm.STALE)
+        self.assertEqual(tm.etf_datasets(etf_source(holdings=(2, 2, 121)), now)[2].level, tm.STALE)
+        self.assertEqual(etf_source()["stale_after_days"], 120)
+
+    def test_a_missing_or_invalid_dataset_counts_as_stale(self) -> None:
+        source = etf_source()
+        source["holdings"][1].update(status="INVALID", as_of=None, age_days=None, detail="weights add up to 20 %")
+        source["lookthrough"][0].update(status="MISSING", as_of=None, age_days=None)
+        datasets = tm.etf_datasets(source, NOW)
+        self.assertEqual((datasets[1].level, datasets[3].level), (tm.STALE, tm.STALE))
+        row = rows(payload(etf_data=source))[ER]
+        self.assertEqual(row.data_level, "blocker")
+        self.assertIn("Daten veraltet: ETF-Daten", summarize(list(rows(payload(etf_data=source)).values()), True))
+
+    def test_the_manual_spxs_sector_allocation_never_makes_the_task_red(self) -> None:
+        row = self.etf(sectors=(2, 2, 300))  # 300 days old and manual
+        self.assertEqual((row.level, row.data_level), ("", ""))
+        self.assertEqual(summarize(list(rows(payload(etf_data=etf_source(sectors=(2, 2, 300)))).values()), True), "7 Tasks · alles im Plan")
+        etf_rows, levels = build_etf_rows(payload(etf_data=etf_source(sectors=(2, 2, 300))), NOW)
+        self.assertEqual(etf_rows[5][0], "SPXS Sektoren (manuell)")
+        self.assertIn("manuell gepflegt", etf_rows[5][3])
+        self.assertIn("älter als die Grenze der Loader", etf_rows[5][3])
+        self.assertEqual(levels[5], "warning")  # shown, not counted
+
+    def test_a_failed_refresh_is_visible_and_the_stored_data_stay_current(self) -> None:
+        failed = rows(overrides={ER: {"last_result": 2}})[ER]  # exit code 2: nothing could be refreshed
+        self.assertEqual(failed.level, "warning")
+        self.assertIn("Fehler", failed.result)
+        self.assertIn("Windows-Ergebnis", failed.last_error)
+        self.assertEqual(failed.data_level, "")  # the old valid files are still in use and current
+        self.assertIn("Fehler", failed.status_line)
+
+    def test_a_partial_refresh_is_visible_too(self) -> None:
+        partial = rows(overrides={ER: {"last_result": 3}})[ER]  # exit code 3: some datasets refreshed, some failed
+        self.assertEqual(partial.level, "warning")
+        self.assertIn("Fehler", partial.result)
+        self.assertIn("Exitcode 3", partial.result)
+        self.assertEqual(rows(freshness=payload(etf_data=etf_source(holdings=(12, 2, 45))), overrides={ER: {"last_result": 3}})[ER].data_level, "warning")  # the one that failed is older
+
+    def test_without_the_freshness_answer_the_etf_cells_say_so(self) -> None:
+        self.assertEqual(build_etf_rows(None, NOW), ([], []))
+        row = {r.name: r for r in build_task_rows(tasks(), None, NOW, "C:\\logs")}[ER]
+        self.assertEqual(row.data_stand, "unbekannt")
+
+    def test_the_six_datasets_in_the_order_of_the_page(self) -> None:
+        etf_rows, levels = build_etf_rows(payload(), NOW)
+        self.assertEqual([r[0] for r in etf_rows], ["XUSE Holdings", "IS3N Holdings", "SPXS Holdings", "XUSE Sektoren", "IS3N Sektoren", "SPXS Sektoren (manuell)"])
+        self.assertEqual([r[1] for r in etf_rows[:2]], ["12.10.2026", "12.10.2026"])
+        self.assertEqual((etf_rows[2][1], etf_rows[2][2]), ("30.08.2026", "45 Tage"))
+        self.assertEqual((etf_rows[5][1], etf_rows[5][2], etf_rows[5][3]), ("29.07.2026", "77 Tage", "manuell gepflegt"))
+        self.assertEqual(etf_rows[0][3], "aktuell")
+        self.assertEqual(levels, ["", "", "", "", "", ""])
+        self.assertIn("700 Zeilen", etf_rows[0][4])
+        self.assertIn("Factsheet-PDF", etf_rows[5][4])
+
+    def test_the_refresh_does_not_touch_the_database_or_other_tasks(self) -> None:
+        source = (ROOT / "tools" / "trading" / "etf_refresh.py").read_text(encoding="utf-8")
+        cli = (ROOT / "tools" / "trading" / "Refresh-TradingEtfData.py").read_text(encoding="utf-8")
+        self.assertNotIn("sqlite3", source + cli)  # no database, so no position, campaign or order can be touched
+        for forbidden in ("import subprocess", "Start-ScheduledTask", "import sqlite3", "time.sleep", "swing_campaign", "transactions"):
+            self.assertNotIn(forbidden, source + cli, forbidden)  # no second start, no retry, no job after it, no order / campaign table
+
+
+class SilentTaskRowsTests(unittest.TestCase):
+    def test_all_seven_tasks_are_shown_as_silent_when_they_start_pythonw(self) -> None:
+        self.assertEqual(len(rows()), 7)
+        for name, row in rows().items():
+            self.assertIn("Ausführung: unsichtbar (pythonw.exe, ohne Konsolenfenster)", row.details, name)
+            self.assertEqual(row.level, "", name)  # nothing to warn about
+
+    def test_a_task_that_still_starts_cmd_is_flagged_with_the_way_to_fix_it(self) -> None:
+        infos = tasks()
+        infos[0].action_execute = "C:\\Windows\\System32\\cmd.exe"
+        row = {r.name: r for r in build_task_rows(infos, payload(), NOW, "C:\\logs")}[MD]
+        self.assertEqual(row.level, "warning")
+        self.assertIn("Konsolenfenster", row.details)
+        self.assertIn("cmd.exe", row.details)
+        self.assertIn("-Action UpdateAction", row.details)
+        self.assertEqual({r.name: r.level for r in build_task_rows(infos, payload(), NOW, "C:\\logs")}[FX], "")  # only that task
+
+    def test_an_unknown_action_claims_nothing(self) -> None:
+        infos = tasks()
+        infos[0].action_execute = ""
+        row = {r.name: r for r in build_task_rows(infos, payload(), NOW, "C:\\logs")}[MD]
+        self.assertEqual(row.level, "")
+        self.assertNotIn("Ausführung", row.details)
+
+
+class RunProgressTests(unittest.TestCase):
+    def info(self, **kw):
+        base = {n.name: n for n in tasks()}[MD]
+        for key, value in kw.items():
+            setattr(base, key, value)
+        return base
+
+    def test_the_states_of_a_manual_run(self) -> None:
+        start = NOW
+        watch = RunWatch(MD, start)
+        text, level, finished = run_progress(watch, self.info(), start + timedelta(seconds=5))
+        self.assertEqual((level, finished), ("info", False))
+        self.assertIn("wird gestartet", text)  # the scheduler still shows the previous run
+        text, level, finished = run_progress(watch, self.info(state="Running", last_result=267009), start + timedelta(seconds=20))
+        self.assertEqual((level, finished, watch.seen_running), ("info", False, True))
+        self.assertIn("läuft seit 20 s", text)
+        text, level, finished = run_progress(watch, self.info(last_run=start + timedelta(seconds=3), last_result=0), start + timedelta(seconds=90))
+        self.assertEqual((level, finished), ("info", True))
+        self.assertIn("Ergebnis OK (Exitcode 0)", text)
+        self.assertIn("Das Log steht unten", text)
+
+    def test_a_failed_run_shows_the_exit_code_and_the_log_hint(self) -> None:
+        watch = RunWatch(MD, NOW)
+        text, level, finished = run_progress(watch, self.info(last_run=NOW + timedelta(seconds=3), last_result=3, log_hint="ERROR: HTTP Error 503"), NOW + timedelta(seconds=60))
+        self.assertEqual((level, finished), ("blocker", True))
+        self.assertIn("Fehler (Exitcode 3)", text)
+        self.assertIn("ERROR: HTTP Error 503", text)
+
+    def test_a_timed_out_run_is_a_failure(self) -> None:
+        text, level, _ = run_progress(RunWatch(MD, NOW), self.info(last_run=NOW + timedelta(seconds=3), last_result=267014), NOW + timedelta(hours=1))
+        self.assertEqual(level, "blocker")
+        self.assertIn("Zeitlimit", text)
+
+    def test_a_start_the_scheduler_never_confirms_is_reported_after_the_grace_period(self) -> None:
+        watch = RunWatch(MD, NOW)
+        self.assertFalse(run_progress(watch, self.info(), NOW + timedelta(seconds=100))[2])
+        text, level, finished = run_progress(watch, self.info(), NOW + timedelta(seconds=130))
+        self.assertEqual((level, finished), ("warning", True))
+        self.assertIn("nicht bestätigt", text)
+
+    def test_a_task_that_ran_before_the_click_is_not_mistaken_for_the_new_run(self) -> None:
+        text, level, finished = run_progress(RunWatch(MD, NOW), self.info(last_run=NOW - timedelta(hours=1), last_result=0), NOW + timedelta(seconds=10))
+        self.assertFalse(finished)
+
+    def test_a_task_that_is_not_registered(self) -> None:
+        self.assertEqual(run_progress(RunWatch(MD, NOW), None, NOW)[1:], ("blocker", True))
+        self.assertEqual(run_progress(RunWatch(MD, NOW), ts.TaskInfo(MD), NOW)[1:], ("blocker", True))
 
 
 @QT
@@ -427,7 +614,7 @@ class OperationsPageTests(unittest.TestCase):
         self.mcp.start()
         self.assertTrue(pump(40, lambda: self.window._orch is not None))
         self.window.sidebar.setCurrentRow(TASKS_PAGE)
-        self.assertTrue(pump(15, lambda: len(self.window.tasks.run_buttons) == 6 and self.window._freshness is not None), "tasks and freshness did not arrive")
+        self.assertTrue(pump(15, lambda: len(self.window.tasks.run_buttons) == 7 and self.window._freshness is not None), "tasks and freshness did not arrive")
 
     def test_the_page_shows_the_operations_columns(self) -> None:
         self.open_page()
@@ -441,7 +628,7 @@ class OperationsPageTests(unittest.TestCase):
         self.assertEqual(table.item(0, 6).text(), "≈ 55 s")
         self.assertIn("Abhängigkeiten", table.item(4, 0).toolTip())
         self.assertIn("StartWhenAvailable", table.item(4, 3).toolTip())
-        self.assertEqual(self.window.tasks.message.text(), "6 Tasks · alles im Plan")
+        self.assertEqual(self.window.tasks.message.text(), "7 Tasks · alles im Plan")
         self.assertFalse(self.window.tasks.grab().isNull())
 
     def test_stale_data_are_coloured_and_summarised(self) -> None:
@@ -463,7 +650,144 @@ class OperationsPageTests(unittest.TestCase):
         self.mcp.start()
         self.assertTrue(pump(40, lambda: self.window._orch is not None))
         self.window.sidebar.setCurrentRow(TASKS_PAGE)
-        self.assertTrue(pump(15, lambda: len(self.window.tasks.run_buttons) == 6 and "Datenstand nicht verfügbar" in self.window.tasks.message.text()))
+        self.assertTrue(pump(15, lambda: len(self.window.tasks.run_buttons) == 7 and "Datenstand nicht verfügbar" in self.window.tasks.message.text()))
+
+    def test_the_page_shows_seven_tasks_and_the_six_etf_datasets(self) -> None:
+        self.open_page()
+        page = self.window.tasks
+        self.assertEqual((page.table.rowCount(), len(page.run_buttons)), (7, 7))
+        self.assertEqual(page.table.item(6, 0).text(), "ETF-Daten")
+        self.assertEqual(page.table.item(6, 1).text(), "wöchentlich So 11:00")
+        self.assertEqual(page.etf_table.rowCount(), 6)
+        self.assertFalse(page.etf_table.isHidden())
+        self.assertEqual([page.etf_table.item(r, 0).text() for r in range(6)][-1], "SPXS Sektoren (manuell)")
+        self.assertEqual(page.etf_table.item(5, 3).text(), "manuell gepflegt")
+        self.assertEqual(page.message.text(), "7 Tasks · alles im Plan")
+
+    def test_a_stale_etf_dataset_is_shown_in_the_table_and_the_summary(self) -> None:
+        self.set_freshness(payload(etf_data=etf_source(holdings=(2, 130, 45))))
+        self.open_page()
+        page = self.window.tasks
+        self.assertEqual(page.etf_table.item(1, 3).text(), "veraltet")
+        self.assertIn("Daten veraltet: ETF-Daten", page.message.text())
+
+    # -- "Jetzt ausführen": the manual run follows the scheduler ---------------------------------------------------
+    class ScriptedBackend:
+        """A backend whose scheduler answers change after the start: ``steps`` times Running, then finished with ``code`` as the exit code."""
+
+        def __init__(self, name: str, code: int = 0, steps: int = 2) -> None:
+            self.name, self.code, self.steps, self.after = name, code, steps, 0
+            self.started: list[str] = []
+            self.queries = 0
+            self.logs_dir = "C:\\logs"
+            self.tailed: list[str] = []
+
+        def query(self):
+            self.queries += 1
+            infos = tasks()
+            if self.started:
+                self.after += 1
+                for info in infos:
+                    if info.name == self.name:
+                        if self.after <= self.steps:
+                            info.state, info.last_result = "Running", 267009
+                        else:
+                            info.state, info.last_run, info.last_result = "Ready", NOW + timedelta(seconds=30), self.code
+                            info.log_modified = info.last_run + timedelta(seconds=42)
+            return infos
+
+        def start(self, name):
+            self.started.append(name)
+            return True, f"Task {name} gestartet"
+
+        def tail(self, name):
+            self.tailed.append(name)
+            return ts.LogTail(True, f"Log von {name}\nletzte Zeile", False, 2048)
+
+    def scripted_window(self, name: str, code: int = 0, steps: int = 2):
+        backend = self.ScriptedBackend(name, code, steps)
+        self.window.backend = self.backend = backend
+        self.window.RUN_POLL_FIRST_MS, self.window.RUN_POLL_MS = 40, 40
+        self.open_page()
+        self.window.tasks.confirm = lambda n: True
+        return backend
+
+    def test_a_manual_run_shows_running_then_the_result_and_the_log(self) -> None:
+        backend = self.scripted_window(ER)
+        self.window.tasks.run_buttons[ER].click()
+        self.assertTrue(pump(10, lambda: backend.started == [ER]))
+        self.assertTrue(pump(10, lambda: "läuft seit" in self.window.tasks.run_status.text()), self.window.tasks.run_status.text())
+        self.assertFalse(self.window.tasks.run_buttons[ER].isEnabled())  # running: no second start from the button
+        self.assertTrue(pump(10, lambda: "Ergebnis OK (Exitcode 0)" in self.window.tasks.run_status.text()), self.window.tasks.run_status.text())
+        self.assertTrue(pump(10, lambda: "Log von Trading-ETF-Refresh" in self.window.tasks.log.toPlainText()))  # the existing log view shows the end of the log
+        self.assertEqual(self.window._watched, {})
+        self.assertTrue(self.window.tasks.run_buttons[ER].isEnabled())
+        queries = backend.queries
+        pump(0.5)
+        self.assertLessEqual(backend.queries - queries, 1)  # the polling stops with the run
+        self.assertEqual(backend.started, [ER])
+
+    def test_a_failed_run_shows_the_exit_code_in_the_gui(self) -> None:
+        backend = self.scripted_window(ER, code=3)
+        self.window.tasks.run_buttons[ER].click()
+        self.assertTrue(pump(10, lambda: "Fehler (Exitcode 3)" in self.window.tasks.run_status.text()), self.window.tasks.run_status.text())
+        self.assertIn(LEVEL_COLORS["blocker"], self.window.tasks.run_status.text())
+        self.assertEqual(self.window.tasks.table.item(6, 2).text().count("Fehler (Exitcode 3)"), 1)  # the table row says the same
+        self.assertTrue(pump(10, lambda: bool(backend.tailed)))
+
+    def test_a_second_start_of_the_same_task_is_not_triggered(self) -> None:
+        backend = self.scripted_window(MD, steps=50)
+        self.window.run_task(MD)
+        self.window.run_task(MD)  # a second click before the first answer
+        self.assertTrue(pump(10, lambda: "läuft seit" in self.window.tasks.run_status.text()))
+        self.window.run_task(MD)  # and while it runs
+        self.assertIn("kein zweiter Start", self.window.tasks.run_status.text())
+        pump(0.3)
+        self.assertEqual(backend.started, [MD])
+
+    def test_two_tasks_can_be_followed_at_the_same_time(self) -> None:
+        backend = self.scripted_window(MD, steps=1)
+        self.window.run_task(MD)
+        self.window.run_task(FX)
+        self.assertTrue(pump(10, lambda: set(self.window._watched) <= {FX} and MD in backend.started))
+        self.assertEqual(sorted(backend.started), sorted([MD, FX]))
+
+    def test_the_manual_run_calls_the_same_job_as_the_schedule(self) -> None:
+        recorded: list[list[str]] = []
+
+        class Runner:
+            def run(self, args, timeout):
+                recorded.append(args)
+                return 0, json.dumps([raw(n.name) for n in ts.TASKS]) if "Get-ScheduledTask" in args[-1] else "", ""
+
+        backend = ts.TaskBackend("C:\\logs", Runner())
+        self.window.backend = self.backend = backend
+        self.open_page()
+        self.window.tasks.confirm = lambda n: True
+        self.window.tasks.run_buttons[ER].click()
+        self.assertTrue(pump(10, lambda: any("Start-ScheduledTask" in c[-1] for c in recorded)))
+        starts = [c[-1] for c in recorded if "Start-ScheduledTask" in c[-1]]
+        self.assertEqual(len(starts), 1)
+        self.assertTrue(starts[0].endswith("Start-ScheduledTask -TaskName 'Trading-ETF-Refresh' -ErrorAction Stop"))
+        self.assertFalse(any(".py" in " ".join(c) for c in recorded if "Get-ScheduledTask" not in c[-1]))  # no script is run by the GUI
+
+    def test_the_button_is_called_jetzt_ausfuehren(self) -> None:
+        self.open_page()
+        self.assertTrue(all(b.text() == "▶ Jetzt ausführen …" for b in self.window.tasks.run_buttons.values()))
+        self.assertEqual(len(self.window.tasks.run_buttons), 7)
+
+    def test_the_last_start_function_is_still_declined_without_confirmation(self) -> None:
+        backend = self.scripted_window(MD)
+        self.window.tasks.confirm = lambda n: False
+        self.window.tasks.run_buttons[MD].click()
+        pump(0.3)
+        self.assertEqual((backend.started, self.window._watched), ([], {}))
+
+    def test_without_freshness_the_etf_table_stays_hidden_and_the_tasks_still_show(self) -> None:
+        (self.tmp / "fresh.json").write_text(json.dumps({"ok": False, "error": "DATA_FRESHNESS_FAILED", "message": "kaputt"}), encoding="utf-8")
+        self.open_page_without_freshness()
+        self.assertEqual(self.window.tasks.table.rowCount(), 7)
+        self.assertTrue(self.window.tasks.etf_table.isHidden() or self.window.tasks.etf_table.rowCount() == 0)
 
     def test_a_manual_start_warns_about_stale_prerequisites_and_still_starts_only_that_task(self) -> None:
         self.set_freshness(payload(fx={"available": True, "latest_rate_date": day(9), "oldest_currency_date": day(9), "oldest_currency": "AUD", "currencies": 4, "fetched_at": utc(0, 9)}))
@@ -511,7 +835,7 @@ class OperationsPageTests(unittest.TestCase):
         view.confirm = lambda name: True
         view.run_buttons[MD].click()
         self.assertTrue(pump(10, lambda: self.backend.started == [MD]))
-        self.assertTrue(pump(10, lambda: "gestartet" in view.message.text()))
+        self.assertTrue(pump(10, lambda: "gestartet" in view.run_status.text()))
 
 
 if __name__ == "__main__":

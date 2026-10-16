@@ -51,7 +51,7 @@ class ParsingTests(unittest.TestCase):
     def test_m_parses_the_json_of_the_scheduler_query(self) -> None:
         rows = six(**{"Trading-Fundamentals-SEC": {"state": "Running", "last_result": 267009, "next_run": None}, "Trading-Candidate-Discovery": {"last_result": 1, "last_run": None}})
         tasks = ts.parse_tasks(json.dumps(rows))
-        self.assertEqual([t.name for t in tasks], list(ts.TASK_NAMES))  # display order, only the six known tasks
+        self.assertEqual([t.name for t in tasks], list(ts.TASK_NAMES))  # display order, only the seven known tasks
         first = tasks[0]
         self.assertTrue(first.found and not first.running and not first.disabled)
         self.assertEqual((first.state, first.last_result, first.log_file), ("Ready", 0, "market-data-backfill.log"))
@@ -63,25 +63,25 @@ class ParsingTests(unittest.TestCase):
 
     def test_other_tasks_in_the_answer_are_ignored_and_a_single_object_is_accepted(self) -> None:
         text = json.dumps(six() + [item("Some-Other-Task")])
-        self.assertEqual(len(ts.parse_tasks(text)), 6)
+        self.assertEqual(len(ts.parse_tasks(text)), 7)
         single = ts.parse_tasks(json.dumps(item("Trading-Market-Intelligence")))
-        self.assertEqual([t.found for t in single], [False] * 5 + [True])
+        self.assertEqual([t.found for t in single], [False] * 5 + [True, False])
 
     def test_invalid_scheduler_answers_raise_a_clear_error(self) -> None:
         with self.assertRaises(ValueError):
             ts.parse_tasks("Task list in German: bereit")
-        self.assertEqual([t.found for t in ts.parse_tasks("")], [False] * 6)
-        self.assertEqual([t.found for t in ts.parse_tasks("[]")], [False] * 6)
+        self.assertEqual([t.found for t in ts.parse_tasks("")], [False] * 7)
+        self.assertEqual([t.found for t in ts.parse_tasks("[]")], [False] * 7)
 
     def test_result_texts(self) -> None:
         self.assertEqual((ts.result_text(0), ts.result_text(None), ts.result_text(267009), ts.result_text(267011)), ("OK", "—", "läuft", "noch nie gelaufen"))
         self.assertEqual(ts.result_text(2147942402), "Fehler (0x80070002)")
 
-    def test_the_query_script_names_exactly_the_six_tasks_and_asks_for_json(self) -> None:
+    def test_the_query_script_names_exactly_the_seven_tasks_and_asks_for_json(self) -> None:
         script = ts.query_script()
         for name in ts.TASK_NAMES:
             self.assertIn(f"'{name}'", script)
-        self.assertEqual(script.count("Trading-"), 6)
+        self.assertEqual(script.count("Trading-"), 7)
         self.assertIn("ConvertTo-Json", script)
         self.assertNotIn("Start-ScheduledTask", script)
         args = ts.powershell_args(script)
@@ -163,6 +163,65 @@ class MissingAndRunningTests(unittest.TestCase):
         self.assertEqual(vms["Trading-Candidate-Discovery"].result, "Fehler (0x80070002)")
 
 
+class SilentExecutionAndManualRunTests(unittest.TestCase):
+    """The scheduler runs every task without a window (pythonw); "Jetzt ausführen" starts that same scheduled task and nothing else."""
+
+    PYTHONW = "C:\\tools\\trading\\.venv\\Scripts\\pythonw.exe"
+    CMD = "C:\\Windows\\System32\\cmd.exe"
+
+    def test_the_query_reads_the_program_each_task_starts(self) -> None:
+        self.assertIn("$t.Actions[0].Execute", ts.query_script())
+        rows = six(**{"Trading-MarketData-Backfill": {"action_execute": self.PYTHONW}, "Trading-FXRates-Backfill": {"action_execute": self.CMD}})
+        tasks = {t.name: t for t in ts.parse_tasks(json.dumps(rows))}
+        self.assertIs(tasks["Trading-MarketData-Backfill"].silent, True)
+        self.assertIs(tasks["Trading-FXRates-Backfill"].silent, False)  # cmd.exe opens a console window on every run
+        self.assertIsNone(tasks["Trading-EventsNews-Backfill"].silent)  # not reported: nothing is claimed
+        self.assertIs(ts.TaskInfo("x", True, action_execute="C:\\x\\PythonW.EXE").silent, True)
+        self.assertIs(ts.TaskInfo("x", True, action_execute="C:\\x\\python.exe").silent, False)
+
+    def test_the_manual_run_is_the_scheduled_task_itself(self) -> None:
+        for name in ts.TASK_NAMES:
+            command = ts.run_now_command(name)
+            self.assertEqual(command[-1].split("; ")[-1], f"Start-ScheduledTask -TaskName '{name}' -ErrorAction Stop")  # the Task Scheduler runs it: same action, settings, log
+            text = " ".join(command).lower()
+            for other in ("python", "cmd.exe", "pythonw", ".py", "run-tradingtask", "start-process"):
+                self.assertNotIn(other, text, f"{name}: {other}")  # no second way to run a script from the GUI
+        with self.assertRaises(ValueError):
+            ts.run_now_command("Some-Other-Task")
+
+    def test_starting_runs_exactly_the_query_and_the_scheduler_start(self) -> None:
+        for name in ts.TASK_NAMES:
+            runner = FakeRunner()
+            ok, message = ts.start_task(runner, name)
+            self.assertTrue(ok, message)
+            scripts = [c[-1] for c in runner.commands]
+            self.assertEqual(len(scripts), 2)
+            self.assertIn("Get-ScheduledTask", scripts[0])
+            self.assertIn(f"Start-ScheduledTask -TaskName '{name}'", scripts[1])
+            self.assertEqual(len(runner.start_commands), 1)
+
+    def test_a_running_task_cannot_be_started_a_second_time_for_any_of_the_seven(self) -> None:
+        for name in ts.TASK_NAMES:
+            runner = FakeRunner(rows=six(**{name: {"state": "Running", "last_result": 267009}}))
+            ok, message = ts.start_task(runner, name)
+            self.assertFalse(ok, name)
+            self.assertIn("läuft bereits", message)
+            self.assertEqual(runner.start_commands, [], name)
+
+    def test_the_runner_hides_the_console_window_of_its_own_powershell(self) -> None:
+        import inspect
+
+        source = inspect.getsource(ts.PowerShellRunner)
+        self.assertIn("creationflags=flags", source)
+        self.assertEqual(ts.CREATE_NO_WINDOW, 0x08000000)
+
+    def test_exit_codes_are_shown_as_exit_codes(self) -> None:
+        self.assertEqual(ts.result_text(0), "OK")
+        self.assertEqual((ts.result_text(1), ts.result_text(2), ts.result_text(3)), ("Fehler (Exitcode 1)", "Fehler (Exitcode 2)", "Fehler (Exitcode 3)"))
+        self.assertEqual(ts.result_text(267014), "beendet (Zeitlimit/Abbruch)")
+        self.assertEqual(ts.result_text(2147942402), "Fehler (0x80070002)")
+
+
 class LogTailTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -206,14 +265,14 @@ class LogTailTests(unittest.TestCase):
         self.assertIsNone(ts.log_path(logs, "..\\..\\evil"))
         self.assertIsNone(ts.log_path("relative\\logs", "Trading-Market-Intelligence"))
         self.assertEqual({t.log_file for t in ts.TASKS}, {"market-data-backfill.log", "fx-rates-backfill.log", "events-news-backfill.log", "fundamentals-sec-backfill.log",
-                                                         "candidate-discovery.log", "market-intelligence.log"})
+                                                         "candidate-discovery.log", "market-intelligence.log", "etf-refresh.log"})
 
     def test_backend_tail_uses_the_configured_logs_dir(self) -> None:
         (self.dir / "candidate-discovery.log").write_text("hello\n", encoding="utf-8")
         backend = ts.TaskBackend(str(self.dir), FakeRunner())
         self.assertEqual(backend.tail("Trading-Candidate-Discovery").text, "hello")
         self.assertFalse(backend.tail("Trading-Unknown").available)
-        self.assertEqual(len(backend.query()), 6)
+        self.assertEqual(len(backend.query()), 7)
 
 
 if __name__ == "__main__":

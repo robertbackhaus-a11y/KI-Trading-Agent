@@ -30,7 +30,7 @@ from .viewmodels.portfolio import DASH, build_dashboard, build_planner, fmt_time
 from .viewmodels.effective import build_effective, direct_performance
 from .viewmodels.sectors import build_sectors
 from .viewmodels import transaction_import as import_vm
-from .viewmodels.tasks import build_task_rows, summarize
+from .viewmodels.tasks import RunWatch, build_etf_rows, build_task_rows, run_progress, summarize
 from .viewmodels.watchlist import ActionMessage, build_watchlist, describe_action
 from .viewmodels.watchlist_edit import describe_sector, describe_strategy, priority_saved, sector_saved, strategy_saved
 from .views.chat import ChatView
@@ -50,6 +50,8 @@ STATE_TEXT = {"CONNECTED": "verbunden", "CONNECTING": "verbindet …", "DISCONNE
 
 
 class MainWindow(QMainWindow):
+    RUN_POLL_FIRST_MS, RUN_POLL_MS = 2000, 3000  # how soon and how often the scheduler is asked about a run started from the Tasks page
+
     def __init__(self, settings: Settings, mcp: McpService, backend: TaskBackend, runner: AsyncRunner, warnings: Optional[list[str]] = None,
                  save_fn=settings_mod.save_settings, ollama_fn=check_ollama, chat: Optional[ChatService] = None) -> None:
         super().__init__()
@@ -67,6 +69,8 @@ class MainWindow(QMainWindow):
         self._last_refresh: Optional[datetime] = None
         self._tasks_at: Optional[datetime] = None
         self._task_infos = None  # the last scheduler answer
+        self._watched: dict[str, RunWatch] = {}  # tasks started from the Tasks page and followed until the scheduler reports their end
+        self._polling = False
         self._freshness = None  # the last get_data_freshness answer (None = not available)
         self._watchlist = None
         self._watchlist_at: Optional[datetime] = None
@@ -238,6 +242,7 @@ class MainWindow(QMainWindow):
         self._tasks_at = datetime.now()
         self._task_infos = value
         self._render_tasks()
+        self._follow_manual_runs()
 
     def _on_freshness(self, res: McpResult) -> None:
         self._inflight.discard("freshness")
@@ -250,7 +255,7 @@ class MainWindow(QMainWindow):
         if self._task_infos is None:
             return
         rows = build_task_rows(self._task_infos, self._freshness, datetime.now(), self.backend.logs_dir)
-        self.tasks.show_rows(rows, fmt_time(self._tasks_at), summarize(rows, self._freshness is not None))
+        self.tasks.show_rows(rows, fmt_time(self._tasks_at), summarize(rows, self._freshness is not None), build_etf_rows(self._freshness, datetime.now()))
 
     # -- watchlist ------------------------------------------------------------------------------------------
     def refresh_watchlist(self) -> None:
@@ -454,21 +459,54 @@ class MainWindow(QMainWindow):
         self.mcp.call_action("add_watchlist_candidate", {"identifier": str(int(security_id))}, timeout=30, on_done=done)
 
     def run_task(self, name: str) -> None:
+        """"Jetzt ausführen": starts the existing scheduled task (the same job, action, settings and log as the schedule; no console window - the scheduler runs it with pythonw) and
+        follows it on this page until the scheduler reports its end.  A task that is running, disabled or already being started is not started again."""
+        if name in self._watched:
+            self.tasks.show_run_status("Dieser Task wurde bereits von hier gestartet und läuft oder startet gerade – kein zweiter Start.", "warning")
+            return
         self.log.info("Task-Start angefordert: %s", name)
-        self.tasks.show_message(f"Starte {name} …")
+        self._watched[name] = RunWatch(name, datetime.now())  # claimed at once: a second click before the first answer cannot start it twice
+        self.tasks.show_run_status(f"Starte {name} …")
 
         def done(ok: bool, value) -> None:
-            if not ok:
-                self.log.warning("Task-Start %s fehlgeschlagen: %s", name, type(value).__name__)
-                self.tasks.show_error(f"Start fehlgeschlagen: {value}")
+            if not ok or not value[0]:
+                self._watched.pop(name, None)
+                message = f"Start fehlgeschlagen: {value}" if not ok else value[1]
+                self.log.warning("Task-Start %s: %s", name, type(value).__name__ if not ok else message)
+                self.tasks.show_run_status(message, "blocker")
+                self.tasks.show_error(message)
                 return
-            started, message = value
-            self.log.info("Task-Start %s: %s", name, "ok" if started else message)
-            self.tasks.show_message(message) if started else self.tasks.show_error(message)
+            message = value[1]
+            self.log.info("Task-Start %s: ok", name)
+            self.tasks.show_run_status(message + " – warte auf den Scheduler …")
             self.statusBar().showMessage(message, 10000)
-            QTimer.singleShot(3000, self.refresh_tasks)
+            self._watched[name].started = datetime.now()
+            if not self._polling:  # one polling chain for all followed runs
+                QTimer.singleShot(self.RUN_POLL_FIRST_MS, self._poll_manual_runs)
 
         self.runner.submit(lambda: self.backend.start(name), done)
+
+    def _poll_manual_runs(self) -> None:
+        if not self._watched:
+            self._polling = False
+            return
+        self._polling = True
+        self.refresh_tasks()  # the answer ends in _follow_manual_runs
+        QTimer.singleShot(self.RUN_POLL_MS, self._poll_manual_runs)
+
+    def _follow_manual_runs(self) -> None:
+        """Progress and result of the runs started from this page, from the scheduler answer that was just rendered (state, last run, exit code); the log follows when one ends."""
+        infos = {t.name: t for t in (self._task_infos or [])}
+        for name, watch in list(self._watched.items()):
+            if watch.started is None:
+                continue
+            text, level, finished = run_progress(watch, infos.get(name), datetime.now())
+            self.tasks.show_run_status(text, level)
+            if finished:
+                del self._watched[name]
+                self.log.info("Task-Lauf %s beendet: %s", name, level)
+                self.statusBar().showMessage(text, 15000)
+                self.show_task_log(name)
 
     def show_task_log(self, name: str) -> None:
         def done(ok: bool, value) -> None:
