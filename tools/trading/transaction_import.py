@@ -137,6 +137,7 @@ class ImportOptions:
     campaign_opened_at: tuple[tuple[str, str], ...] = ()  # (security key, YYYY-MM-DD)
     accept_aliases: tuple[tuple[str, str], ...] = ()  # (identifier of the file, security key): the file's identifier IS this security (recorded as a source symbol)
     start_campaigns: bool = True  # False: no Swing campaign is derived and started automatically (an explicit --campaign-opened-at still is honoured)
+    include_historical: bool = False  # part of the plan token: a check without historical rows cannot be applied with them (apply_import_plan also takes it as an argument)
     as_of_date: Optional[str] = None  # "today" for assignment lookups (tests); default: current UTC date
 
     @property
@@ -326,10 +327,54 @@ def _file_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _db_state_token(conn: sqlite3.Connection) -> tuple[Optional[str], str]:
+# The database state an import plan depends on beyond its own classified rows (which build_import_plan already recomputes under the write lock):
+# everything apply_import_plan reads for the securities it touches (position rebuild, split factors, strategy assignment, campaign lifecycle and
+# reconciliation, source symbols) plus the small global inputs.  Rows are hashed completely, only the pure row timestamps are left out.  Market data,
+# prices and FX rates are not part of an import and change daily; they are deliberately excluded.
+# (table, filter on the touched security ids or None for the whole table)
+_TOUCHED = "SELECT value FROM json_each(?)"
+_STATE_TABLES: tuple[tuple[str, Optional[str]], ...] = (
+    ("security", f"id IN ({_TOUCHED})"),
+    ("transactions", f"security_id IN ({_TOUCHED})"),
+    ("positions", f"security_id IN ({_TOUCHED})"),
+    ("source_symbols", f"security_id IN ({_TOUCHED})"),
+    ("corporate_action", f"security_id IN ({_TOUCHED})"),
+    ("strategy_assignment", f"security_id IN ({_TOUCHED})"),
+    ("swing_campaign", f"security_id IN ({_TOUCHED})"),
+    ("swing_campaign_event", f"campaign_id IN (SELECT id FROM swing_campaign WHERE security_id IN ({_TOUCHED}))"),
+    ("data_sources", None),
+    ("metadata", "key LIKE '%version%'"),
+)
+_STATE_IGNORED_COLUMNS = frozenset({"created_at", "updated_at", "verified_at"})
+
+
+def _latest_transaction(conn: sqlite3.Connection) -> tuple[int, Optional[int], Optional[str]]:
     row = conn.execute("SELECT COUNT(*) AS count, MAX(id) AS max_id, MAX(transaction_date) AS latest FROM transactions").fetchone()
-    payload = {"count": int(row[0]), "max_id": row[1], "latest": row[2]}
-    return row[2], hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return int(row[0]), row[1], row[2]
+
+
+def _db_state_token(conn: sqlite3.Connection, security_ids: Iterable[int] = ()) -> tuple[Optional[str], str]:
+    """``(latest transaction date, token)``: a deterministic digest of every database row an import of these securities depends on.
+
+    A changed quantity, price, fee or tax of an existing transaction, changed master data, a split, a strategy assignment or a campaign event of a touched
+    security changes the token even when count, highest id and latest date of the transactions stay the same.  Only the touched securities are read in full,
+    so the cost grows with the size of the import, not with the database.
+    """
+    count, max_id, latest = _latest_transaction(conn)
+    ids = json.dumps(sorted({int(i) for i in security_ids}))
+    digest = hashlib.sha256(json.dumps({"count": count, "max_id": max_id, "latest": latest}, sort_keys=True).encode("utf-8"))
+    for table, condition in _STATE_TABLES:
+        columns = [r[1] for r in conn.execute(f"PRAGMA table_info({table})") if r[1] not in _STATE_IGNORED_COLUMNS]
+        if not columns:  # the table does not exist in this database (older schema): it cannot influence the import
+            digest.update(f"|{table}:absent".encode("utf-8"))
+            continue
+        select = ", ".join(f'"{c}"' for c in columns)
+        where = f" WHERE {condition}" if condition else ""
+        params = (ids,) if condition and "?" in condition else ()
+        digest.update(f"|{table}:{','.join(columns)}".encode("utf-8"))
+        for row in conn.execute(f"SELECT {select} FROM {table}{where} ORDER BY rowid", params):
+            digest.update(json.dumps(list(row), separators=(",", ":"), default=repr).encode("utf-8"))
+    return latest, digest.hexdigest()
 
 
 def _normalized_holding_name(value: str) -> str:
@@ -1164,7 +1209,7 @@ def build_import_plan(
     path = Path(csv_path)
     if not path.is_file():
         raise FileNotFoundError(f"{adapter.source_label} CSV not found: {path}")
-    latest_date, db_token = _db_state_token(conn)
+    latest_date = _latest_transaction(conn)[2]
     cache: dict[int, list[sqlite3.Row]] = {}
     seen: set[str] = set()
     pending: dict[str, dict[str, Any]] = {}
@@ -1172,10 +1217,13 @@ def build_import_plan(
     source_hash = _file_hash(path)
     aliases = _plan_aliases(conn, adapter, records, options)
     updates, conflicts = _masterdata_changes(conn, records, aliases)
+    touched = {int(r.security_id) for r in records if r.security_id is not None} | {int(a["security_id"]) for a in aliases if a.get("security_id") is not None}
+    latest_date, db_token = _db_state_token(conn, touched)
     token_payload = {
         "file_sha256": source_hash, "db_state": db_token, "adapter": adapter.name, "rows": [record.primitive() for record in records],
         "masterdata": [updates, conflicts, aliases],
-        "options": {"create_securities": options.create_securities, "strategies": options.strategies, "campaign_opened_at": options.campaign_opened_at, "accept_aliases": options.accept_aliases, "start_campaigns": options.start_campaigns},
+        "options": {"create_securities": options.create_securities, "strategies": options.strategies, "campaign_opened_at": options.campaign_opened_at, "accept_aliases": options.accept_aliases, "start_campaigns": options.start_campaigns,
+                    "include_historical": options.include_historical},
     }
     plan_token = hashlib.sha256(json.dumps(token_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     return ImportPlan(str(path), source_hash, len(records), latest_date, db_token, plan_token, tuple(records), adapter.name, options, tuple(updates), tuple(conflicts), tuple(aliases))
@@ -1556,6 +1604,7 @@ def apply_import_plan(
     transaction-state drift.  If nothing changes, the transaction is rolled back (no backup, no ``imports`` row).
     """
     adapter, options = get_adapter(plan.adapter_name), plan.options
+    include_historical = include_historical or options.include_historical
     fresh = build_import_plan(conn, plan.source_file, adapter=adapter, options=options)
     if expected_plan_token != plan.plan_token or fresh.plan_token != expected_plan_token:
         raise TransactionImportError("import plan is stale; preview again before writing")
@@ -1755,6 +1804,8 @@ def preview_import(
     try:
         conn.backup(copy)
         copy_plan = build_import_plan(copy, csv_path, adapter=adapter, options=options)
+        if copy_plan.plan_token != plan.plan_token:  # the database changed between the plan and the snapshot: the simulation would not describe the returned token
+            raise TransactionImportError("the database changed during the check; check again")
         planned = apply_import_plan(copy, copy_plan, expected_plan_token=copy_plan.plan_token, include_historical=include_historical, dry_run=True)
         if inspect is not None:  # the simulated end state, while the in-memory copy is still open (read-only use by the caller)
             inspect(copy, planned)

@@ -228,10 +228,11 @@ def validate_source_file(file_path: Any) -> Path:
         raise ti.TransactionImportError("the file is larger than 20 MB")
     return path
 
-def _options(create_securities: bool, strategies: Iterable[str], campaign_opened_at: Iterable[str], accept_aliases: Iterable[str] = (), start_campaigns: bool = True) -> ti.ImportOptions:
+def _options(create_securities: bool, strategies: Iterable[str], campaign_opened_at: Iterable[str], accept_aliases: Iterable[str] = (), start_campaigns: bool = True,
+             include_historical: bool = False) -> ti.ImportOptions:
     return ti.ImportOptions(create_securities=create_securities, strategies=ti.parse_key_value_options(strategies, kind="strategy"),
                             campaign_opened_at=ti.parse_key_value_options(campaign_opened_at, kind="date"), accept_aliases=ti.parse_key_value_options(accept_aliases, kind="alias"),
-                            start_campaigns=bool(start_campaigns))
+                            start_campaigns=bool(start_campaigns), include_historical=bool(include_historical))
 
 
 def check(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", create_securities: bool = False, strategies: Iterable[str] = (),
@@ -245,7 +246,7 @@ def check(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", cre
     conn.execute("PRAGMA query_only = ON")
     try:
         adapter = ti.get_adapter(fmt)
-        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases, start_campaigns)
+        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases, start_campaigns, include_historical)
         before = _positions(conn)
         captured: dict[str, Any] = {}
 
@@ -255,6 +256,8 @@ def check(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", cre
 
         result = ti.preview_import(conn, csv_path, adapter=adapter, options=options, include_historical=include_historical, inspect=inspect)
         plan = ti.build_import_plan(conn, csv_path, adapter=adapter, options=options)
+        if plan.plan_token != result["plan_token"] or _positions(conn) != before:  # a writer changed the database while the check ran: the report would mix two states
+            raise ti.TransactionImportError("the database changed during the check; check again")
         changes = position_changes(before, captured.get("after", before))
         # the closing reconciliation of a dry run describes the SIMULATED end state; a file row that stays out (historical, conflict) shows up as a difference
         return {**result, "mode": "check", "diff": _diff(plan, include_historical, result["planned"], changes), "closing": captured.get("closing")}
@@ -273,7 +276,7 @@ def run(db_path: str | Path, csv_path: str | Path, *, fmt: str = "parqet", creat
     conn.row_factory = sqlite3.Row
     try:
         adapter = ti.get_adapter(fmt)
-        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases, start_campaigns)
+        options = _options(create_securities, strategies, campaign_opened_at, accept_aliases, start_campaigns, include_historical)
         plan = ti.build_import_plan(conn, csv_path, adapter=adapter, options=options)
         if expected_plan_token is not None and expected_plan_token != plan.plan_token:
             raise ti.TransactionImportError("import plan is stale; check again before writing")
