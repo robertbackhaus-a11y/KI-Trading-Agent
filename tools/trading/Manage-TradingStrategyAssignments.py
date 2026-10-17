@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Controlled CLI for Phase-3A security-level strategy assignments.
 
 Mutations are dry-runs unless ``--write`` is supplied. The CLI never creates

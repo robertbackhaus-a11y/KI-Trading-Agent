@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Dashboard page: portfolio status, planner status and the planned / deferred entries (read-only)."""
 
 from __future__ import annotations

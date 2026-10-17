@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The silent execution of the scheduled tasks: the launcher (``Run-TradingTask.py``, started by ``pythonw.exe``) keeps what ``cmd /c python script >> log 2>&1`` did - log content and exit
 code - and the task definitions of ``Manage-TradingTasks.ps1`` all start it, without cmd.exe, a console or a second process; schedules stay as they were."""
 

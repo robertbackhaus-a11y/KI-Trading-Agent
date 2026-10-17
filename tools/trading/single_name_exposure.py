@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The exposure basis of the single-name guard (the per-security weight limit of the ADD and BUY sizing): direct position + the share of the same company in the held ETFs.
 
 The company is the unit: other directly held share classes of the same issuer (a reviewed issuer group such as Alphabet A and C) count with the direct position, whatever the state of

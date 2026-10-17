@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """onboard_security: controlled creation of one new security (A-Y); synthetic securities and the real schema only."""
 
 from __future__ import annotations

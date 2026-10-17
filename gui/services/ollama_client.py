@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Ollama client of the GUI (standard library only: ``http.client`` and ``json``; no Qt, no extra package).
 
 What it does: reachability, model list, and ``/api/chat`` as a *stream* of typed chunks (thinking text, answer text, tool calls, final

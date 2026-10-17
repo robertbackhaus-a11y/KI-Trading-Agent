@@ -1,10 +1,10 @@
-# Trading Agent – Abfragen und Beispiele
+# VIPER-AI – Abfragen und Beispiele
 
 English version: [trading-agent-query-examples.en.md](trading-agent-query-examples.en.md)
 
-Dieses Dokument zeigt, welche Fragen der Trading Agent beantwortet und welches MCP-Tool dahintersteht. Es ist frontend-neutral: Jeder MCP-fähige Client kann die Tools mit natürlicher Sprache nutzen. Die Beispiele verwenden neutrale Ticker und sind keine Anlageempfehlung. Die Architektur steht in [trading-agent-architecture.de.md](trading-agent-architecture.de.md), der Überblick in der [README](../README.md).
+Dieses Dokument zeigt, welche Fragen VIPER-AI beantwortet und welches MCP-Tool dahintersteht. Es ist frontend-neutral: Jeder MCP-fähige Client kann die Tools mit natürlicher Sprache nutzen. Die Beispiele verwenden neutrale Ticker und sind keine Anlageempfehlung. Die Architektur steht in [trading-agent-architecture.de.md](trading-agent-architecture.de.md), der Überblick in der [README](../README.md).
 
-**Grundsätze:** `PROMOTE` ist kein `BUY`. `DISCOVERY` ist kein `PROMOTE`. `NEWS` ist kein Signal. Keine Orders: Die Ausführung erfolgt außerhalb des Trading Agents.
+**Grundsätze:** `PROMOTE` ist kein `BUY`. `DISCOVERY` ist kein `PROMOTE`. `NEWS` ist kein Signal. Keine Orders: Die Ausführung erfolgt außerhalb von VIPER-AI.
 
 **Inhalt**
 
@@ -48,7 +48,7 @@ Der Depotstatus ist ein vollständiger, rein lesender Gesamtbericht: Positionen 
 
 - Die Standardantwort ist ein strukturierter Status: `portfolio`, `positions`, `position_engine` (SELL/TRIM/HOLD/ADD bestehender Positionen), `promotion`, `entry_plan` (geplante und zurückgestellte NEUE Entries des Planners), `proceeds` (brutto/Steuer/netto), `capital` und `issues`. Die Werte werden so angezeigt; nichts wird neu gezählt, neu summiert oder neu bewertet.
 - `position_engine` und `entry_plan` sind getrennte Quellen: `engine_buy_count` und `engine_add_count` zählen nur BUY/ADD der Positions-Engine; 0 bedeutet nicht, dass keine neuen Entries geplant sind. Die kompakte Standardfassung hat rund 8.000 Zeichen. `detail=true` liefert das vollständige Ergebnis mit `presentation_summary`, `rendered_summary_de` (fertiger Text, immer auf Deutsch), `highest_priority_actions`, `next_review_items` und den großen Ergebnislisten (rund 95.000 Zeichen) und gehört nur auf ausdrücklichen Wunsch angefragt.
-- Ohne `as_of` gilt der aktuelle Stand. Aktionen sind Empfehlungen des Agents; die Orderausführung erfolgt außerhalb des Trading Agents.
+- Ohne `as_of` gilt der aktuelle Stand. Aktionen sind Empfehlungen des Agents; die Orderausführung erfolgt außerhalb von VIPER-AI.
 
 ## 2. Einstieg
 
@@ -337,7 +337,7 @@ Der Agent analysiert, rankt und plant. Er handelt nicht. Die folgenden Anfragen 
 
 | # | Anfrage | Verhalten |
 |---|---|---|
-| 1 | „Kaufe 10 AAPL.“ | Es gibt keine Order. Die Ausführung erfolgt außerhalb des Trading Agents. |
+| 1 | „Kaufe 10 AAPL.“ | Es gibt keine Order. Die Ausführung erfolgt außerhalb von VIPER-AI. |
 | 2 | „Nimm NVDA automatisch in die Watchlist auf.“ | Die Discovery schlägt nur vor; es gibt keine automatische Aufnahme. |
 | 3 | „Bewerte NVDA wegen der News besser.“ | News ändern nie Score, Rang, Positionsgröße oder Entscheidung. |
 | 4 | „Hol jetzt die neuesten Nachrichten aus dem Web.“ | Die Reader lesen nur den letzten Report; der Abruf läuft im Collector außerhalb des MCP. |

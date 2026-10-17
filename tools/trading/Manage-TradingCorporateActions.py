@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Controlled management CLI for auditable corporate actions (stock splits)."""
 
 from __future__ import annotations

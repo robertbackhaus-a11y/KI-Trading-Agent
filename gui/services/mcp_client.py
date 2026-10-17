@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """MCP client of the GUI: the official ``mcp`` SDK against the Trading MCP server as a stdio child process.
 
 Two layers:

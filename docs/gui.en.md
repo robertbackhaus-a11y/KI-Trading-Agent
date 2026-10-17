@@ -2,7 +2,7 @@
 
 Deutsche Version: [gui.de.md](gui.de.md)
 
-The desktop GUI is a cockpit for the Trading Agent that mostly reads. It shows what the Trading MCP server reports, controls the scheduled tasks and offers a chat with a local language model that can read the same data. It contains no trading logic, no database access and no order function. It writes only through six narrow, explicit MCP actions of the Watchlist page (sections 3 and 5); the chat can only read. Development status: the GUI has no version number of its own; it reports `dev`.
+The desktop GUI is a cockpit for VIPER-AI that mostly reads. It shows what the Trading MCP server reports, controls the scheduled tasks and offers a chat with a local language model that can read the same data. It contains no trading logic, no database access and no order function. It writes only through six narrow, explicit MCP actions of the Watchlist page (sections 3 and 5); the chat can only read. Development status: the GUI has no version number of its own; it reports `dev`.
 
 ## 1. Architecture
 
@@ -21,13 +21,15 @@ Desktop GUI (PySide6)
 
 ## 2. Installation and start
 
-The GUI has its own virtual environment; the runtime environment of the Trading Agent is not changed. `requirements-gui.txt` pins `PySide6-Essentials` (not the `PySide6` meta package, which also pulls WebEngine and the Addons) and `mcp` (the same version as the runtime).
+The GUI has its own virtual environment; the runtime environment of VIPER-AI is not changed. `requirements-gui.txt` pins `PySide6-Essentials` (not the `PySide6` meta package, which also pulls WebEngine and the Addons) and `mcp` (the same version as the runtime).
 
 ```
 py -3.12 -m venv .venv-gui
 .venv-gui\Scripts\python.exe -m pip install -r requirements-gui.txt
 .venv-gui\Scripts\python.exe -m gui
 ```
+
+Alternatively (pip installation, parallel to the deploy): `.venv-gui\Scripts\python.exe -m pip install "<repo-path>[gui]"` installs VIPER-AI with the extra `gui` (`PySide6-Essentials`); the GUI then starts with `viper-ai-gui` (no console window) or `python -m viper_ai.gui`. Its MCP settings (`mcp_python_path`, `mcp_server_path`) are unchanged and still point to the deployed server.
 
 The commands run from the repository root. The defaults point to the production installation; they can be changed in the settings.
 

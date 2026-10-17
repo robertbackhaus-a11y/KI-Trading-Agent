@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Corporate-action (stock split) support, additive to the existing schema.
 
 Design principle: a split is represented as *data*, never applied by

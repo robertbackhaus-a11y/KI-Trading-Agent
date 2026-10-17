@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only, ECB-convention FX resolution for valuation.
 
 ECB rates are stored only as ``1 EUR = N quote currency``.  Phase 3A.5

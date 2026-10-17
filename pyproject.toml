@@ -1,0 +1,79 @@
+# VIPER-AI as a pip-installable package (parallel to deploy\Deploy-TradingAgent.ps1, which stays unchanged).
+#
+#   install:  python -m pip install <repo-path>
+#   update:   python -m pip install --upgrade <repo-path>
+#   GUI env:  python -m pip install "<repo-path>[gui]"
+#
+# The existing source folders are mapped into the package, nothing is moved in the repository:
+#   tools/trading -> viper_ai.app   (domain modules + CLI scripts; only the versioned *_v1.json universe files are packaged)
+#   mcp-tools     -> viper_ai.mcp   (MCP server)
+#   gui           -> viper_ai.gui   (desktop GUI, needs the extra "gui")
+# Runtime data (database, logs, scheduler, *_local.json, app\data) stays under the trading root (C:\tools\trading or VIPER_TRADING_ROOT)
+# and is never part of the package, so pip install / upgrade / uninstall cannot touch it.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "VIPER-AI"
+dynamic = ["version"]
+description = "VIPER-AI: local MCP-based trading agent for portfolio analysis and simulation (no order execution)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Robert Backhaus" }]
+# the tested versions of requirements.txt / requirements-gui.txt (keep them in sync)
+dependencies = [
+    "mcp==2.3.0",
+    "pydantic==2.13.5",
+    "pypdf==6.19.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PySide6-Essentials==6.11.2",
+]
+
+[project.scripts]
+viper-ai = "viper_ai.cli:main"
+viper-ai-mcp = "viper_ai.cli:mcp_server"
+viper-ai-orchestrator = "viper_ai.cli:orchestrator"
+viper-ai-import-parqet = "viper_ai.cli:import_parqet"
+viper-ai-import-transactions = "viper_ai.cli:import_transactions"
+viper-ai-refresh-etf = "viper_ai.cli:refresh_etf"
+viper-ai-backfill-market-data = "viper_ai.cli:backfill_market_data"
+viper-ai-backfill-fx-rates = "viper_ai.cli:backfill_fx_rates"
+viper-ai-backfill-events-news = "viper_ai.cli:backfill_events_news"
+viper-ai-backfill-fundamentals-sec = "viper_ai.cli:backfill_fundamentals_sec"
+viper-ai-discover-candidates = "viper_ai.cli:discover_candidates"
+viper-ai-market-intelligence = "viper_ai.cli:market_intelligence"
+
+[project.gui-scripts]
+viper-ai-gui = "viper_ai.cli:gui"
+viper-ai-task = "viper_ai.cli:task"
+
+[tool.setuptools]
+include-package-data = false
+packages = [
+    "viper_ai",
+    "viper_ai.app",
+    "viper_ai.mcp",
+    "viper_ai.gui",
+    "viper_ai.gui.services",
+    "viper_ai.gui.viewmodels",
+    "viper_ai.gui.views",
+]
+
+[tool.setuptools.package-dir]
+"viper_ai.app" = "tools/trading"
+"viper_ai.mcp" = "mcp-tools"
+"viper_ai.gui" = "gui"
+
+[tool.setuptools.package-data]
+# versioned universe files only; *_local.json and their backups are private runtime data
+"viper_ai.app" = ["universe/*_v1.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "viper_ai.__version__" }

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The "Einzelwertrisiko / Effective Exposure" section of the Sektoren page: view model (direct / ETF / effective, contributors, coverage, notes) and the page offscreen against the
 fake MCP server; synthetic data only."""
 

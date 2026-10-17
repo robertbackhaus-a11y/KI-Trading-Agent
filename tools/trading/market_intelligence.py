@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deterministic market intelligence: collect, classify and map news to the portfolio (read-only, no orders, no LLM).
 
 Flow::

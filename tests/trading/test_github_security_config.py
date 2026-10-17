@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Guards the GitHub security configuration in .github/: minimal workflow permissions, SHA-pinned official actions, no risky triggers.
 
 Text-based on purpose (no YAML dependency): it must also run in the Trading venv.  Whether GitHub accepts and runs the workflows can only be

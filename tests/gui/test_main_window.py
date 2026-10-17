@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """MainWindow offscreen smoke (R) with a fake MCP server and a fake task backend: pages, wiring, run-now flow, errors, shutdown."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Rauchtest: startet server.py per stdio gegen die TEST-Datenbank und ruft einige Tools auf."""
 import asyncio, json, os, sys
 from pathlib import Path

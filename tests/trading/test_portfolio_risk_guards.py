@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Sector and correlation guards of the Portfolio Action Planner (synthetic data only).
 
 One limit (``RiskGuardConfig.max_sector_weight``) covers two guards: the sector weight and the weight of a correlation cluster

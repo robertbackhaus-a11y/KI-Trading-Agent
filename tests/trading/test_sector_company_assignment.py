@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The company-based sector assignment of the sector overview: a company inside an ETF counts in the project sector its own security has (same matching as the effective
 exposure: ISIN, reviewed alias, ticker + exchange, never fuzzy); everything else stays in its provider category (mapped one-to-one or NOT_ASSESSED); the total never changes."""
 

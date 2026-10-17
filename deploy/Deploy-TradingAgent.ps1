@@ -1,6 +1,9 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 <#
 .SYNOPSIS
-  Small, explicit deploy of the Trading Agent runtime files from this repo to the production root.
+  Small, explicit deploy of the VIPER-AI runtime files from this repo to the production root.
 
 .DESCRIPTION
   Only the files listed in deploy-manifest.json are ever copied (no wildcard copy of the repo).

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """MCP adapter context protection: the default orchestrator answer is the compact status, detail=true is untouched, the fallback keeps the tool working,
 and the tool surface (signature, 15 tools) is unchanged."""
 

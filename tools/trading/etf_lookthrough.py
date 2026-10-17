@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """ETF sector look-through data for the sector overview: official provider sector allocations of the held ETFs and their mapping to the sector groups.
 
 Two small files next to ``sector_map_v1.json`` (``app/universe`` in production); nothing is stored in the database and ``sector_map_local.json`` is not touched::
@@ -25,6 +28,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+import runtime_paths
 
 MAPPING_NAME = "etf_sector_mapping_v1.json"
 ALLOCATION_NAME = "etf_lookthrough_local.json"
@@ -142,7 +147,7 @@ def read_layers(universe_dir: Optional[Path] = None, valid_groups: Optional[set[
     mapping, warnings = read_mapping(directory / MAPPING_NAME, valid_groups)
     allocations: dict[str, Allocation] = {}
     invalid: dict[str, str] = {}
-    path = directory / ALLOCATION_NAME
+    path = runtime_paths.private_file(directory, ALLOCATION_NAME)
     if path.is_file():
         for isin, entry in (_read(path).get("etfs") or {}).items():
             try:

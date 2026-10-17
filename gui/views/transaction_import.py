@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Page "Import": a transaction export (Parqet or the canonical CSV) is checked, the difference to the database is shown, and after a check that would change something it is imported.
 
 "Prüfen" is a dry run on the server (nothing is written).  "Importieren" stays disabled until such a check came back, it is disabled again as soon as the form is edited (the check

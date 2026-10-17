@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Refresh etf_holdings_local.json and etf_lookthrough_local.json from the providers' published data (iShares: XUSE, IS3N; Invesco: SPXS).
 
 Without ``--write`` this is a complete dry run: everything is downloaded and validated and the report shows what would change; no file is touched.  With ``--write`` each file is

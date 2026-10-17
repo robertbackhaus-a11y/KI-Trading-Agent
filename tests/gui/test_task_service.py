@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Task service and task view model: JSON parsing, missing tasks, the Run-now command, running tasks, log tail (M-Q)."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View models for Dashboard and Planner: orchestrator JSON -> display strings.
 
 Pure Python (no Qt, no database).  Nothing is computed here beyond formatting and counting list entries; every figure comes from

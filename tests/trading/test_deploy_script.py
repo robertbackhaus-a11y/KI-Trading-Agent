@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deploy manifest and Deploy-TradingAgent.ps1: explicit runtime file list, protected private files, and the script's behaviour in a temporary fake production root (never the real one)."""
 
 from __future__ import annotations

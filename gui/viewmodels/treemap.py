@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Treemap geometry and colour for the "Sektoren" page.  Pure Python (no Qt), so it is tested without a display.
 
 ``squarify`` is the usual squarified treemap (Bruls, Huizing, van Wijk): items are placed in rows along the shorter side of the free rectangle so that the

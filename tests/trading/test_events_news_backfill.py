@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for Backfill-TradingEventsNews.py: SEC 8-K/6-K parsing, Yahoo news
 parsing, idempotency/deduplication, NULL handling, and the existing
 event_risk quality transition (UNAVAILABLE -> PARTIAL -> AVAILABLE) that the

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """A scripted fake Ollama HTTP server for the GUI tests (standard library only; synthetic data only).
 
 ``/api/version`` and ``/api/tags`` answer from attributes; every ``/api/chat`` request consumes the next :class:`Script`.  All requests are recorded

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Watchlist page: the whole watchlist (read from ``get_watchlist``), filters, and the three explicit actions: add, remove, change priority.
 
 Nothing is written while scrolling or filtering: every write needs a button (or the context menu) and, for removing, a confirmation whose

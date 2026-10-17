@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 import io
@@ -12,6 +15,8 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
+
+import runtime_paths
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -3045,8 +3050,7 @@ def parse_sk_hynix():
 # Half-Year or Full-Year result -- the plain script genuinely cannot
 # fetch this source live.
 BAE_SNAPSHOT_PATH = (
-    Path(__file__).parent
-    / "data"
+    runtime_paths.private_data_dir()
     / "bae_systems_snapshot.json"
 )
 

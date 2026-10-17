@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the generic post-campaign transaction <-> Swing campaign reconciliation.
 
 Uses the real Phase-3B.1 lifecycle schema (constraints, triggers, unique

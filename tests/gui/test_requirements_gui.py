@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """requirements-gui.txt: exact pins, no meta package, same mcp pin as the runtime requirements."""
 
 from __future__ import annotations

@@ -36,7 +36,9 @@ request:
 
 ## Scope
 
-- Trading Agent code (`tools/trading/`).
+- VIPER-AI code (`tools/trading/`, `viper_ai/`, `gui/`).
+- Packaging and runtime isolation (`pyproject.toml`, `tools/trading/runtime_paths.py`): production data under `C:\tools\trading` is never part of
+  the package, and `pip install` / `--upgrade` / `uninstall` must not read, overwrite or delete it.
 - MCP tool integration (`mcp-tools/`).
 - Database and import logic.
 - External data-source / API integrations.

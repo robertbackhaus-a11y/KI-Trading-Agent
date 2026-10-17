@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Backfill ECB euro foreign-exchange reference rates.
 
 The tool uses only the official ECB EXR API. Database mutation is deliberately

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Market intelligence: normalization, rule-based classification, mapping, atomic report, MCP reader (no signal changes)."""
 
 from __future__ import annotations

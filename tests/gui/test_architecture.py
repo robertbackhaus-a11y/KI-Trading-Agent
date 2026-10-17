@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Architecture rules of the GUI package (static): no database or trading logic, no actions, READ-only wiring, clean layering."""
 
 from __future__ import annotations

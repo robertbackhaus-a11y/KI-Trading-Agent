@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """GUI settings: defaults, broken files, validation, atomic save, rotating log (A, B)."""
 
 from __future__ import annotations

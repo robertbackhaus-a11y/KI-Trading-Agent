@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the "Neues Wertpapier aufnehmen" dialog: form values -> ``onboard_security`` arguments, and the result -> readable German messages.
 
 Pure Python (no Qt, no database).  Nothing is looked up or completed here: the arguments contain exactly what the user typed (empty fields are left

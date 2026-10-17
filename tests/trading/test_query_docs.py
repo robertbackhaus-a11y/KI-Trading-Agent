@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The German and English query guides must stay equivalent and match the code: same chapters, examples and technical terms, all MCP tools with the right read/write flag, working links, no private data."""
 
 from __future__ import annotations

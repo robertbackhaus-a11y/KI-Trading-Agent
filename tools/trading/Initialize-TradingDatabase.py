@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 import argparse
@@ -1153,7 +1156,7 @@ def validate_database(db_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Initialize the KI-Stack trading database schema "
+            "Initialize the VIPER-AI trading database schema "
             "(tables, indexes, views, base data_sources). "
             "Idempotent: safe to run against an existing database, "
             "creates nothing that already exists, inserts no demo "

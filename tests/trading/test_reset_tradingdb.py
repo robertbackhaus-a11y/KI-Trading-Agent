@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Reset-TradingDb.py is destructive: it must never fall back to a default DB path."""
 
 from __future__ import annotations

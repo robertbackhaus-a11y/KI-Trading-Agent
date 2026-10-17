@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The read-only sector overview (``get_sector_overview``): exposure sums, the unassigned group, resolution of the two-layer sector map, the daily change with
 missing data, ETFs as normal positions, the guard status; synthetic data only."""
 

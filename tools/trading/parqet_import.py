@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Parqet source adapter for the provider-neutral transaction import.
 
 Only the Parqet specifics live here: the semicolon CSV with its German/English column aliases, decimal comma, the type vocabulary and

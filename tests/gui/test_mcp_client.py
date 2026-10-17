@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """MCP client: the official SDK against a fake stdio server (E-J), plus the Qt service (threads, callbacks, policy, responsiveness)."""
 
 from __future__ import annotations

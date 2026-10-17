@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The SEC User-Agent of the two SEC collectors: a GitHub noreply contact is rejected by the SEC with HTTP 403 (live observation, October 2026: the same request answers 200
 with the placeholder or a real address and 403 with "...@users.noreply.github.com"), so it is never sent; the request actually built carries the corrected header."""
 

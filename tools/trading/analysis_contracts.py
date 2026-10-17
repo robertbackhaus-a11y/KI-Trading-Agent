@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Typed, persistence-independent contracts for analysis and decisions."""
 
 from __future__ import annotations

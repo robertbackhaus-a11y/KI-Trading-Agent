@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Run the read-only portfolio-level trading orchestrator."""
 
 from __future__ import annotations

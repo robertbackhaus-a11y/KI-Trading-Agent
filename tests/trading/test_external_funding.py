@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """External funding in the Portfolio Action Planner (planning capability, not a booking).
 
 ``metadata.external_funding_available`` lifts ONLY the cash/reserve shortage.  Swing maximum, per-security weight limits, existing

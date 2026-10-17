@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Synthetic orchestrator results for the GUI tests, produced by the REAL orchestrator and planner (so the shape is the real contract)."""
 
 from __future__ import annotations

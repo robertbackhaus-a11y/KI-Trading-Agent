@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The sector map in two layers, and the narrow write of the local layer (the ``set_security_sector`` MCP action).
 
 The sector of a security is NOT stored in the database.  It comes from the sector map, keyed by the security's listing key (the Yahoo symbol of the
@@ -28,6 +31,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+import runtime_paths
 
 OPERATION = "set_security_sector"
 PUBLIC_NAME = "sector_map_v1.json"
@@ -104,7 +109,7 @@ def read_layers(public_path: Optional[Path] = None) -> Layers:
     """Both layers of the map.  The local file is optional; the public one is required."""
     public_path = Path(public_path) if public_path is not None else DEFAULT_UNIVERSE / PUBLIC_NAME
     public_payload = _payload(public_path)
-    local_path = public_path.with_name(LOCAL_NAME)
+    local_path = runtime_paths.private_file(public_path.parent, LOCAL_NAME)
     local_payload = _payload(local_path) if local_path.is_file() else {"sectors": {}}
     groups = tuple(dict.fromkeys([*public_payload["sectors"], *local_payload["sectors"]]))
     return Layers(_layer(public_payload, PUBLIC_NAME), _layer(local_payload, LOCAL_NAME), groups, local_path.is_file())
@@ -194,7 +199,7 @@ def set_security_sector(conn: sqlite3.Connection, security_id: Any, sector: Any,
             return _result(NOT_FOUND, security_id=sid)
         info = {"security_id": int(row[0]), "symbol": row[1], "name": row[2]}
         folder = Path(universe_dir) if universe_dir is not None else DEFAULT_UNIVERSE
-        public_path, local_path = folder / PUBLIC_NAME, folder / LOCAL_NAME
+        public_path, local_path = folder / PUBLIC_NAME, runtime_paths.private_file(folder, LOCAL_NAME)
         try:
             wanted = check_sector(sector)
         except ValueError:

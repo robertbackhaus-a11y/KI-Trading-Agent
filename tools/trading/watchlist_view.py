@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only watchlist view for the ``get_watchlist`` tool: every watchlist entry with its existing ranking, decision and news context.
 
 ``WATCHLIST ROWS + analytics ranking + candidate decision + planner entry status + news context -> one row per entry``.

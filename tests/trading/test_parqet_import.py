@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression tests for the safe, incremental Parqet importer."""
 
 from __future__ import annotations

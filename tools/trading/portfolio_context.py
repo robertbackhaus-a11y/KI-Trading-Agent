@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Pure portfolio allocation calculations with no persistence dependency."""
 
 from __future__ import annotations

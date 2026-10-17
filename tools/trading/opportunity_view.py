@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Unified opportunity view: engine candidates + discovery report + market intelligence report (read-only, deterministic).
 
 ``DISCOVERY + MARKET INTELLIGENCE + PORTFOLIO/PLANNER CONTEXT -> one opportunity output``.

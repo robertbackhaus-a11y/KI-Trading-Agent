@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Compact view of run_trading_orchestrator (MCP default): all portfolio-status fields present, large duplicate blocks absent, every value identical to the
 full result, the position engine and the planner kept apart, no database access, no orders.  Synthetic data only."""
 

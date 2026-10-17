@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Qt side of the chat: one active request at a time, run in a worker thread, events delivered to the GUI thread.
 
 Threading: the Ollama stream and the tool loop run in a ``QThreadPool`` worker.  Tool calls go to the MCP service through ``call_sync``, which

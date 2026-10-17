@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the controlled strategy-assignment management CLI."""
 
 from __future__ import annotations

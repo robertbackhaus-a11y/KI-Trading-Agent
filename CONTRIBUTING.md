@@ -1,7 +1,7 @@
 # Contributing
 
-This repository holds the Trading Agent code (`tools/trading/`, `mcp-tools/`,
-`docs/`). It does not hold the trading database, backups, audit/candidate JSONs, PDFs,
+This repository holds the VIPER-AI code (`tools/trading/`, `mcp-tools/`, `gui/`, the
+pip packaging `pyproject.toml` / `viper_ai/`, `docs/`). It does not hold the trading database, backups, audit/candidate JSONs, PDFs,
 logs, or any other production data — see `.gitignore`.
 
 ## Before you start
@@ -36,24 +36,38 @@ existing architecture or module boundaries.
   `verified_direct`/`verified_derived`/`verified_secondary`/`not_verified` pattern in
   `Research-TradingFundamentals.py` for the established convention).
 
-## Documentation
+## Documentation (mandatory)
 
-Any code change that affects behavior must update the matching documentation in the
-same pull request — not as a follow-up:
+Documentation is part of the change, not a follow-up: a change to any of the following areas must be documented **in the same commit**
+(and therefore in the same pull request):
 
-- `README.md` if the change affects the architecture overview, tool inventory, or
-  data flow.
-- The relevant file(s) under `docs/` (`trading-agent-architecture` plus any more
-  specific doc — `trading-candidate-decision`, `trading-strategy-suggestion`,
-  `trading-swing-promotion`, `trading-entry-recommendations`, `trading-agent-query-examples` — that covers the
-  touched component). The MCP tool (`mcp-tools/`) is documented in
-  `trading-agent-architecture` §5. Every technical document exists in German and English
-  (`<name>.de.md` / `<name>.en.md`); update **both** language versions in the same pull request
-  (`tests/trading/test_docs_languages.py` checks that their structure and technical terms stay equal).
-- Any new or changed business constant, threshold, or status value (a score threshold,
-  a confidence weight, a guardrail name, an allowed status string, a schema
-  feature-version key, etc.) must be documented with its exact value, matching
-  `docs/trading-agent-architecture.en.md`'s existing constants tables (and the German twin).
+- public CLI commands and their arguments;
+- new or removed entry points (`[project.scripts]` / `[project.gui-scripts]` in `pyproject.toml`);
+- the package or the installation procedure (`pyproject.toml`, `viper_ai/`, extras, the deploy);
+- runtime paths and environment variables (`runtime_paths.py`, `VIPER_TRADING_ROOT`, `TRADING_DB_PATH`, ...);
+- MCP tools or other public contracts (tool names, parameters, result fields);
+- new status or reason codes;
+- scheduler tasks (`scheduler/Manage-TradingTasks.ps1`);
+- GUI pages and visible functions;
+- data formats and private runtime files (`*_local.json`, reports);
+- breaking changes and migrations.
+
+Where it goes:
+
+- `README.md` whenever installation or operation is affected (install/update commands, main commands, runtime data, architecture overview,
+  data flow).
+- The matching technical document(s) under `docs/` (`trading-agent-architecture` plus any more specific doc that covers the touched component:
+  `trading-candidate-decision`, `trading-strategy-suggestion`, `trading-swing-promotion`, `trading-entry-recommendations`, `trading-import`,
+  `trading-agent-query-examples`, `gui`). The MCP tool (`mcp-tools/`) is documented in `trading-agent-architecture` §5, installation and
+  entry points in §6.1. Every technical document exists in German and English (`<name>.de.md` / `<name>.en.md`); update **both** language
+  versions together.
+- `CHANGELOG.md` under `[Unreleased]`.
+- Any new or changed business constant, threshold, or status value (a score threshold, a confidence weight, a guardrail name, an allowed status
+  string, a schema feature-version key, etc.) with its exact value, matching `docs/trading-agent-architecture.en.md`'s existing constants
+  tables (and the German twin).
+
+No new function ships without matching documentation. The documentation tests (`tests/trading/test_docs_languages.py`: German/English
+parity, links, README version against the changelog) must stay green.
 
 ## Tests
 

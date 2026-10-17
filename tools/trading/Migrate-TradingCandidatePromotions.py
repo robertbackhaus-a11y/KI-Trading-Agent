@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Add the auditable Phase-4A candidate-promotion relation."""
 
 from __future__ import annotations

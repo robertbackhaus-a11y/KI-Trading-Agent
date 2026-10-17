@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Phase 4B.2: deterministic orchestrator presentation contract tests."""
 
 from __future__ import annotations

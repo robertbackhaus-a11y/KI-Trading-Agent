@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """set_security_sector and the two-layer sector map: resolution, the narrow local write, the risk guard and the readers; synthetic maps and securities only."""
 
 from __future__ import annotations

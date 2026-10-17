@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the "Sektoren" page: ``get_sector_overview`` payload -> treemap data, the sector table, the position table and the ETF table.
 
 Pure Python (no Qt, no database).  Nothing is computed here beyond formatting and the colour of a daily change; every figure (value, weight, count, daily

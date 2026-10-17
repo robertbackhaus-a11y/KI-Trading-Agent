@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Security onboarding in the GUI (Z-AO): the dialog, the unknown-security flow of the Watchlist page, the messages and the policy; fake MCP server, synthetic data only."""
 
 from __future__ import annotations

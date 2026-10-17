@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Swing horizon (horizon_months_min/max, remainder_management) tests.
 
 The horizon only ever gates the Phase-3B.3 runner (the still-open remainder

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """MCP-Adapter fuer die Tools-Klasse in trading_sqlite.py.
 
 Die Tool-Quelltexte liegen unveraendert neben diesem Skript. Jede oeffentliche Methode der

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Tasks page: the operations overview of the seven scheduled Trading tasks (rhythm, state, data stand, last success, next run, duration), "Run now" (an ACTION, with
 confirmation and a warning when a prerequisite is stale or failed), the progress and result of a manual run, and a log tail."""
 

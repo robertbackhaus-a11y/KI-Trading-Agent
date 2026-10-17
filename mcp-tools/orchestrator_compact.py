@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Compact view of the ``run_trading_orchestrator`` result for the MCP adapter (default, ``detail=false``).
 
 Presentation only.  Every value is copied unchanged from the full result; nothing is recomputed, re-ranked or re-rounded, and no

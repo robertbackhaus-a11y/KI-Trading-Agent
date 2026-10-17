@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """A small stdio MCP server for the GUI tests (official SDK, same registration style as mcp-tools/server.py).
 
 Tools: database_status, run_trading_orchestrator (returns the JSON file named by FAKE_ORCH_FILE), slow, crash, broken, sql_execute, and the five watchlist tools (the four and the security onboarding)

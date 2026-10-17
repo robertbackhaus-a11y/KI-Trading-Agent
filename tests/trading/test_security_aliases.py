@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Security alias resolution: one security_id, many names; no bare-ticker matching.  Synthetic securities only."""
 
 from __future__ import annotations

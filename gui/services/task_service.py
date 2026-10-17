@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Windows Task Scheduler access of the GUI (PowerShell with JSON output; no MCP, no Qt).
 
 Only the six known Trading tasks are ever queried or started.  "Run now" starts the *existing* scheduled task (``Start-ScheduledTask``);

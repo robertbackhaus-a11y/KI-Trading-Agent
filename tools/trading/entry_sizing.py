@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Pure, deterministic initial Swing-entry eligibility and sizing."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Controlled management CLI for explicit Swing campaign lifecycle records.
 
 All mutations are dry-runs unless ``--write`` is passed.  This CLI records

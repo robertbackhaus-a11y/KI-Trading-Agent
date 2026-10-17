@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """FX chain: ECB multi-currency backfill, pence normalization, promotion FX reason code, scheduler job."""
 
 from __future__ import annotations

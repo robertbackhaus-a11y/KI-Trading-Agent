@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Dialog "Neues Wertpapier aufnehmen": a new security is created only from what the user types, after a check (dry run) without conflicts.
 
 Nothing is looked up or completed.  "Prüfen" asks the server for a dry run; "Anlegen" stays disabled until a check came back without conflicts, and

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Cell editors of the Watchlist table: a combo box for the strategy, a number field for the priority, a combo box for the sector group.
 
 An editor only reports the chosen value to the page (``on_commit``); it never writes anything.  The page keeps the value as a pending change until the

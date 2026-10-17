@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only watchlist candidate discovery (no writes, no orders, no LLM).
 
 Flow::

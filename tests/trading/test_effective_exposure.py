@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The effective single-name exposure (``get_effective_exposure``): direct position + the company's share in every held ETF, exact matching, no double counting, unmatched and
 missing data visible, synthetic ETFs by index composition, reconciliation, the TSMC-style ADR control case; synthetic data only."""
 

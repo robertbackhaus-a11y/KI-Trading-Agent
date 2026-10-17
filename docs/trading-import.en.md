@@ -2,7 +2,7 @@
 
 Deutsche Version: [trading-import.de.md](trading-import.de.md)
 
-This document describes how transactions get into the Trading Agent. It works for everyone: the agent does not depend on any
+This document describes how transactions get into VIPER-AI. It works for everyone: the agent does not depend on any
 broker or portfolio tool. Transactions come from a documented canonical CSV; Parqet is only one optional source that is converted
 into the same model.
 

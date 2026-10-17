@@ -1,6 +1,9 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """
 title: Trading SQLite
-author: KI-Stack
+author: VIPER-AI
 description: Direct unrestricted SQLite access to the local trading database with multi-statement and multi-result support.
 version: 1.7.0
 license: MIT
@@ -1412,6 +1415,16 @@ class Tools:
     # MCP server to pick up changed runtime helper files).
     _runtime_module_cache: dict[str, Any] = {}
 
+    @staticmethod
+    def _runtime_tools_directory() -> Path:
+        """The folder of the trading helpers: ``app`` next to this tool's folder (the deployed
+        ``C:\\tools\\trading\\mcp`` and the pip installation ``viper_ai/mcp`` both have it),
+        otherwise the deployed ``C:\\tools\\trading\\app`` as before."""
+        sibling = Path(__file__).resolve().parent.parent / "app"
+        if (sibling / "trading_orchestrator.py").is_file():
+            return sibling
+        return Path(r"C:\tools\trading\app")
+
     @classmethod
     def _load_runtime_trading_module(cls, module_name: str):
         """Load one deployed trading helper without accepting a caller path.
@@ -1422,7 +1435,7 @@ class Tools:
         cached = cls._runtime_module_cache.get(module_name)
         if cached is not None:
             return cached
-        tools_directory = Path(r"C:\tools\trading\app")
+        tools_directory = cls._runtime_tools_directory()
         module_path = tools_directory / f"{module_name}.py"
         if not module_path.is_file():
             raise FileNotFoundError(f"deployed trading helper is missing: {module_name}")

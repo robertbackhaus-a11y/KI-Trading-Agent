@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Local GUI settings (JSON, no secrets) and the rotating GUI log.
 
 Everything lives under ``%LOCALAPPDATA%\\TradingAgentGui``.  A missing settings file means defaults; a broken file or an invalid

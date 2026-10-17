@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deliberate additive migration for Phase-3B.1 Swing campaign lifecycle."""
 
 from __future__ import annotations

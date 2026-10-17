@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Phase-3B.4 deterministic Swing campaign hard-stop tests."""
 
 from __future__ import annotations

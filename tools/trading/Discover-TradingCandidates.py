@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Explicit, read-only watchlist candidate discovery (never part of the normal orchestrator run).
 
 Reads the production database read-only, fetches daily history for the universe symbols

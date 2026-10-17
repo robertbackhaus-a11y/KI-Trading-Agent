@@ -1,4 +1,4 @@
-# Trading Agent — Architecture Reference
+# VIPER-AI — Architecture Reference
 
 Deutsche Version: [trading-agent-architecture.de.md](trading-agent-architecture.de.md)
 
@@ -406,6 +406,8 @@ Output keys: `status`, `read_only`, `watchlist_written`, `orders_created`, `eval
 
 **Deploy (current):** `deploy\Deploy-TradingAgent.ps1` (`-Action Check` / `Deploy` / `Rollback`, see the README) copies only the files listed in `deploy/deploy-manifest.json` to `C:\tools\trading\app\`, `mcp\` and `scheduler\` after a file and database backup, compares hashes and runs an MCP smoke test (expects 25 tools). Afterwards restart the MCP server process (in the current setup the MCP client restarts it automatically when it is ended).
 
+**pip installation:** in parallel to the deploy, not yet the production path; see [§6.1](#61-installation-and-update-with-pip).
+
 **Current public method inventory** (version `1.7.0`, 25 public methods, now `mcp-tools/trading_sqlite.py`), classified read-only vs. write-capable:
 
 | Method | Read-only? | Notes |
@@ -460,6 +462,24 @@ Runtime helper modules dynamically loaded from `C:\tools\trading\app\`: `trading
 | SEC fundamentals cache | `C:\tools\trading\data\sec-cache` |
 | Fundamentals research prompts/audit | `C:\tools\trading\data\fundamentals-audit\` (prompts in its `prompts\` subfolder) |
 | Dev repository (this repo) | `C:\tools\src\Trading-Agent-Dev-clean` |
+
+### 6.1 Installation and update with pip
+
+The deploy (`deploy\Deploy-TradingAgent.ps1`, §5) is still the production path. The pip installation exists in parallel and is tested separately; the production cutover to pip has not happened yet.
+
+| Step | Command |
+|---|---|
+| Install the base package (runtime environment `C:\tools\trading\.venv`) | `python -m pip install <repo-path>` |
+| Install with the GUI extra (GUI environment `C:\tools\trading\.venv-gui`) | `python -m pip install "<repo-path>[gui]"` |
+| Update | `python -m pip install --upgrade <repo-path>` |
+| Check the version | `viper-ai --version` |
+
+- Package: distribution `VIPER-AI`, import package `viper_ai`; the repository folders are mapped into it without moving them: `tools/trading` -> `viper_ai.app`, `mcp-tools` -> `viper_ai.mcp`, `gui` -> `viper_ai.gui`.
+- Virtual environments stay separate: the runtime environment gets the base package (`mcp`, `pydantic`, `pypdf`), the GUI environment the base package plus the extra `gui` (`PySide6-Essentials`).
+- Entry points: `viper-ai` (`--version`, `list`, `paths`, `run <Script.py>`), `viper-ai-mcp`, `viper-ai-orchestrator`, `viper-ai-import-parqet`, `viper-ai-import-transactions`, `viper-ai-refresh-etf`, `viper-ai-backfill-market-data`, `viper-ai-backfill-fx-rates`, `viper-ai-backfill-events-news`, `viper-ai-backfill-fundamentals-sec`, `viper-ai-discover-candidates`, `viper-ai-market-intelligence`, and without a console window `viper-ai-task` and `viper-ai-gui`. Each runs the existing script unchanged (arguments, output, exit code, defaults); `-h` / `--help` only prints the help and never starts a job.
+- MCP server: it finds its helpers in the sibling folder `app` (deployed: `C:\tools\trading\app`, installed: `viper_ai\app`).
+- Runtime root: `C:\tools\trading`, another one with the environment variable `VIPER_TRADING_ROOT`. Code running from the pip installation reads and writes the private files (`sector_map_local.json`, `etf_lookthrough_local.json`, `etf_holdings_local.json`, `bae_systems_snapshot.json`) under `<trading root>\app\universe` and `<trading root>\app\data`, never inside the package (`runtime_paths.py`); `viper-ai paths` shows the folders in use. The database paths are unchanged (absolute defaults, `--db-path`).
+- Runtime data is not part of the package: `pip install`, `--upgrade` and `uninstall` never change `trading.db`, logs, scheduler data, `*_local.json` or other runtime data under `C:\tools\trading` (only the versioned `*_v1.json` universe files are packaged).
 
 ---
 

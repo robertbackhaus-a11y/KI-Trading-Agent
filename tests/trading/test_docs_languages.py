@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Documentation language rules: README and the project meta files are English only; every technical document under docs/ exists as a complete
 German + English pair (<name>.de.md / <name>.en.md) with the same structure and the same technical terms; links work; no private data."""
 

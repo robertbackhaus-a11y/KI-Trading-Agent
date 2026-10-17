@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Sektoren page: treemap (area = market value, grouped by sector, colour = daily change) plus the sector and position tables (read-only)."""
 
 from __future__ import annotations

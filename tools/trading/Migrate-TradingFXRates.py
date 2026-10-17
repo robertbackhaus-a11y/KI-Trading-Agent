@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deliberate additive migration for Phase-3A.5 ECB FX rates."""
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 English version: [gui.en.md](gui.en.md)
 
-Die Desktop-GUI ist ein überwiegend lesendes Cockpit für den Trading Agent. Sie zeigt, was der Trading-MCP-Server meldet, steuert die geplanten Tasks und bietet einen Chat mit einem lokalen Sprachmodell, das dieselben Daten lesen kann. Sie enthält keine Trading-Logik, keinen Datenbankzugriff und keine Orderfunktion. Geschrieben wird nur über sechs schmale, ausdrückliche MCP-Aktionen der Watchlist-Seite (Abschnitte 3 und 5); der Chat kann nur lesen. Entwicklungsstand: Die GUI hat keine eigene Versionsnummer; sie meldet `dev`.
+Die Desktop-GUI ist ein überwiegend lesendes Cockpit für VIPER-AI. Sie zeigt, was der Trading-MCP-Server meldet, steuert die geplanten Tasks und bietet einen Chat mit einem lokalen Sprachmodell, das dieselben Daten lesen kann. Sie enthält keine Trading-Logik, keinen Datenbankzugriff und keine Orderfunktion. Geschrieben wird nur über sechs schmale, ausdrückliche MCP-Aktionen der Watchlist-Seite (Abschnitte 3 und 5); der Chat kann nur lesen. Entwicklungsstand: Die GUI hat keine eigene Versionsnummer; sie meldet `dev`.
 
 ## 1. Architektur
 
@@ -21,13 +21,15 @@ Desktop GUI (PySide6)
 
 ## 2. Installation und Start
 
-Die GUI hat eine eigene virtuelle Umgebung; die Laufzeitumgebung des Trading Agents wird nicht verändert. `requirements-gui.txt` pinnt `PySide6-Essentials` (nicht das Metapaket `PySide6`, das auch WebEngine und die Addons nachzieht) und `mcp` (dieselbe Version wie die Laufzeit).
+Die GUI hat eine eigene virtuelle Umgebung; die Laufzeitumgebung von VIPER-AI wird nicht verändert. `requirements-gui.txt` pinnt `PySide6-Essentials` (nicht das Metapaket `PySide6`, das auch WebEngine und die Addons nachzieht) und `mcp` (dieselbe Version wie die Laufzeit).
 
 ```
 py -3.12 -m venv .venv-gui
 .venv-gui\Scripts\python.exe -m pip install -r requirements-gui.txt
 .venv-gui\Scripts\python.exe -m gui
 ```
+
+Alternativ (pip-Installation, parallel zum Deploy): `.venv-gui\Scripts\python.exe -m pip install "<repo-path>[gui]"` installiert VIPER-AI mit dem Extra `gui` (`PySide6-Essentials`); die GUI startet dann mit `viper-ai-gui` (ohne Konsolenfenster) oder `python -m viper_ai.gui`. Ihre MCP-Einstellungen (`mcp_python_path`, `mcp_server_path`) bleiben unverändert und zeigen weiter auf den deployten Server.
 
 Die Befehle laufen im Repository-Stammordner. Die Standardwerte zeigen auf die Produktionsinstallation; sie lassen sich in den Einstellungen ändern.
 

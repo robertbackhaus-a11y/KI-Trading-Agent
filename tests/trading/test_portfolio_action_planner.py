@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """v0.2.0 Portfolio Action Planner: deterministic, simulation-only capital/entry plan."""
 
 from __future__ import annotations

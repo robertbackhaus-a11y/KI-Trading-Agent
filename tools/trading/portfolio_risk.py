@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Sector and correlation guards for the Portfolio Action Planner (pure functions plus one read-only loader).
 
 Two guards, one limit (``RiskGuardConfig.max_sector_weight``, share of the invested market value):

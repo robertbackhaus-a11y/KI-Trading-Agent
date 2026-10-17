@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Watchlist page (S-AJ): view model, filters, the three explicit actions against a fake MCP server, the policy and the chat boundary."""
 
 from __future__ import annotations

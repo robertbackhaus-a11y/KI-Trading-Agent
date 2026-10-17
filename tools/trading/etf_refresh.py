@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Refresh of the private ETF files (holdings for the effective exposure, sector allocations for the look-through) from the providers' own published data.
 
 Files (``universe`` next to ``sector_map_v1.json``; git-ignored, protected from the deploy)::
@@ -46,6 +49,7 @@ from typing import Any, Callable, Iterable, Optional
 
 import etf_holdings as eh
 import etf_lookthrough as lt
+import runtime_paths
 
 HOLDINGS_FILE = eh.FILE_NAME
 LOOKTHROUGH_FILE = lt.ALLOCATION_NAME
@@ -473,7 +477,7 @@ def refresh(universe_dir: Path, *, write: bool = False, what: Iterable[str] = (H
     for kind, file_name in ((HOLDINGS, HOLDINGS_FILE), (LOOKTHROUGH, LOOKTHROUGH_FILE)):
         if kind not in wanted:
             continue
-        path = folder / file_name
+        path = runtime_paths.private_file(folder, file_name)
         try:
             stored, text = _read_json(path)
         except (OSError, ValueError, RefreshError) as exc:

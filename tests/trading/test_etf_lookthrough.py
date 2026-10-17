@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """ETF look-through in the sector overview: allocation files, the category mapping, the split of an ETF, sums, double counting, missing / invalid / stale data,
 unmapped categories and the guard status on the effective exposure; synthetic data only."""
 

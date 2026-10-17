@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """ETF holdings for the effective single-name exposure: the official provider holdings of the held ETFs, read from one private file.  Reading only; this module never writes.
 
 ::
@@ -33,6 +36,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+import runtime_paths
 
 FILE_NAME = "etf_holdings_local.json"
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent / "universe"
@@ -145,7 +150,7 @@ def _etf(isin: str, entry: Any) -> EtfHoldings:
 
 def read_layers(universe_dir: Optional[Path] = None) -> Layers:
     """The holdings file; a missing file means no holdings (every ETF stays one unresolved position), an unreadable one raises :class:`HoldingsError`."""
-    path = (Path(universe_dir) if universe_dir is not None else DEFAULT_UNIVERSE) / FILE_NAME
+    path = runtime_paths.private_file(Path(universe_dir) if universe_dir is not None else DEFAULT_UNIVERSE, FILE_NAME)
     if not path.is_file():
         return Layers({}, {})
     try:

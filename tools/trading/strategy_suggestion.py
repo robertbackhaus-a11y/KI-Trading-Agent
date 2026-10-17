@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only Swing/Long-Term strategy suggestions for watchlist candidates.
 
 Produces a non-binding suggestion for every ``watchlist.status = 'WATCH'``

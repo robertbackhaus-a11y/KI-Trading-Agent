@@ -34,6 +34,7 @@
         "Migrate-TradingSwingLifecycle.py",
         "Research-TradingFundamentals.py",
         "Run-TradingTask.py",
+        "runtime_paths.py",
         "Refresh-TradingEtfData.py",
         "Reset-TradingDb.py",
         "Resolve-TradingSecurities.py",

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression tests for corporate-action (stock split) support (Phase 4B.3)."""
 
 from __future__ import annotations

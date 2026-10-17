@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the "Import" page: form values -> ``check_transaction_import`` / ``import_transactions`` arguments, and the answer -> readable German tables and sentences.
 
 Pure Python (no Qt, no database).  The page never imports anything itself: a check (dry run) shows the difference to the database and the reconciliation of the file against

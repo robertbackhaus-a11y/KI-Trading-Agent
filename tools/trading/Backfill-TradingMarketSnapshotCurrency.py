@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deterministically restore missing ``market_snapshot.currency`` values.
 
 The script never guesses from ticker/name/price.  It only persists a currency

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the Tasks page: the operations overview of the seven scheduled tasks (pure Python).
 
 One row per task: rhythm (from its triggers), state with the last run and its result, the stand of the data it produces (from ``get_data_freshness``, not from

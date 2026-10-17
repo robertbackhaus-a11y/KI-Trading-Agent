@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Discovery report (CLI writes) and MCP reader (get_candidate_discovery reads): atomic, validated, read-only, no network."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Planned / deferred entries on Dashboard and Planner: the ranked entries of the entry evaluation plus the BUY / ADD purchases of the plan; every purchase is in exactly one list,
 the counters are the table rows, nothing is lost (synthetic data only)."""
 

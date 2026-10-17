@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The operational model of the seven scheduled tasks: what each one produces, what it really needs, and how old its data may be.  Pure Python (no Qt, no I/O).
 
 **Dependencies are technical facts, not a Windows task chain.**  They were derived from what each script reads (checked in the code, not guessed from the

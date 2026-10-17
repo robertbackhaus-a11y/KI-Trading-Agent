@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Editing the sector on the Watchlist page: the column, its sources, the pending / apply mechanism, blocks and errors; fake MCP server, synthetic data only."""
 
 from __future__ import annotations

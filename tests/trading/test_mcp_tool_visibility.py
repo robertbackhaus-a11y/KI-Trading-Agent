@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Which MCP tools a client sees: the server registers every public method of ``Tools``; ``TRADING_EXCLUDE`` hides tools per client process.
 
 The desktop GUI starts the server without an exclude (27 tools; its chat is offered the READ tools only).  The Jan front end is configured with the

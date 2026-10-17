@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Central presentation of technical reason / status codes: short German text, tooltip description, original code.
 
 Pure Python (no Qt, no business logic).  The backend codes, the MCP payloads and the database stay untouched; this module only

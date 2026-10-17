@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Central classification of the MCP tools: READ may be called by the GUI and offered to the chat, everything else is an ACTION.
 
 The MCP tools carry no read-only annotations, so the GUI keeps its own table.  A tool that is not listed here is treated as an

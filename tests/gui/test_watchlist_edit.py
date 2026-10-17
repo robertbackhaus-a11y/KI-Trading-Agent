@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Inline editing of strategy and priority on the Watchlist page (R-AK): pending state, explicit "Änderung übernehmen", blocks and errors; fake MCP server, synthetic data only."""
 
 from __future__ import annotations

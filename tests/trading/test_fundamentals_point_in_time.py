@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Point-in-time visibility of fundamentals: filing_date, collection-date fallback, unverified quality cap."""
 
 from __future__ import annotations

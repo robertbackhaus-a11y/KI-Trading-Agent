@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The chat tool loop (pure Python): schema mapping, read-only offering, denial, validation, rounds, limits, errors, cancel (E-I, L-P, R, V, W)."""
 
 from __future__ import annotations

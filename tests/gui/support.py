@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Shared helpers of the GUI tests: import paths, Qt availability, event pumping, process checks."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The "Sektoren" page: treemap geometry, colours, the view model, and the page against the fake MCP server (offscreen); synthetic data only."""
 
 from __future__ import annotations

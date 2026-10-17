@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only assembly of one deterministic trading analysis snapshot.
 
 The engine owns data loading and composition.  Individual calculations remain

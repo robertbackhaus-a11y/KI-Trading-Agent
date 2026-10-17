@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The "Import" page: view model (difference, reconciliation, German texts) and the page against the fake MCP server (check, then import with the token of that check); synthetic data only."""
 
 from __future__ import annotations

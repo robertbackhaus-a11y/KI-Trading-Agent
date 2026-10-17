@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The ETF data refresh (``etf_refresh`` / ``Refresh-TradingEtfData.py``): strict provider parsers, validation before writing, atomic replacement, independent files, private
 alias / issuer data kept, SPXS never normalised; synthetic provider answers only (no network)."""
 

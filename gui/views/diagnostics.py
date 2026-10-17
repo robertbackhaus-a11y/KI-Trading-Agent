@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Diagnostics / Settings page: MCP and DB status, paths, tool classification, Ollama reachability, settings form, MCP restart."""
 
 from __future__ import annotations

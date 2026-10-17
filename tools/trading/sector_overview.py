@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only sector overview of the current portfolio (the ``get_sector_overview`` MCP tool, the "Sektoren" page of the desktop GUI).
 
 ``open positions (EUR market value of the portfolio context) + effective sector (public + local sector map) + ETF look-through + last daily close change

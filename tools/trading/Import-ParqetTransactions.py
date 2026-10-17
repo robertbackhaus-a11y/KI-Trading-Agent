@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Preview or safely import incremental Parqet CSV transactions.
 
 Thin entry point kept for existing workflows: it runs ``Import-TradingTransactions.py`` with ``--format parqet`` as the default. All

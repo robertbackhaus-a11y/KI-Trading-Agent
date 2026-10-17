@@ -32,3 +32,8 @@ fundamentals-audit/
 *.pyc
 __pycache__/
 .pytest_cache/
+
+# Packaging (pip install <repo-path> builds in the tree)
+build/
+dist/
+*.egg-info/

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only effective single-name exposure (the ``get_effective_exposure`` MCP tool, the "Einzelwertrisiko" section of the "Sektoren" page).
 
 ``direct position + the share of the same company in every held ETF = effective exposure of that company``, in EUR and as a share of the invested value.

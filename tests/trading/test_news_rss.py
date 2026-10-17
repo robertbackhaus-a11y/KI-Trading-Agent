@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Company-wire RSS in the existing market-intelligence pipeline: normalization, alias attribution, cross-source deduplication, feed health,
 failure isolation, report/reader diagnostics and an alias-consistent opportunity view.  Synthetic securities, feeds and news only."""
 

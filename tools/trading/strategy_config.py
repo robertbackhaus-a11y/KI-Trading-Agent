@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Explicit, typed configuration for deterministic trading rules.
 
 This module deliberately contains parameters only.  It does not load files,

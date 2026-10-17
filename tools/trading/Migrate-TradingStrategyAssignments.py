@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deliberate, additive migration for the Phase-3A strategy assignment model.
 
 The established database-wide schema version remains ``2.0`` because existing

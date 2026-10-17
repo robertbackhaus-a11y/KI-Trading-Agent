@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The chat tool loop (no Qt, no framework): Ollama <-> MCP tools, read-only.
 
     user message -> /api/chat (streamed) -> tool_calls? -> check -> MCP call -> result as role=tool -> /api/chat again -> ... -> answer
@@ -33,7 +36,7 @@ TOOL_TIMEOUT_S = 90.0
 FORCED_ARGUMENTS = {"detail": False, "table": False}  # the chat always gets the compact answer; set only where the tool has the parameter
 
 SYSTEM_PROMPT = (
-    "Du bist der Assistent des Trading Agents, einer lokalen Portfolio-Analyse. Der Agent simuliert nur: Pläne und Empfehlungen sind keine Orders, "
+    "Du bist der Assistent von VIPER-AI, einer lokalen Portfolio-Analyse. Der Agent simuliert nur: Pläne und Empfehlungen sind keine Orders, "
     "und du kannst nichts kaufen, verkaufen, ändern oder starten.\n"
     "- Hole alle Fakten über die bereitgestellten Tools (nur lesend). Ergebnisse der Tools haben Vorrang vor deinem Wissen.\n"
     "- Erfinde keine Portfolio-, Kurs- oder Nachrichtendaten. Liefert ein Tool nichts oder einen Fehler, sage das klar.\n"

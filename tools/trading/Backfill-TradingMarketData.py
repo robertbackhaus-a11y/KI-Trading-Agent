@@ -1,5 +1,9 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import time
@@ -2070,5 +2074,22 @@ def main() -> None:
         conn.close()
 
 
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """Command line of the script.  Before it existed every argument was ignored and the run always wrote; that stays so: ``--write`` (what the
+    scheduled task passes) is accepted and changes nothing, and any other argument is still ignored.  Only ``-h`` / ``--help`` is new: it prints
+    the help and exits with 0 before the database is opened."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Backfill daily market data (OHLCV, Yahoo Finance) and the market snapshot of the relevant securities into "
+            f"{DB_PATH}. Writes on every run (incremental reload with a {HISTORY_OVERLAP_DAYS}-day overlap, "
+            f"full {HISTORY_RANGE} history for a security without data)."
+        )
+    )
+    parser.add_argument("--write", action="store_true", help="accepted for the scheduled task; the run always writes (unchanged behaviour)")
+    args, _ignored = parser.parse_known_args(argv)  # unknown arguments were always ignored
+    return args
+
+
 if __name__ == "__main__":
+    parse_args()
     main()

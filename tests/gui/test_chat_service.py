@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Chat service (Qt) with a fake Ollama and a fake MCP server, the chat view offscreen, and the real MCP server's tool surface (G, J-K, Q-X)."""
 
 from __future__ import annotations

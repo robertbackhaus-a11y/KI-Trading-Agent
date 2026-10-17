@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Provider-neutral transaction import: canonical model, planning, strategy/campaign initialization, execution.
 
 Pipeline::

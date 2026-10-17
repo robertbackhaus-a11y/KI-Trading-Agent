@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only helpers for the explicit Phase-3B.1 Swing campaign lifecycle.
 
 The helpers in this module never infer a campaign from transactions and never

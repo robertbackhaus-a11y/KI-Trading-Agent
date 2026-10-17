@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the "Einzelwertrisiko / Effective Exposure" section: ``get_effective_exposure`` payload -> the company table, the ETF coverage table and the notes.
 
 Pure Python (no Qt, no database).  Nothing is computed here beyond formatting; every figure (direct, ETF and effective value and weight, contributors, coverage, checks)

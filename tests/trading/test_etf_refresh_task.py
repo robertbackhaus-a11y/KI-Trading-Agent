@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The scheduled ETF refresh: the task definition (weekly, Sunday, after Fundamentals, no collision), the exit code that makes provider / parser problems visible to the scheduler,
 and the ``etf_data`` source of ``get_data_freshness`` that the Tasks page shows; synthetic data only (no network)."""
 

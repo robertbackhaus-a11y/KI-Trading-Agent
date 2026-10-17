@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Watchlist tools (get_watchlist, add / remove / set priority): the real schema, synthetic securities, atomic and narrow writes (A-R)."""
 
 from __future__ import annotations

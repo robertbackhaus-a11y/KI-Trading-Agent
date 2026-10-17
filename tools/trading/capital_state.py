@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only temporal resolution for recorded portfolio capital states."""
 
 from __future__ import annotations

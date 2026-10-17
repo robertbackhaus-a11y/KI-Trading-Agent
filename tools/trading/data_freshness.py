@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only data freshness of what the scheduled tasks produce (the ``get_data_freshness`` MCP tool, the "Tasks" page of the desktop GUI).
 
 The Windows Task Scheduler only knows that a task *ran* and with which exit code; it says nothing about the age of the data the task is meant to produce
@@ -22,6 +25,8 @@ import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+import runtime_paths
 
 OPERATION = "get_data_freshness"
 SOURCE_NAME = "Yahoo Finance"
@@ -97,7 +102,7 @@ def etf_data(universe_dir: Optional[Path] = None, today: Optional[date] = None) 
     problems: list[str] = []
 
     def entries(file_name: str) -> dict[str, Any]:
-        path = folder / file_name
+        path = runtime_paths.private_file(folder, file_name)
         if not path.is_file():
             return {}
         try:

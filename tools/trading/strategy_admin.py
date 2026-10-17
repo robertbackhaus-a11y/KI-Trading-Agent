@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Narrow strategy administration: set or remove the strategy of ONE security that is not held (the ``set_security_strategy`` MCP action).
 
 The strategy of a security is its active row in ``strategy_assignment`` (dated intervals per security, never overlapping).  This module changes

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Planner / Actions page: engine actions, planned and deferred entries, sector and correlation risk (read-only, no order functions)."""
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ class PlannerView(QWidget):
         self.button.clicked.connect(self.refresh_requested.emit)
         top.addWidget(self.button)
         outer.addLayout(top)
-        note = QLabel("Nur Anzeige: Simulation, keine Orders. Die Orderausführung erfolgt außerhalb des Trading Agents.")
+        note = QLabel("Nur Anzeige: Simulation, keine Orders. Die Orderausführung erfolgt außerhalb von VIPER-AI.")
         note.setWordWrap(True)
         outer.addWidget(note)
         self.message = QLabel("")

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The read-only data freshness of what the scheduled tasks produce (``get_data_freshness``): facts per source, isolation of a failing source, the existing age
 rules, read-only behaviour; synthetic data only."""
 

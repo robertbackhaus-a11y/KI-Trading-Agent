@@ -2,7 +2,7 @@
 
 English version: [trading-import.en.md](trading-import.en.md)
 
-Dieses Dokument beschreibt, wie Transaktionen in den Trading Agent gelangen. Es gilt für alle: Der Agent hängt von keinem Broker und
+Dieses Dokument beschreibt, wie Transaktionen in VIPER-AI gelangen. Es gilt für alle: Der Agent hängt von keinem Broker und
 keinem Portfolio-Tool ab. Transaktionen kommen aus einem dokumentierten kanonischen CSV; Parqet ist nur eine optionale Quelle, die in
 dasselbe Modell umgewandelt wird.
 

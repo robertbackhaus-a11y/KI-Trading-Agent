@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Ollama client against a fake HTTP server: reachability, models, streaming, thinking, tool calls, errors, cancel (A-F, J, K, R)."""
 
 from __future__ import annotations

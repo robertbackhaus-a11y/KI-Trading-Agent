@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Small helpers for Deploy-TradingAgent.ps1 (stdlib only; `smoke` needs the `mcp` package of the production venv).
 
 Every subcommand prints exactly one JSON object on the last stdout line; exit code 0 = ok, 1 = problem.

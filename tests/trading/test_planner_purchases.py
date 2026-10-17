@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """BUY / ADD purchases of the engine in the plan: they are ``existing_position_actions`` (folded into the capital state before any new entry), they are never lost, and the
 capital summary never claims that candidates were planned when only such purchases exist (synthetic data only)."""
 

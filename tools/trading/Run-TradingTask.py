@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Runs one Trading script for the Task Scheduler without a console window.
 
 The scheduled tasks used to start ``cmd.exe /c python script args >> log 2>&1``; cmd.exe and python.exe are console programs, so every run opened a window on the desktop (and

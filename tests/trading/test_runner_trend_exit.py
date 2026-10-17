@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Phase-3B.3 deterministic Swing runner trend-exit tests."""
 
 from __future__ import annotations

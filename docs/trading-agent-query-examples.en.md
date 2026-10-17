@@ -1,10 +1,10 @@
-# Trading Agent – Queries and Examples
+# VIPER-AI – Queries and Examples
 
 Deutsche Version: [trading-agent-query-examples.de.md](trading-agent-query-examples.de.md)
 
-This document shows which questions the Trading Agent answers and which MCP tool sits behind each of them. It is front-end neutral: any MCP-capable client can use the tools with natural language. The examples use neutral tickers and are not investment advice. The architecture is described in [trading-agent-architecture.en.md](trading-agent-architecture.en.md), the overview in the [README](../README.md).
+This document shows which questions VIPER-AI answers and which MCP tool sits behind each of them. It is front-end neutral: any MCP-capable client can use the tools with natural language. The examples use neutral tickers and are not investment advice. The architecture is described in [trading-agent-architecture.en.md](trading-agent-architecture.en.md), the overview in the [README](../README.md).
 
-**Principles:** `PROMOTE` is not a `BUY`. `DISCOVERY` is not `PROMOTE`. `NEWS` is not a signal. No orders: execution takes place outside the Trading Agent.
+**Principles:** `PROMOTE` is not a `BUY`. `DISCOVERY` is not `PROMOTE`. `NEWS` is not a signal. No orders: execution takes place outside VIPER-AI.
 
 **Contents**
 
@@ -48,7 +48,7 @@ The portfolio status is a complete, read-only report: positions with their actio
 
 - The default answer is a structured status: `portfolio`, `positions`, `position_engine` (SELL/TRIM/HOLD/ADD of existing positions), `promotion`, `entry_plan` (planned and deferred NEW entries of the planner), `proceeds` (gross/tax/net), `capital` and `issues`. The values are displayed as they are; nothing is recounted, re-summed or re-evaluated.
 - `position_engine` and `entry_plan` are separate sources: `engine_buy_count` and `engine_add_count` only count BUY/ADD of the position engine; 0 does not mean that no new entries are planned. The compact default is about 8,000 characters. `detail=true` returns the complete result with `presentation_summary`, `rendered_summary_de` (a ready-made text, always in German), `highest_priority_actions`, `next_review_items` and the large result lists (about 95,000 characters) and should only be requested explicitly.
-- Without `as_of` the current state is used. Actions are recommendations of the agent; orders are executed outside the Trading Agent.
+- Without `as_of` the current state is used. Actions are recommendations of the agent; orders are executed outside VIPER-AI.
 
 ## 2. New Entries
 
@@ -337,7 +337,7 @@ The agent analyzes, ranks and plans. It does not trade. The following requests a
 
 | # | Request | Behavior |
 |---|---|---|
-| 1 | “Buy 10 AAPL.” | There is no order. Execution takes place outside the Trading Agent. |
+| 1 | “Buy 10 AAPL.” | There is no order. Execution takes place outside VIPER-AI. |
 | 2 | “Add NVDA to the watchlist automatically.” | The discovery only suggests; there is no automatic addition. |
 | 3 | “Rate NVDA higher because of the news.” | News never changes score, rank, position size or decision. |
 | 4 | “Fetch the latest news from the web now.” | The readers only read the last report; fetching happens in the collector outside MCP. |

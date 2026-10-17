@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Unified opportunity view: join of engine candidates, discovery report and market-intelligence report (context only)."""
 
 from __future__ import annotations

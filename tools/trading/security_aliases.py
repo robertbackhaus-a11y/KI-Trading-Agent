@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Security alias resolution: one security (``security_id``), many source-specific names (read-only, deterministic, no fuzzy matching).
 
 ``security_id`` of the security master is the canonical identity.  Symbols are aliases of it: the public symbol (``security.symbol``),

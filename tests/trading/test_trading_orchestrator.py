@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only composition tests for the Phase-4B trading orchestrator."""
 
 from __future__ import annotations

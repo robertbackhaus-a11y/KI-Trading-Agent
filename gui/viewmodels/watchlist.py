@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the Watchlist page: ``get_watchlist`` payload -> table rows, filters, sort keys and the messages of the three watchlist actions.
 
 Pure Python (no Qt, no database).  Nothing is computed here beyond formatting, filtering and the sort keys of the table; every figure comes from the

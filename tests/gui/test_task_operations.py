@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The Tasks page as an operations overview: rhythm from the triggers, last success vs last run, duration, disabled / StartWhenAvailable / IgnoreNew, the technical
 dependencies (checked against the code of the scripts), the data freshness, error states, the warning before a manual start and the page offscreen; synthetic data only."""
 

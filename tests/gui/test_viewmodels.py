@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Dashboard and Planner view models on synthetic orchestrator results from the real orchestrator/planner (K, L)."""
 
 from __future__ import annotations

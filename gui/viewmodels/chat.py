@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Display text of the chat events (pure Python): tool calls, tool results, errors, the final line.
 
 Tool results are never shown in full: name, duration, size and a short note only.

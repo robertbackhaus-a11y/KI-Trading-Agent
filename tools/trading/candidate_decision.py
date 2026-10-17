@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only watchlist-candidate BUY/WATCH/DEFERRED decision layer.
 
 Combines four existing, already-tested building blocks into one structured

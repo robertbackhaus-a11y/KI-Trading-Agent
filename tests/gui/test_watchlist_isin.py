@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The ISIN column of the Watchlist page: a normal, visible column (displayed behind the name) whose mapping, sorting, search and neighbouring editors are intact."""
 
 from __future__ import annotations

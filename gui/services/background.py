@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Run blocking work (PowerShell, file reads, HTTP probes) off the GUI thread and deliver the outcome back in the GUI thread."""
 
 from __future__ import annotations

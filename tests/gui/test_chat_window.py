@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The chat inside the MainWindow (X): page, send flow, new chat, thinking switch, diagnostics, closing while a request runs."""
 
 from __future__ import annotations

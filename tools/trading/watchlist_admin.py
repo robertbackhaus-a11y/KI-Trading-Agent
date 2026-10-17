@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Narrow watchlist administration: add, remove and re-prioritize one watchlist entry (the only writes of the desktop GUI to the database).
 
 Each operation touches the ``watchlist`` table and nothing else: no position, strategy assignment, campaign, transaction or market-data

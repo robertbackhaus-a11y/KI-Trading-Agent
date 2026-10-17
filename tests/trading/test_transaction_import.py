@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Provider-neutral transaction import: canonical CSV, Parqet adapter, strategy-aware initialization, Swing campaigns, dry run.
 
 Real database schema (Reset-TradingDb) with all constraints and triggers; synthetic data only.

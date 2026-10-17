@@ -1,4 +1,7 @@
-"""Desktop GUI of the Trading Agent: main window, wiring and entry point (``python -m gui``).
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
+"""Desktop GUI of VIPER-AI: main window, wiring and entry point (``python -m gui``; pip installation: ``viper-ai-gui``).
 
 Cockpit.  Trading data comes only from the Trading MCP server (READ tools, see ``services/tool_policy.py``); the only writes are the
 three narrow watchlist actions of the Watchlist page (add, remove, change priority; explicit buttons, ``McpService.call_action``); the Windows
@@ -77,7 +80,7 @@ class MainWindow(QMainWindow):
         self._sectors = None
         self._sectors_at: Optional[datetime] = None
         self._effective = None
-        self.setWindowTitle(f"Trading Agent – Desktop GUI ({GUI_VERSION})")
+        self.setWindowTitle(f"VIPER-AI – Desktop GUI ({GUI_VERSION})")
         self.resize(1200, 760)
         if settings.window_geometry:
             self.restoreGeometry(QByteArray.fromBase64(settings.window_geometry.encode("ascii", "ignore")))

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Presentation of technical reason codes (A-P): short German text, tooltip with description and original code, readable fallback."""
 
 from __future__ import annotations

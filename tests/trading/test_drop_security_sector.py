@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Removal of the unused column security.sector: the schema scripts, the migration of an existing database and the readers; synthetic data only."""
 
 from __future__ import annotations

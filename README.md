@@ -1,8 +1,11 @@
-# Trading Agent
+# VIPER-AI
 
-Standalone trading agent / trading data store.
+Standalone trading agent / trading data store (formerly "Trading Agent").
 
 Version: v0.5.0 — see [CHANGELOG.md](CHANGELOG.md).
+
+v0.5.0 is the last official release. The current development state on `main` has the package version `0.6.0.dev0`
+(a development version, not a release; `viper-ai --version` shows it). The next release replaces it.
 
 ## Runtime
 
@@ -25,12 +28,45 @@ PDFs and logs live outside the repository (see `.gitignore`).
 
 ## Python dependencies
 
-Python 3.12. The repository has no packaging metadata; `requirements.txt` lists the direct runtime dependencies at their tested versions.
+Python 3.12. `requirements.txt` lists the direct runtime dependencies at their tested versions (the same pins are in `pyproject.toml`).
 
 ```
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+## Installation with pip
+
+The pip installation exists in parallel to the deploy (section "Deploy" below), which stays the production path: the production cutover to pip
+has not happened yet. Distribution `VIPER-AI`, import package `viper_ai`; the runtime environment (`C:\tools\trading\.venv`) and the GUI environment
+(`C:\tools\trading\.venv-gui`) stay separate.
+
+```
+python -m pip install <repo-path>                  # base package (runtime environment)
+python -m pip install "<repo-path>[gui]"           # with the desktop GUI (GUI environment; adds PySide6-Essentials)
+python -m pip install --upgrade <repo-path>        # update
+viper-ai --version                                 # installed version
+```
+
+Main commands (examples; `viper-ai --help` and `viper-ai list` show all of them, the complete reference is
+[docs/trading-agent-architecture.en.md](docs/trading-agent-architecture.en.md#61-installation-and-update-with-pip)):
+
+| Command | Purpose |
+|---|---|
+| `viper-ai` | `--version`, `list` (all commands and scripts), `paths` (folders in use), `run <Script.py> [args]` (any other script) |
+| `viper-ai-mcp` | MCP server (stdio, 27 tools, `TRADING_DB_PATH` required) |
+| `viper-ai-orchestrator` | `Run-TradingOrchestrator.py` |
+| `viper-ai-import-parqet` | `Import-ParqetTransactions.py` |
+| `viper-ai-import-transactions` | `Import-TradingTransactions.py` |
+| `viper-ai-refresh-etf` | `Refresh-TradingEtfData.py` |
+| `viper-ai-gui` | desktop GUI (extra `gui`, no console window) |
+| `viper-ai-task` | Task Scheduler launcher `Run-TradingTask.py <log> <script> [args]` (no console window) |
+
+Every command runs the existing script unchanged (same arguments, output, exit code and defaults); `-h` / `--help` only prints the help and never starts a job.
+
+**Runtime data is not part of the package.** `pip install`, `pip install --upgrade` and `pip uninstall` do not change `trading.db`, the logs,
+the scheduler data, the `*_local.json` files or any other runtime data under `C:\tools\trading`; only the versioned `*_v1.json` universe files are
+packaged. The runtime root is `C:\tools\trading` (another one with the environment variable `VIPER_TRADING_ROOT`); `viper-ai paths` shows the folders in use.
 
 The tests use only the standard library's `unittest` (plus the runtime packages above):
 `.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"`.

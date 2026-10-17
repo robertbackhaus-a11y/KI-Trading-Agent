@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deterministic presentation contract for ``run_trading_orchestrator``.
 
 This module never computes a trading decision, a promotion rule, or an

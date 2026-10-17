@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The one-flow import (``import_workflow``): analyse, compare, show the difference, import, reconcile; master data, idempotence, rollback, derived positions.
 
 Real database schema (Reset-TradingDb); synthetic data only.

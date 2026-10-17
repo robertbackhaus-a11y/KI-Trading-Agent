@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """set_security_strategy: the narrow strategy write (A-Q); synthetic securities and the real schema only."""
 
 from __future__ import annotations

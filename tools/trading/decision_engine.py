@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Pure, deterministic recommendation rules.
 
 The module accepts contracts only. It deliberately has no SQLite, file, or

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Controlled onboarding of ONE new security into the Security Master (the ``onboard_security`` MCP action).
 
 A security is created only from values the caller supplies explicitly: nothing is looked up on the web, nothing is guessed (no ISIN, WKN,

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Chat page: transcript with separate styles per message type, input, Send / Stop / New chat, model and thinking switch (plain Qt text, no WebEngine)."""
 
 from __future__ import annotations

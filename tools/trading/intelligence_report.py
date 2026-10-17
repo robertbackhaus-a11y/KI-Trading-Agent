@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Structured, versioned report of a market-intelligence run (file I/O only: no network, no database).
 
 ``Collect-TradingMarketIntelligence.py`` writes the report after a *completely successful* run;

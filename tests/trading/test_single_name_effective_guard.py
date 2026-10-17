@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """The single-name guard on the effective exposure (direct position + the company's share in the held ETFs): the basis decision, the ADD / BUY sizing limits, the data quality of the
 ETF holdings (stale / missing never pretend the direct figure is complete), the orchestrator summary (TSMC-style ADR + ETF, ETF-only company), no influence of the rounding drift,
 no orders; synthetic data only."""

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """One flow for a transaction export (Parqet or the canonical CSV): analyse, compare with the database, show the difference, import, reconcile.
 
 This module adds no import logic of its own.  Planning, security resolution, duplicate handling, master-data supplements, the single write transaction, the position

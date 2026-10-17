@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Phase-3B.2 deterministic Swing TP recommendation tests."""
 
 from __future__ import annotations

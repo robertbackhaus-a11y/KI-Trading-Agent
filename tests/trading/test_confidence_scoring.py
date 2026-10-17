@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """decision_engine._confidence() weighting tests.
 
 valuation/event_risk are backed by estimates/ratings/price_targets/events/

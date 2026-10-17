@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Deliberate migration: remove the unused column ``security.sector``.
 
 Nothing reads or writes ``security.sector`` any more: the risk guards and the market-intelligence mapping take the sector from the versioned sector map

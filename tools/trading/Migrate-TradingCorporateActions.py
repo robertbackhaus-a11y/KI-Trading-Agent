@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Add the auditable corporate-action relation (Phase 4B.3: stock splits)."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Pure, deterministic strength-only Swing ADD eligibility and sizing."""
 
 from __future__ import annotations

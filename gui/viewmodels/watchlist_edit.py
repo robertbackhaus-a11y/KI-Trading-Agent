@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """View model of the inline editing on the Watchlist page: the strategy options, which rows may be edited, the pending (unsaved) changes and the messages.
 
 Pure Python (no Qt, no database).  Three fields are editable: the strategy, the priority and the sector (each is written by its own narrow MCP action,

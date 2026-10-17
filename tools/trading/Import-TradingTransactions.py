@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Robert Backhaus
+# SPDX-License-Identifier: Apache-2.0
+
 """Import transactions from a canonical Trading CSV or a source export (Parqet), including strategy and Swing-campaign initialization.
 
 Without ``--write`` this is a complete dry run: the whole import is simulated on an in-memory copy of the database and the planned end
