@@ -43,9 +43,9 @@ from intelligence_report import build_report, query_report, render_report_de, wr
 from market_intelligence import FEEDS, build_market_intelligence, load_db_context, load_news_feeds, load_sector_map, parse_feed, parse_feed_detailed  # noqa: E402
 from strategy_config import MarketIntelligenceConfig  # noqa: E402
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
-DEFAULT_REPORT_DIR = Path(r"C:\tools\trading\data\market-intelligence")
-DEFAULT_DISCOVERY_DIR = Path(r"C:\tools\trading\data\candidate-discovery")
+DB_PATH = runtime_paths.default_db_path()
+DEFAULT_REPORT_DIR = runtime_paths.data_dir() / "market-intelligence"
+DEFAULT_DISCOVERY_DIR = runtime_paths.data_dir() / "candidate-discovery"
 DEFAULT_SECTOR_MAP = HERE / "universe" / "sector_map_v1.json"
 DEFAULT_NEWS_FEEDS = HERE / "universe" / "news_feeds_v1.json"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) trading-agent market-intelligence (read-only)"

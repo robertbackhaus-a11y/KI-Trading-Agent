@@ -14,6 +14,7 @@ import json
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Optional
 
 from analysis_contracts import (
@@ -43,7 +44,7 @@ from swing_lifecycle import derive_open_lifecycle
 import trading_analytics
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 
 
 def _normalise_as_of(as_of: Optional[str | date | datetime]) -> Optional[str]:

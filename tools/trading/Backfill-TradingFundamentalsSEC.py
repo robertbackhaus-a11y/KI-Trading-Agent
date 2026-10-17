@@ -14,6 +14,7 @@ import urllib.request
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Optional
 
 
@@ -21,13 +22,9 @@ from typing import Optional
 # CONFIG
 # ============================================================
 
-DB_PATH = Path(
-    r"C:\tools\trading\data\trading.db"
-)
+DB_PATH = runtime_paths.default_db_path()
 
-SEC_CACHE_DIR = Path(
-    r"C:\tools\trading\data\sec-cache"
-)
+SEC_CACHE_DIR = runtime_paths.data_dir() / "sec-cache"
 
 CACHE_MAX_AGE_SECONDS = 6 * 3600
 

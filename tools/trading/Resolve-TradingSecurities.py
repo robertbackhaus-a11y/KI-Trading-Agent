@@ -9,10 +9,11 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Optional
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 
 OPENFIGI_BASE = "https://api.openfigi.com/v3"
 

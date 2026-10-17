@@ -16,10 +16,11 @@ from datetime import datetime, timezone
 import shutil
 import sqlite3
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Optional
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 
 
 def _currency(value: object) -> Optional[str]:

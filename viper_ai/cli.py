@@ -10,6 +10,7 @@ Each entry point runs one existing script of the package exactly like ``python <
 from __future__ import annotations
 
 import argparse
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -40,7 +41,7 @@ COMMANDS: dict[str, tuple[Path, str]] = {
 # Scripts without a command line of their own: they ignore every argument and start their job, so ``-h`` / ``--help`` is answered here and the
 # script is not run (a call without help arguments is passed through unchanged).
 NO_ARGPARSE: dict[str, str] = {
-    "server.py": "MCP server over stdio. Configuration only through the environment: TRADING_DB_PATH (required), TRADING_TOOL_PROFILE (read = default, 17 READ tools; gui = plus the 8 GUI actions; admin = all 27 incl. sql_execute), TRADING_EXCLUDE, TRADING_USER_ID, TRADING_MAX_RESULT_CHARS.",
+    "server.py": "MCP server over stdio. Configuration only through the environment: TRADING_DB_PATH (viper-ai-mcp: default <root>/data/trading.db of VIPER_TRADING_ROOT; the database must exist), TRADING_TOOL_PROFILE (read = default, 17 READ tools; gui = plus the 8 GUI actions; admin = all 27 incl. sql_execute), TRADING_EXCLUDE, TRADING_USER_ID, TRADING_MAX_RESULT_CHARS.",
     "Run-TradingTask.py": "Run-TradingTask.py <log> <script> [args...]: runs one script without a console window, appends stdout/stderr to <log>, returns the script's exit code.",
     "Backfill-TradingFundamentalsIR.py": "Fundamentals from the company IR reference parsers; takes no arguments and writes on every run.",
     "Discover-TradingSECIdentifiers.py": "SEC CIK identifier discovery; takes no arguments and writes on every run.",
@@ -84,7 +85,29 @@ def _command(name: str) -> int:
     return run_script(folder / script, sys.argv[1:])
 
 
+def _runtime_paths():
+    """``viper_ai.app.runtime_paths`` loaded the way the scripts load it (the app folder is their import root)."""
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    import runtime_paths
+
+    return runtime_paths
+
+
 def mcp_server() -> int:
+    """The MCP server of this installation.  Without ``TRADING_DB_PATH`` it uses the database of the runtime root (``VIPER_TRADING_ROOT``, default
+    ``C:\\tools\\trading``); an explicit ``TRADING_DB_PATH`` always wins.  A database that does not exist stops the start (the server would only answer errors)."""
+    if any(arg in HELP_FLAGS for arg in sys.argv[1:]):
+        return _command("viper-ai-mcp")
+    try:
+        db = os.environ.get("TRADING_DB_PATH", "").strip() or str(_runtime_paths().default_db_path())
+    except ValueError as exc:  # a relative VIPER_TRADING_ROOT
+        print(f"viper-ai-mcp: {exc}", file=sys.stderr)
+        return 2
+    if not Path(db).is_absolute() or not Path(db).is_file():
+        print(f"viper-ai-mcp: database not found (TRADING_DB_PATH must name an existing absolute path): {db}", file=sys.stderr)
+        return 2
+    os.environ["TRADING_DB_PATH"] = db
     return _command("viper-ai-mcp")
 
 
@@ -174,13 +197,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"  {name}")
         return 0
     if args.command == "paths":
-        sys.path.insert(0, str(APP_DIR))
-        import runtime_paths
-
+        runtime_paths = _runtime_paths()
+        try:
+            root = runtime_paths.trading_root()
+        except ValueError as exc:
+            print(f"viper-ai: {exc}", file=sys.stderr)
+            return 2
+        db = runtime_paths.default_db_path()
+        explicit = os.environ.get("TRADING_DB_PATH", "").strip()
         print(f"package:          {PACKAGE_DIR}")
         print(f"app scripts:      {APP_DIR}")
         print(f"mcp server:       {MCP_DIR / 'server.py'}")
-        print(f"trading root:     {runtime_paths.trading_root()}  (environment variable {runtime_paths.TRADING_ROOT_ENV})")
+        print(f"trading root:     {root}  (environment variable {runtime_paths.TRADING_ROOT_ENV})")
+        print(f"database:         {db}  ({'exists' if db.is_file() else 'NOT FOUND'}; scripts: unless --db / --db-path is given)")
+        if explicit:
+            print(f"TRADING_DB_PATH:  {explicit}  (used by viper-ai-mcp instead of the database above)")
+        print(f"data:             {runtime_paths.data_dir()}")
+        print(f"logs:             {runtime_paths.logs_dir()}")
         print(f"private universe: {runtime_paths.private_universe_dir()}")
         print(f"private data:     {runtime_paths.private_data_dir()}")
         return 0

@@ -9,6 +9,7 @@ import argparse
 import json
 import sqlite3
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Optional
 
 from corporate_actions import (
@@ -22,7 +23,7 @@ from corporate_actions import (
 from transaction_import import rebuild_position
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 
 
 def _connect(db_path: Path, *, write: bool) -> sqlite3.Connection:

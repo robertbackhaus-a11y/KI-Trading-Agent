@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import support  # noqa: F401
 from gui.services import settings as sm
@@ -95,6 +98,74 @@ class SettingsTests(unittest.TestCase):
             for h in handlers:
                 logger.removeHandler(h)
                 h.close()
+
+
+
+class InstallationDefaultTests(unittest.TestCase):
+    """The defaults follow the installation and VIPER_TRADING_ROOT; a saved value always wins; mismatches are reported, never silently changed."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def env(self, **values):
+        patcher = mock.patch.dict(os.environ, {k: v for k, v in values.items() if v is not None})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for key, value in values.items():
+            if value is None:
+                os.environ.pop(key, None)
+
+    def fake_package(self) -> Path:
+        """``<tmp>/viper_ai`` with ``__init__.py``, ``mcp/server.py`` and ``gui/services`` like a pip installation."""
+        package = Path(self.tmp.name) / "viper_ai"
+        (package / "mcp").mkdir(parents=True)
+        (package / "gui" / "services").mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "mcp" / "server.py").write_text("", encoding="utf-8")
+        return package
+
+    def test_the_deployed_defaults_follow_the_trading_root(self) -> None:
+        self.env(VIPER_TRADING_ROOT=r"D:\viper")
+        s = sm.Settings()
+        self.assertEqual((s.mcp_python_path, s.mcp_server_path), (r"D:\viper\.venv\Scripts\python.exe", r"D:\viper\mcp\server.py"))
+        self.assertEqual((s.trading_db_path, s.trading_logs_dir), (r"D:\viper\data\trading.db", r"D:\viper\logs"))
+
+    def test_a_relative_root_is_ignored_and_reported(self) -> None:
+        self.env(VIPER_TRADING_ROOT="relative")
+        self.assertEqual(sm.Settings().trading_db_path, r"C:\tools\trading\data\trading.db")
+        self.assertTrue(any("kein absoluter Pfad" in w for w in sm.runtime_warnings(sm.Settings())))
+
+    def test_the_pip_installation_uses_its_own_server_and_python(self) -> None:
+        self.env(VIPER_TRADING_ROOT=None)
+        package = self.fake_package()
+        with mock.patch.object(sm, "INSTALL_DIR", package):
+            self.assertTrue(sm.is_installed_package())
+            s = sm.Settings()
+            self.assertEqual(Path(s.mcp_server_path), package / "mcp" / "server.py")
+            self.assertEqual(Path(s.mcp_python_path).parent, Path(sys.executable).parent)
+            self.assertEqual(s.trading_db_path, r"C:\tools\trading\data\trading.db")  # the data stay at the runtime root
+
+    def test_saved_values_win_and_a_foreign_server_is_reported(self) -> None:
+        self.env(VIPER_TRADING_ROOT=None)
+        package = self.fake_package()
+        db = Path(self.tmp.name) / "trading.db"
+        db.write_bytes(b"")
+        path = Path(self.tmp.name) / "settings.json"
+        path.write_text(json.dumps({"mcp_server_path": r"C:\tools\trading\mcp\server.py", "trading_db_path": str(db)}), encoding="utf-8")
+        with mock.patch.object(sm, "INSTALL_DIR", package):
+            loaded = sm.load_settings(path)
+            self.assertEqual(loaded.settings.mcp_server_path, r"C:\tools\trading\mcp\server.py")  # the manual setting is kept
+            self.assertEqual(loaded.warnings, [])
+            warnings = sm.runtime_warnings(loaded.settings)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("gehört nicht zu dieser Installation", warnings[0])
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["mcp_server_path"], r"C:\tools\trading\mcp\server.py")  # nothing rewritten
+
+    def test_a_missing_database_is_reported(self) -> None:
+        s = sm.Settings(trading_db_path=str(Path(self.tmp.name) / "missing.db"))
+        self.assertTrue(any(w.startswith("Datenbank nicht gefunden") for w in sm.runtime_warnings(s)))
+        self.assertFalse((Path(self.tmp.name) / "missing.db").exists())
 
 
 if __name__ == "__main__":

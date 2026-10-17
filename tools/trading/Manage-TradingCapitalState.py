@@ -10,6 +10,7 @@ import json
 import sqlite3
 from datetime import date
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Optional
 
 from capital_state import (
@@ -23,7 +24,7 @@ from capital_state import (
 from strategy_config import CapitalStateConfig
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 ALLOWED_QUALITIES = {"available", "partial", "unavailable", "stale"}
 
 

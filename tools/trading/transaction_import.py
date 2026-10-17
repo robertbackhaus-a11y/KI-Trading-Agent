@@ -29,13 +29,14 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 import security_onboarding
 from corporate_actions import cumulative_split_factor, load_corporate_actions
 
 
-DEFAULT_DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DEFAULT_DB_PATH = runtime_paths.default_db_path()
 # Value of campaign events written by the Parqet adapter before the importer became provider neutral; kept for continuity.
 LEGACY_RECONCILIATION_SOURCE = "parqet_reconciliation"
 NUMERIC_SCALE = Decimal("0.00000001")

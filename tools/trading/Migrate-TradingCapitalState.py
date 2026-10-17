@@ -8,9 +8,10 @@ from __future__ import annotations
 import argparse
 import sqlite3
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 FEATURE_VERSION_KEY = "portfolio_capital_state_schema_version"
 FEATURE_VERSION = "1"
 

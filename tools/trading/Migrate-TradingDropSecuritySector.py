@@ -27,9 +27,10 @@ import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Any, Optional
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 FEATURE_KEY = "security_sector_removed"
 FEATURE_VALUE = "1"
 COLUMN = "sector"

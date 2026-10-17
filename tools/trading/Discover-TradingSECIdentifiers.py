@@ -10,9 +10,10 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 
 # SEC fair access: set SEC_USER_AGENT to "<name> <your e-mail>"; the default below is only a placeholder.
 SEC_USER_AGENT = os.environ.get(
@@ -123,6 +124,9 @@ def get_json(url: str):
 # ============================================================
 
 def connect():
+
+    if not DB_PATH.exists():  # sqlite3.connect would silently create an empty database
+        raise FileNotFoundError(f"Trading DB not found: {DB_PATH}")
 
     conn = sqlite3.connect(
         str(DB_PATH)

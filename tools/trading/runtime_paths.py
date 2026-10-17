@@ -10,8 +10,10 @@ Two layouts run the same code:
 * the pip installation (``site-packages\\viper_ai\\app``): the code folder belongs to pip and is replaced on every upgrade, so nothing private may live there.  The private files are
   then read from and written to the runtime root instead: ``<trading root>\\app\\universe`` (the same files the deployed copy uses) and ``<trading root>\\app\\data``.
 
-The trading root is ``C:\\tools\\trading`` unless the environment variable ``VIPER_TRADING_ROOT`` names another folder.  The database paths are not derived here: every script keeps its
-own absolute default and its ``--db`` argument.
+The trading root is ``C:\\tools\\trading`` unless the environment variable ``VIPER_TRADING_ROOT`` names another folder (it must be absolute: a relative root would depend on the
+working directory of whoever starts a script, for example the Task Scheduler).  Every default runtime path is derived from it: the database ``<root>\\data\\trading.db``
+(:func:`default_db_path`), the data folder with reports and caches (:func:`data_dir`) and the logs (:func:`logs_dir`).  An explicit ``--db`` / ``--db-path`` of a script,
+``TRADING_DB_PATH`` of the MCP server and a path saved in the GUI settings always win over the default.
 """
 
 from __future__ import annotations
@@ -30,7 +32,27 @@ PACKAGE_NAME = "viper_ai"
 def trading_root() -> Path:
     """The runtime root (database, logs, scheduler, private files)."""
     configured = os.environ.get(TRADING_ROOT_ENV, "").strip()
-    return Path(configured) if configured else DEFAULT_TRADING_ROOT
+    if not configured:
+        return DEFAULT_TRADING_ROOT
+    root = Path(configured)
+    if not root.is_absolute():
+        raise ValueError(f"{TRADING_ROOT_ENV} must be an absolute path, got {configured!r}")
+    return root
+
+
+def data_dir() -> Path:
+    """``<root>\\data``: the database, the reports (candidate discovery, market intelligence), caches and audits."""
+    return trading_root() / "data"
+
+
+def default_db_path() -> Path:
+    """``<root>\\data\\trading.db``: the database every script uses unless it is given ``--db`` / ``--db-path``."""
+    return data_dir() / "trading.db"
+
+
+def logs_dir() -> Path:
+    """``<root>\\logs``: the logs of the scheduled tasks."""
+    return trading_root() / "logs"
 
 
 def is_installed_package(code_dir: Path = CODE_DIR) -> bool:

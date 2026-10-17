@@ -27,6 +27,7 @@ import sys
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Any, Callable, Optional
 
 HERE = Path(__file__).resolve().parent
@@ -35,9 +36,9 @@ sys.path.insert(0, str(HERE))
 from candidate_discovery import discover_watchlist_candidates, load_universe, render_discovery_de  # noqa: E402
 from discovery_report import build_report, write_report  # noqa: E402
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 DEFAULT_UNIVERSE = HERE / "universe" / "swing_large_cap_v1.json"
-DEFAULT_REPORT_DIR = Path(r"C:\tools\trading\data\candidate-discovery")
+DEFAULT_REPORT_DIR = runtime_paths.data_dir() / "candidate-discovery"
 
 
 def _load_market_data_module():

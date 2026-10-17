@@ -67,9 +67,10 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
-AUDIT_DIR = Path(r"C:\tools\trading\data\fundamentals-audit")
+DB_PATH = runtime_paths.default_db_path()
+AUDIT_DIR = runtime_paths.data_dir() / "fundamentals-audit"
 PROMPT_DIR = AUDIT_DIR / "prompts"
 
 VALID_PERIOD_TYPES = {"quarterly", "semiannual", "nine_month", "annual"}

@@ -649,7 +649,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sys.excepthook = excepthook
     runner = AsyncRunner()
     mcp = McpService(loaded.settings, settings_mod.mcp_stderr_path())
-    window = MainWindow(loaded.settings, mcp, TaskBackend(loaded.settings.trading_logs_dir), runner, loaded.warnings)
+    window = MainWindow(loaded.settings, mcp, TaskBackend(loaded.settings.trading_logs_dir), runner, [*loaded.warnings, *settings_mod.runtime_warnings(loaded.settings)])
     window.show()
     mcp.start()
     code = app.exec()

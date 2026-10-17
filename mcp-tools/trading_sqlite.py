@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 import sqlite3
 import sys
 import time
@@ -1438,13 +1439,17 @@ class Tools:
 
     @staticmethod
     def _runtime_tools_directory() -> Path:
-        """The folder of the trading helpers: ``app`` next to this tool's folder (the deployed
-        ``C:\\tools\\trading\\mcp`` and the pip installation ``viper_ai/mcp`` both have it),
-        otherwise the deployed ``C:\\tools\\trading\\app`` as before."""
-        sibling = Path(__file__).resolve().parent.parent / "app"
-        if (sibling / "trading_orchestrator.py").is_file():
-            return sibling
-        return Path(r"C:\tools\trading\app")
+        """The folder of the trading helpers that belong to THIS server: ``app`` next to this tool's
+        folder (the deployed ``C:\\tools\\trading\\mcp`` and the pip installation ``viper_ai/mcp``),
+        ``tools/trading`` in a repository checkout; only otherwise ``<trading root>\\app``
+        (``VIPER_TRADING_ROOT``, default ``C:\\tools\\trading``).  A checkout or a pip installation
+        never silently runs the helpers of another (older) deployed copy."""
+        here = Path(__file__).resolve().parent
+        for candidate in (here.parent / "app", here.parent / "tools" / "trading"):
+            if (candidate / "trading_orchestrator.py").is_file():
+                return candidate
+        root = os.environ.get("VIPER_TRADING_ROOT", "").strip()
+        return (Path(root) if root else Path(r"C:\tools\trading")) / "app"
 
     @classmethod
     def _load_runtime_trading_module(cls, module_name: str):

@@ -31,7 +31,7 @@ py -3.12 -m venv .venv-gui
 
 Alternativ (pip-Installation, parallel zum Deploy): `.venv-gui\Scripts\python.exe -m pip install "<repo-path>[gui]"` installiert VIPER-AI mit dem Extra `gui` (`PySide6-Essentials`); die GUI startet dann mit `viper-ai-gui` (ohne Konsolenfenster) oder `python -m viper_ai.gui`. Ihre MCP-Einstellungen (`mcp_python_path`, `mcp_server_path`) bleiben unverändert und zeigen weiter auf den deployten Server.
 
-Die Befehle laufen im Repository-Stammordner. Die Standardwerte zeigen auf die Produktionsinstallation; sie lassen sich in den Einstellungen ändern.
+Die Befehle laufen im Repository-Stammordner. Die Standardwerte zeigen auf die Installation, aus der die GUI läuft: die deployte GUI auf `<root>\.venv` und `<root>\mcp\server.py`, die pip-Installation auf ihr eigenes Python und `viper_ai\mcp\server.py`; Datenbank und Logs sind `<root>\data\trading.db` und `<root>\logs` (`<root>` = `VIPER_TRADING_ROOT`, Standard `C:\tools\trading`). Gespeicherte Einstellungen haben immer Vorrang; eine fehlende Datenbank oder ein gespeicherter MCP-Server einer anderen Installation wird als Warnung angezeigt.
 
 ## 3. Seiten
 

@@ -67,7 +67,8 @@ Every command runs the existing script unchanged (same arguments, output, exit c
 
 **Runtime data is not part of the package.** `pip install`, `pip install --upgrade` and `pip uninstall` do not change `trading.db`, the logs,
 the scheduler data, the `*_local.json` files or any other runtime data under `C:\tools\trading`; only the versioned `*_v1.json` universe files are
-packaged. The runtime root is `C:\tools\trading` (another one with the environment variable `VIPER_TRADING_ROOT`); `viper-ai paths` shows the folders in use.
+packaged. The runtime root is `C:\tools\trading` (another absolute one with the environment variable `VIPER_TRADING_ROOT`); every default path
+(database `<root>\data\trading.db`, reports, logs) follows it, an explicit `--db` / `--db-path` or `TRADING_DB_PATH` wins, and `viper-ai paths` shows the folders in use.
 
 The tests use only the standard library's `unittest` (plus the runtime packages above):
 `.venv\Scripts\python.exe -m unittest discover -s tests/trading -p "test_*.py"`.

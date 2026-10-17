@@ -26,9 +26,7 @@ from pathlib import Path
 # CONFIG
 # ============================================================
 
-DB_PATH = Path(
-    r"C:\tools\trading\data\trading.db"
-)
+DB_PATH = runtime_paths.default_db_path()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",

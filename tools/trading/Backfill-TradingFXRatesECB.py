@@ -19,12 +19,13 @@ import ssl
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
+import runtime_paths  # sibling module: the runtime root (VIPER_TRADING_ROOT) and its default paths
 from typing import Iterable, Optional
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
-DB_PATH = Path(r"C:\tools\trading\data\trading.db")
+DB_PATH = runtime_paths.default_db_path()
 ECB_SOURCE = "ECB"
 # Quote currencies of the securities held or watched (USD, GBP via GBp, AUD, KRW).
 DEFAULT_QUOTE_CURRENCIES = ("USD", "GBP", "AUD", "KRW")
