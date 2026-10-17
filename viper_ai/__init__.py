@@ -12,4 +12,4 @@ The pip installation maps the existing source folders into this package without 
 Runtime data (database, logs, scheduler, private universe files) never lives in the package; see ``viper_ai.app.runtime_paths``.
 """
 
-__version__ = "0.6.0.dev0"
+__version__ = "0.6.0"

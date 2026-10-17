@@ -2,10 +2,11 @@
 
 Standalone trading agent / trading data store (formerly "Trading Agent").
 
-Version: v0.5.0 — see [CHANGELOG.md](CHANGELOG.md).
+Version: v0.6.0 — see [CHANGELOG.md](CHANGELOG.md).
 
-v0.5.0 is the last official release. The current development state on `main` has the package version `0.6.0.dev0`
-(a development version, not a release; `viper-ai --version` shows it). The next release replaces it.
+v0.6.0 is the first release with the pip packaging (`viper-ai --version` shows the package version). It also closes four review
+findings: stale import checks, the MCP tool policy, the GUI `allow_actions` switch and the runtime paths of the two installations
+(details and compatibility notes in the changelog). The classic deploy (`deploy\Deploy-TradingAgent.ps1`) stays the production path.
 
 ## Runtime
 
