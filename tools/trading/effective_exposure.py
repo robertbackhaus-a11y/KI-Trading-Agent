@@ -15,7 +15,8 @@
   ``ambiguous_unmatched`` (holdings whose match is ambiguous or that carry neither ISIN nor ticker, plus ETFs without usable holdings), ``other`` (cash, derivatives,
   the part a physical fund's weights do not explain) and ``rounding_drift`` (negative, synthetic index lists).  The buckets add up to the invested value (``checks``).
 
-``contributors`` also carry the provider's own ``gics_sector`` and ``location`` of the holding (empty where the provider publishes none).
+Inside the process (``with_companies``) the ``contributors`` also carry the provider's own ``gics_sector`` and ``location`` of the holding; the answer of the MCP tool leaves
+them out (``INTERNAL_CONTRIBUTOR_FIELDS``: the 40,000-character limit of the server, the company table does not show them).
 
 Only SELECTs and file reads; no write, no network, no order, and no risk guard is read or changed.
 """
@@ -31,6 +32,7 @@ import etf_holdings as eh
 OPERATION = "get_effective_exposure"
 MATCH_ISIN, MATCH_ALIAS, MATCH_TICKER, STANDALONE, AMBIGUOUS, NAME_ONLY = "isin", "alias", "ticker_exchange", "standalone", "ambiguous", "name_only"
 DIRECT_MATCHED, ETF_ONLY, AMBIGUOUS_UNMATCHED = "direct_matched", "etf_only", "ambiguous_unmatched"  # the three classes of a company / a holding
+INTERNAL_CONTRIBUTOR_FIELDS = ("gics_sector", "location")  # used by the sector overview, not part of the public answer
 DEFAULT_TOP = 25
 MAX_TOP = 40  # the MCP server refuses results above 40,000 characters; 25 companies are about 19,000, 200 would be about 120,000
 _EPS = 1e-9
@@ -75,6 +77,13 @@ def company_key(holding: eh.Holding, security_id: Optional[int], groups: Optiona
     if holding.isin:
         return f"isin:{holding.isin}"
     return f"tk:{holding.ticker.upper()}|{eh.norm(holding.exchange)}|{eh.norm(holding.name)}"
+
+
+def public_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """A company row as the MCP answer shows it: without the contributor fields that only in-process users need."""
+    out = dict(row)
+    out["contributors"] = [{k: v for k, v in c.items() if k not in INTERNAL_CONTRIBUTOR_FIELDS} for c in row["contributors"]]
+    return out
 
 
 def guard_inputs(etfs: list[dict[str, Any]], companies: list[dict[str, Any]]) -> dict[str, Any]:
@@ -296,7 +305,7 @@ def build_effective_exposure(
         "ok": True, "operation": OPERATION, "as_of": evaluation, "base_currency": "EUR", "total_market_value_eur": total, "limit_note": "no limit is applied here; the risk guard is unchanged",
         "company_count": len(rows), "direct_company_count": sum(1 for r in rows if r["direct_value_eur"] > 0), "etf_company_count": sum(1 for r in rows if r["etf_value_eur"] > 0),
         "overlap_company_count": sum(1 for r in rows if r["direct_value_eur"] > 0 and r["etf_value_eur"] > 0),
-        "top": rows[: max(0, int(top))], "top_count": min(len(rows), max(0, int(top))), "top_share_pct": sum(r["effective_value_eur"] for r in rows[: max(0, int(top))]) / total * 100.0 if total > _EPS else 0.0,
+        "top": [public_row(r) for r in rows[: max(0, int(top))]], "top_count": min(len(rows), max(0, int(top))), "top_share_pct": sum(r["effective_value_eur"] for r in rows[: max(0, int(top))]) / total * 100.0 if total > _EPS else 0.0,
         "etfs": etfs,
         "coverage": {"etf_value_eur": etf_total, "resolved_etf_value_eur": resolved, "resolved_pct": resolved / etf_total * 100.0 if etf_total > _EPS else None,
                      "unresolved_etf_value_eur": unresolved_eur, "other_value_eur": other_eur, "other_pct_of_total": other_eur / total * 100.0 if total > _EPS else 0.0,

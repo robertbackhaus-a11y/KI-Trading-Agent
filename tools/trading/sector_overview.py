@@ -49,7 +49,7 @@ GUARD_OVER = "OVER_LIMIT"
 GUARD_NOT_ASSESSED = "NOT_ASSESSED"
 KIND_SECTOR, KIND_ETF_CATEGORY, KIND_UNASSIGNED = "sector", "etf_category", "unassigned"
 ORIGIN_DIRECT, ORIGIN_ETF, ORIGIN_COMPANY = "direct", "etf_lookthrough", "etf_company"
-COMPANIES_SHOWN = 5  # companies named in an etf_company entry
+COMPANIES_SHOWN = 3  # companies named in an etf_company entry
 _NOT_A_SECTOR = "not a sector"
 STALE_BAR_DAYS = 5  # the latest daily bar may be at most this many calendar days older than the evaluation date
 BAR_GAP_DAYS = 7  # the previous bar must lie at most this many days before the latest one
@@ -310,11 +310,11 @@ def build_sector_overview(
         for group, members in sorted(by_group.items()):
             value = sum(m["accepted"] for m in members)
             members.sort(key=lambda m: (-m["accepted"], m["name"]))
-            entries.append({
-                "security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "asset_type": position["asset_type"], "is_etf": True, "isin": position["isin"],
-                "strategy": position["strategy"], "quantity": position["quantity"], "sector": group, "sector_source": "etf_holdings_company",
-                "market_value_eur": value, "day_change_pct": position["day_change_pct"], "day_change_date": position["day_change_date"],
-                "origin": ORIGIN_COMPANY, "category": "", "category_reason": "", "etf_weight_pct": value / position["market_value_eur"] * 100.0,
+            entries.append({  # slim: what the ETF itself says (ISIN, quantity, asset type) is in ``etfs``, the sector is the group the entry sits in; none of it is repeated in every contribution
+                "security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "is_etf": True,
+                "strategy": position["strategy"], "sector": group,
+                "market_value_eur": value, "day_change_pct": position["day_change_pct"],
+                "origin": ORIGIN_COMPANY, "etf_weight_pct": value / position["market_value_eur"] * 100.0,
                 "etf_value_eur": position["market_value_eur"], "etf_as_of": allocation.as_of,
                 "company_count": len(members), "companies": [{"name": m["name"], "value_eur": m["accepted"]} for m in members[:COMPANIES_SHOWN]],
             })
@@ -325,10 +325,10 @@ def build_sector_overview(
             warnings.append(f"COMPANY_SPLIT_ESTIMATED: {position['symbol']}: {item['estimated_value_eur']:.0f} EUR of company holdings had no provider sector and were taken from the fitting categories pro rata")
         for part in parts:
             entries.append({
-                "security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "asset_type": position["asset_type"], "is_etf": True, "isin": position["isin"],
-                "strategy": position["strategy"], "quantity": position["quantity"], "sector": part["group"], "sector_source": "etf_lookthrough",
-                "market_value_eur": part["value_eur"], "day_change_pct": position["day_change_pct"], "day_change_date": position["day_change_date"],
-                "origin": ORIGIN_ETF, "category": part["category"], "category_reason": part["reason"], "etf_weight_pct": part["provider_weight_pct"],
+                "security_id": position["security_id"], "symbol": position["symbol"], "name": position["name"], "is_etf": True,
+                "strategy": position["strategy"], "sector": part["group"],
+                "market_value_eur": part["value_eur"], "day_change_pct": position["day_change_pct"],
+                "origin": ORIGIN_ETF, "category": part["category"], **({"category_reason": part["reason"]} if part["reason"] else {}), "etf_weight_pct": part["provider_weight_pct"],
                 "etf_value_eur": position["market_value_eur"], "etf_as_of": allocation.as_of,
             })
             if part["group"] is not None:
@@ -338,6 +338,8 @@ def build_sector_overview(
     for group in groups:
         for entry in group["positions"]:
             entry["weight_pct"] = entry["market_value_eur"] / total * 100.0 if total > _EPS else 0.0
+            if entry["origin"] != ORIGIN_DIRECT:
+                entry.pop("sector", None)  # the group the entry sits in says it; only the grouping above needed the key
 
     etf_total = sum(e["market_value_eur"] for e in etfs)
     covered = sum(e["market_value_eur"] for e in etfs if e["status"] in (etf_lookthrough.APPLIED, etf_lookthrough.STALE))

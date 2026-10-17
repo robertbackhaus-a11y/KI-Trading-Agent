@@ -175,6 +175,38 @@ class AssignmentTests(CompanyCase):
         self.assertAlmostEqual(etf["mapped_value_eur"], 80.0 + 100.0 + 60.0)  # companies + the Financials and Health Care rest
 
 
+class PayloadTests(CompanyCase):
+    """The MCP server refuses answers above 40,000 characters: the internal data stays in the process, the public answers stay slim."""
+
+    def test_the_public_exposure_answer_has_no_internal_contributor_fields(self) -> None:
+        public = ee.build_effective_exposure(self.conn, as_of=AS_OF, universe_dir=self.universe, top=50)
+        self.assertNotIn("companies", public)
+        for row in public["top"]:
+            for c in row["contributors"]:
+                self.assertFalse(set(ee.INTERNAL_CONTRIBUTOR_FIELDS) & set(c), c)
+        internal = ee.build_effective_exposure(self.conn, as_of=AS_OF, universe_dir=self.universe, top=1, with_companies=True)
+        contributors = [c for row in internal["companies"] for c in row["contributors"]]
+        self.assertTrue(contributors and all(set(ee.INTERNAL_CONTRIBUTOR_FIELDS) <= set(c) for c in contributors))  # the sector overview still gets them
+        self.assertEqual({c["gics_sector"] for c in contributors if c["etf"] == "ETF2"}, {"Financials", "Information Technology"})
+
+    def test_the_figures_of_the_exposure_do_not_depend_on_the_public_slimming(self) -> None:
+        public = ee.build_effective_exposure(self.conn, as_of=AS_OF, universe_dir=self.universe, top=50)
+        internal = ee.build_effective_exposure(self.conn, as_of=AS_OF, universe_dir=self.universe, top=50, with_companies=True)
+        strip = lambda rows: [{k: v for k, v in r.items() if k != "contributors"} for r in rows]  # noqa: E731
+        self.assertEqual(strip(public["top"]), strip(internal["companies"][: len(public["top"])]))
+
+    def test_etf_contributions_of_the_sector_overview_repeat_nothing_the_etf_row_says(self) -> None:
+        result = self.overview()
+        derived = [p for g in result["sectors"] for p in g["positions"] if p["origin"] != so.ORIGIN_DIRECT]
+        self.assertTrue(derived)
+        for p in derived:
+            self.assertFalse({"isin", "quantity", "asset_type", "sector_source", "day_change_date", "sector"} & set(p), p)
+        for p in (p for p in derived if p["origin"] == so.ORIGIN_COMPANY):
+            self.assertLessEqual(len(p["companies"]), so.COMPANIES_SHOWN)
+        direct = [p for g in result["sectors"] for p in g["positions"] if p["origin"] == so.ORIGIN_DIRECT]
+        self.assertTrue(all({"isin", "quantity", "sector_source"} <= set(p) for p in direct))  # direct positions are unchanged
+
+
 class EstimateTests(CompanyCase):
     def test_a_holding_without_a_provider_sector_is_taken_from_the_fitting_group_and_reported(self) -> None:
         holdings = self.default_holdings()
