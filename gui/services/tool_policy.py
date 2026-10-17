@@ -1,87 +1,58 @@
 # Copyright (C) 2026 Robert Backhaus
 # SPDX-License-Identifier: Apache-2.0
 
-"""Central classification of the MCP tools: READ may be called by the GUI and offered to the chat, everything else is an ACTION.
+"""The GUI side of the MCP tool classification: READ may be called by the GUI and offered to the chat, everything else is an ACTION.
 
-The MCP tools carry no read-only annotations, so the GUI keeps its own table.  A tool that is not listed here is treated as an
-ACTION and denied (deny by default); a test requires every tool of the server to be classified.
+The classification itself is not kept here: it is the server's ``tool_policy.py`` (``mcp-tools`` in the repository, ``mcp`` next to ``gui`` in the deployed copy
+and in the pip installation), so the server and the GUI can never disagree.  A tool that is not listed there is treated as an ACTION and denied (deny by
+default); a test requires every tool of the server to be classified.
 
-Three narrow watchlist ACTIONs, the security onboarding and the two transaction import tools (``GUI_ACTIONS``) may be triggered by an explicit button of the Watchlist or Import page, and only through
-``McpService.call_action``; they are never offered to the chat and ``call`` / ``call_sync`` still refuse them.  ``sql_execute``,
-``approve_swing_promotion`` and every unknown tool stay denied.
+The GUI starts its server with the profile ``gui`` (READ plus ``GUI_ACTIONS``).  Those ACTIONs may be triggered by an explicit button of the Watchlist or Import
+page, and only through ``McpService.call_action``; they are never offered to the chat and ``call`` / ``call_sync`` refuse them.  ``sql_execute``,
+``approve_swing_promotion`` and every unknown tool stay denied (the server does not even offer them in the profile ``gui``).
 """
 
 from __future__ import annotations
 
-READ = "READ"
-ACTION = "ACTION"
+import importlib.util
+import sys
+from pathlib import Path
 
-POLICY: dict[str, str] = {
-    # reads
-    "database_schema": READ,
-    "database_status": READ,
-    "database_tables": READ,
-    "table_info": READ,
-    "evaluate_swing_candidate": READ,
-    "evaluate_swing_candidates": READ,
-    "evaluate_watchlist_candidates": READ,
-    "get_candidate_discovery": READ,
-    "get_data_freshness": READ,
-    "get_effective_exposure": READ,
-    "get_market_intelligence": READ,
-    "get_opportunity_view": READ,
-    "get_sector_overview": READ,
-    "get_watchlist": READ,
-    "rank_watchlist": READ,
-    "run_trading_orchestrator": READ,
-    "suggest_strategy_assignments": READ,
-    # actions: write to the database (``sql_execute`` accepts arbitrary SQL including DROP)
-    "approve_swing_promotion": ACTION,
-    "sql_execute": ACTION,
-    # actions: write only the watchlist table (no sql, no security creation); triggered by explicit buttons, never by the chat
-    "add_watchlist_candidate": ACTION,
-    "remove_watchlist_candidate": ACTION,
-    "set_watchlist_priority": ACTION,
-    # action: creates one new security in the Security Master (explicit dialog of the Watchlist page, dry run first); never offered to the chat
-    "onboard_security": ACTION,
-    # action: sets or removes the strategy of ONE security that is not held (strategy_assignment only); explicit "Übernehmen" of the Watchlist page, never the chat
-    "set_security_strategy": ACTION,
-    # action: sets or removes the LOCAL sector entry of ONE security (sector_map_local.json only, never the database); explicit apply of the Watchlist page, never the chat
-    "set_security_sector": ACTION,
-    # actions: the transaction import. check_transaction_import reads a local CSV and writes nothing (a dry run), import_transactions writes in ONE transaction after a check
-    # (token); both are explicit buttons of the Import page, never the chat (a file path is not something an LLM may be given)
-    "check_transaction_import": ACTION,
-    "import_transactions": ACTION,
-}
+_MODULE_NAME = "viper_ai_server_tool_policy"
 
-# the ACTIONs the GUI itself may call (explicit button + confirmation where destructive); everything else is denied
-GUI_ACTIONS: frozenset[str] = frozenset({"add_watchlist_candidate", "remove_watchlist_candidate", "set_watchlist_priority", "onboard_security", "set_security_strategy", "set_security_sector",
-                                         "check_transaction_import", "import_transactions"})
+
+def _load_server_policy():
+    here = Path(__file__).resolve().parent
+    root = here.parents[1]  # gui/services -> the folder that holds gui and the server folder
+    for candidate in (root / "mcp" / "tool_policy.py", root / "mcp-tools" / "tool_policy.py"):  # deployed copy and pip installation / repository
+        if candidate.is_file():
+            if _MODULE_NAME in sys.modules:
+                return sys.modules[_MODULE_NAME]
+            spec = importlib.util.spec_from_file_location(_MODULE_NAME, candidate)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[_MODULE_NAME] = module
+            spec.loader.exec_module(module)
+            return module
+    raise ImportError(f"tool_policy.py of the MCP server not found next to {root}")
+
+
+_server = _load_server_policy()
+
+READ = _server.READ
+ACTION = _server.ACTION
+POLICY = _server.POLICY
+GUI_ACTIONS = _server.GUI_ACTIONS
+PROFILE_ENV = _server.PROFILE_ENV
+PROFILE_GUI = _server.PROFILE_GUI
+classify = _server.classify
+is_read = _server.is_read
+is_gui_action = _server.is_gui_action
+is_known = _server.is_known
+unclassified = _server.unclassified
 
 
 class ToolDenied(Exception):
     """A tool outside the READ class was requested."""
-
-
-def classify(name: str) -> str:
-    return POLICY.get(name, ACTION)
-
-
-def is_read(name: str) -> bool:
-    return classify(name) == READ
-
-
-def is_gui_action(name: str) -> bool:
-    """A watchlist ACTION that a button of the GUI may trigger (never the chat)."""
-    return name in GUI_ACTIONS and classify(name) == ACTION
-
-
-def is_known(name: str) -> bool:
-    return name in POLICY
-
-
-def unclassified(names) -> list[str]:
-    return sorted(n for n in names if n not in POLICY)
 
 
 def require_read(name: str) -> None:

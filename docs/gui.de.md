@@ -73,7 +73,7 @@ Technische Reason Codes (z. B. `STOPPED_SWING_MAX_REACHED`) werden als kurzer de
 | Klasse | Tools | GUI |
 |---|---|---|
 | READ | die 17 Lese-Tools, zum Beispiel `database_status`, `run_trading_orchestrator`, `get_watchlist`, `get_sector_overview`, `get_data_freshness`, `get_effective_exposure` | erlaubt; die Seiten rufen nur `database_status`, `run_trading_orchestrator`, `get_watchlist`, `get_sector_overview`, `get_data_freshness` und `get_effective_exposure` auf, der Chat bietet dem Modell alle 17 an |
-| ACTION | `approve_swing_promotion`, `sql_execute` | verweigert und dem Modell nie angeboten |
+| ACTION | `approve_swing_promotion`, `sql_execute` | verweigert, dem Modell nie angeboten und vom Server der GUI gar nicht registriert (Profil `gui`) |
 | ACTION (Watchlist) | `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority` | nur über die ausdrücklichen Schaltflächen der Watchlist-Seite (`call_action`); dem Modell nie angeboten, von `call` verweigert |
 | ACTION (Strategie) | `set_security_strategy` | nur über „Änderung übernehmen“ der Watchlist-Seite (`call_action`); dem Modell nie angeboten, von `call` verweigert |
 | ACTION (Sektor) | `set_security_sector` | nur über „Änderung übernehmen“ der Watchlist-Seite (`call_action`); schreibt nur die lokale Sector-Map; dem Modell nie angeboten, von `call` verweigert |

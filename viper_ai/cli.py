@@ -40,7 +40,7 @@ COMMANDS: dict[str, tuple[Path, str]] = {
 # Scripts without a command line of their own: they ignore every argument and start their job, so ``-h`` / ``--help`` is answered here and the
 # script is not run (a call without help arguments is passed through unchanged).
 NO_ARGPARSE: dict[str, str] = {
-    "server.py": "MCP server over stdio (27 tools). Configuration only through the environment: TRADING_DB_PATH (required), TRADING_EXCLUDE, TRADING_USER_ID, TRADING_MAX_RESULT_CHARS.",
+    "server.py": "MCP server over stdio. Configuration only through the environment: TRADING_DB_PATH (required), TRADING_TOOL_PROFILE (read = default, 17 READ tools; gui = plus the 8 GUI actions; admin = all 27 incl. sql_execute), TRADING_EXCLUDE, TRADING_USER_ID, TRADING_MAX_RESULT_CHARS.",
     "Run-TradingTask.py": "Run-TradingTask.py <log> <script> [args...]: runs one script without a console window, appends stdout/stderr to <log>, returns the script's exit code.",
     "Backfill-TradingFundamentalsIR.py": "Fundamentals from the company IR reference parsers; takes no arguments and writes on every run.",
     "Discover-TradingSECIdentifiers.py": "SEC CIK identifier discovery; takes no arguments and writes on every run.",

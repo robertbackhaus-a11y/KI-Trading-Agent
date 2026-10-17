@@ -108,7 +108,7 @@ async def _smoke(server: Path, db: Path, expect: int) -> dict:
     params = StdioServerParameters(
         command=sys.executable,
         args=[str(server)],
-        env={**os.environ, "TRADING_DB_PATH": str(db), "PYTHONDONTWRITEBYTECODE": "1"},
+        env={**os.environ, "TRADING_DB_PATH": str(db), "PYTHONDONTWRITEBYTECODE": "1", "TRADING_TOOL_PROFILE": "admin", "TRADING_EXCLUDE": ""},  # every classified tool registers (temporary database copy)
     )
     with open(os.devnull, "w") as quiet:  # the server logs to stderr; the verdict is the JSON line
         async with stdio_client(params, errlog=quiet) as (read, write):

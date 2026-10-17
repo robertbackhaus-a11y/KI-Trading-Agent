@@ -1,10 +1,12 @@
 # Copyright (C) 2026 Robert Backhaus
 # SPDX-License-Identifier: Apache-2.0
 
-"""Which MCP tools a client sees: the server registers every public method of ``Tools``; ``TRADING_EXCLUDE`` hides tools per client process.
+"""Which MCP tools a client sees: the server registers the public methods of ``Tools`` that its tool profile allows (``tool_policy.py``); ``TRADING_EXCLUDE`` hides more.
 
-The desktop GUI starts the server without an exclude (27 tools; its chat is offered the READ tools only).  The Jan front end is configured with the
-three watchlist actions, ``onboard_security``, ``set_security_strategy``, ``set_security_sector``, ``check_transaction_import`` and ``import_transactions`` excluded, so it sees the 15 tools of before plus the four READ tools ``get_watchlist``, ``get_sector_overview``, ``get_data_freshness`` and ``get_effective_exposure`` (19).  The 15 tools of before keep their exact description and schema.
+Profile ``read`` (the default, every analysis / chat client such as Jan): the 17 READ tools.  Profile ``gui`` (the desktop GUI starts its server with it): READ plus
+the eight GUI actions (25; its chat is still offered the READ tools only).  Profile ``admin``: all 27, including ``sql_execute`` and ``approve_swing_promotion``.
+Jan's exclude list (the eight GUI actions) changes nothing in the profile ``read``; with ``admin`` it gives the 19 tools Jan saw before v0.6.0.  The 15 tools of
+before keep their exact description and schema.
 """
 
 from __future__ import annotations
@@ -59,13 +61,17 @@ def load_server():
 SERVER = load_server()
 
 
-def listing(exclude: str | None = None) -> dict:
+def listing(exclude: str | None = None, profile: str | None = "admin") -> dict:
     env = {"TRADING_DB_PATH": str(ROOT / "nonexistent-test.db")}
     if exclude is not None:
         env["TRADING_EXCLUDE"] = exclude
+    if profile is not None:
+        env["TRADING_TOOL_PROFILE"] = profile
     with mock.patch.dict(os.environ, env, clear=False):
         if exclude is None:
             os.environ.pop("TRADING_EXCLUDE", None)
+        if profile is None:
+            os.environ.pop("TRADING_TOOL_PROFILE", None)
         return {t.name: t for t in asyncio.run(SERVER.build_server().list_tools())}
 
 
@@ -75,11 +81,23 @@ def fingerprint(tool) -> str:
 
 @unittest.skipIf(SERVER is None, "the mcp package is only in the Trading venv")
 class ToolVisibilityTests(unittest.TestCase):
-    def test_the_qt_gui_process_gets_all_27_tools(self) -> None:
+    def test_the_admin_profile_registers_all_27_tools(self) -> None:
         tools = listing()
         self.assertEqual(len(tools), 27)
         self.assertTrue(NEW_TOOLS <= set(tools))
         self.assertEqual(set(tools) - NEW_TOOLS, set(BASELINE))
+
+    def test_the_qt_gui_process_gets_the_read_tools_and_its_eight_actions(self) -> None:
+        tools = listing(profile="gui")
+        self.assertEqual(len(tools), 25)
+        self.assertEqual(set(listing()) - set(tools), {"sql_execute", "approve_swing_promotion"})
+
+    def test_the_default_profile_is_read_only(self) -> None:
+        tools = listing(profile=None)
+        self.assertEqual(len(tools), 17)
+        self.assertEqual(set(listing(JAN_EXCLUDE, profile=None)), set(tools))  # Jan's exclude list is already contained in the default
+        self.assertTrue({"sql_execute", "approve_swing_promotion"}.isdisjoint(tools))
+        self.assertTrue(WATCHLIST_ACTIONS.isdisjoint(tools))
 
     def test_jans_exclude_hides_exactly_the_eight_write_actions(self) -> None:
         self.assertEqual(set(JAN_EXCLUDE.split(",")), WATCHLIST_ACTIONS)

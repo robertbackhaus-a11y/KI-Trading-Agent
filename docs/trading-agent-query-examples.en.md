@@ -380,7 +380,7 @@ Short phrasings that reliably lead to the right tool.
 
 ## A. Technical Mapping
 
-All 27 MCP tools with their access type. Names and parameters are taken from the current code.
+All 27 MCP tools with their access type. Names and parameters are taken from the current code. Which of them a client sees depends on the server's tool profile (`TRADING_TOOL_PROFILE`): by default (`read`) only the 17 reading tools; the desktop GUI uses `gui` (plus its eight actions); `sql_execute` and `approve_swing_promotion` exist only in the profile `admin`. The questions that name `sql_execute` therefore need a client started with `admin`.
 
 | Tool | Access | Purpose | Key parameters | Chapters |
 |---|---|---|---|---|

@@ -30,7 +30,7 @@ def _text(obj) -> str:
 
 async def database_status() -> str:
     """Database status (fake)."""
-    return _text({"ok": True, "database_path": os.environ.get("TRADING_DB_PATH"), "user": os.environ.get("TRADING_USER_ID")})
+    return _text({"ok": True, "database_path": os.environ.get("TRADING_DB_PATH"), "user": os.environ.get("TRADING_USER_ID"), "profile": os.environ.get("TRADING_TOOL_PROFILE")})
 
 
 async def run_trading_orchestrator(detail: bool = False) -> str:

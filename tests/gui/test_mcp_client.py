@@ -234,6 +234,31 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual((res.ok, res.kind), (False, "DENIED"), name)
         self.assertTrue(self.call("database_status")[0].tool_ok)
 
+    def test_there_is_no_switch_that_lifts_the_read_check(self) -> None:
+        """``allow_actions=True`` used to let call / call_sync send any tool; the parameter is gone and an attribute of that name changes nothing."""
+        import inspect
+
+        self.assertNotIn("allow_actions", inspect.signature(mc.McpService.__init__).parameters)
+        self.connect()
+        self.service.allow_actions = True  # a stale caller setting the old flag
+        for name in ("sql_execute", "approve_swing_promotion", "add_watchlist_candidate", "import_transactions", "something_new"):
+            res, _ = self.call(name, {})
+            self.assertEqual((res.ok, res.kind), (False, "DENIED"), name)
+            sync = self.service.call_sync(name, {})
+            self.assertEqual((sync.ok, sync.kind), (False, "DENIED"), name)
+        self.assertTrue(self.service.call_sync("database_status").tool_ok)
+
+    def test_the_server_is_started_with_the_gui_profile_only(self) -> None:
+        settings = Settings(mcp_python_path=sys.executable, mcp_server_path=str(FAKE_SERVER), trading_db_path=str(self.tmp / "trading.db"))
+        service = mc.McpService(settings, self.tmp / "mcp-stderr-2.log", extra_env={"TRADING_TOOL_PROFILE": "admin"})
+        self.addCleanup(service.shutdown)
+        with patch.dict("os.environ", {"TRADING_TOOL_PROFILE": "admin"}):  # neither the inherited environment nor a caller can widen it
+            service.start()
+            self.assertTrue(pump(30, lambda: service.state == mc.CONNECTED))
+        res = service.call_sync("database_status")
+        self.assertTrue(res.tool_ok)
+        self.assertEqual(res.data["profile"], "gui")
+
     def test_a_call_before_start_is_answered_not_lost(self) -> None:
         res, _ = self.call("database_status")
         self.assertEqual(res.kind, "NOT_CONNECTED")

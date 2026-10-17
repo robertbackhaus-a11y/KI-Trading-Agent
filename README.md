@@ -20,7 +20,8 @@ The agent is MCP-based and not tied to a particular front end (any MCP-capable L
 Versioned in this repository: `mcp-tools\` (`server.py`, `trading_sqlite.py`, `smoke_test.py`) and
 `scheduler\Manage-TradingTasks.ps1` (management of the scheduled tasks).
 
-Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 27 tools)
+Access path: MCP client (LLM front end) → Trading MCP server (`C:\tools\trading\mcp`, repo source `mcp-tools\`, 27 tools; a client sees the 17 READ tools by default,
+the desktop GUI 25, see `TRADING_TOOL_PROFILE` in [SECURITY.md](SECURITY.md#mcp-tool-profiles))
 → runtime (`C:\tools\trading\app`) → SQLite (`C:\tools\trading\data\trading.db`).
 
 This repository contains code only. The database, backups, audit/candidate JSON files,
@@ -54,7 +55,7 @@ Main commands (examples; `viper-ai --help` and `viper-ai list` show all of them,
 | Command | Purpose |
 |---|---|
 | `viper-ai` | `--version`, `list` (all commands and scripts), `paths` (folders in use), `run <Script.py> [args]` (any other script) |
-| `viper-ai-mcp` | MCP server (stdio, 27 tools, `TRADING_DB_PATH` required) |
+| `viper-ai-mcp` | MCP server (stdio, `TRADING_DB_PATH` required; `TRADING_TOOL_PROFILE` = `read` (default, 17 tools), `gui` (25) or `admin` (27)) |
 | `viper-ai-orchestrator` | `Run-TradingOrchestrator.py` |
 | `viper-ai-import-parqet` | `Import-ParqetTransactions.py` |
 | `viper-ai-import-transactions` | `Import-TradingTransactions.py` |

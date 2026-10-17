@@ -73,7 +73,7 @@ Technical reason codes (for example `STOPPED_SWING_MAX_REACHED`) are shown as a 
 | Class | Tools | GUI |
 |---|---|---|
 | READ | the 17 read tools, for example `database_status`, `run_trading_orchestrator`, `get_watchlist`, `get_sector_overview`, `get_data_freshness`, `get_effective_exposure` | allowed; the pages call only `database_status`, `run_trading_orchestrator`, `get_watchlist`, `get_sector_overview`, `get_data_freshness` and `get_effective_exposure`, the chat offers all 17 to the model |
-| ACTION | `approve_swing_promotion`, `sql_execute` | denied, and never offered to the model |
+| ACTION | `approve_swing_promotion`, `sql_execute` | denied, never offered to the model, and not even registered by the GUI's server (profile `gui`) |
 | ACTION (watchlist) | `add_watchlist_candidate`, `remove_watchlist_candidate`, `set_watchlist_priority` | only through the explicit buttons of the Watchlist page (`call_action`); never offered to the model, refused by `call` |
 | ACTION (strategy) | `set_security_strategy` | only through the apply button of the Watchlist page (`call_action`); never offered to the model, refused by `call` |
 | ACTION (sector) | `set_security_sector` | only through the apply button of the Watchlist page (`call_action`); writes only the local sector map; never offered to the model, refused by `call` |

@@ -22,14 +22,14 @@ async def main():
     params = StdioServerParameters(
         command=str(HERE.parent / ".venv" / "Scripts" / "python.exe"),
         args=[str(HERE / "server.py")],
-        env={**os.environ, "TRADING_DB_PATH": str(HERE.parent / "data" / "trading.db")},
+        env={**os.environ, "TRADING_DB_PATH": str(HERE.parent / "data" / "trading.db"), "TRADING_TOOL_PROFILE": "read", "TRADING_EXCLUDE": ""},
     )
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()
             tools = (await s.list_tools()).tools
             print("Tools:", len(tools), [t.name for t in tools])
-            assert len(tools) == 19, f"expected 19 tools, got {len(tools)}"
+            assert len(tools) == 17, f"expected the 17 READ tools of the default profile, got {len(tools)}"
             assert {"get_candidate_discovery", "get_market_intelligence", "get_opportunity_view", "get_watchlist"} <= {t.name for t in tools}
             total = sum(len(json.dumps(t.model_dump(), ensure_ascii=False)) for t in tools)
             print("Beschreibungsumfang (Zeichen):", total, "~Token:", total // 3)

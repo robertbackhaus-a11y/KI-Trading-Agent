@@ -12,7 +12,9 @@ Two layers:
 
 The server is never imported; it stays a separate runtime boundary (it may run next to another client at the same time).  All
 paths are absolute (a relative ``TRADING_DB_PATH`` breaks the server's read-only tools).  Nothing here depends on
-``capabilities.experimental`` (2.3.0 omits it).  ``call`` / ``call_sync`` accept READ tools only; ``call_action`` accepts exactly the watchlist ACTIONs of ``tool_policy.GUI_ACTIONS`` (see ``tool_policy``).
+``capabilities.experimental`` (2.3.0 omits it).  ``call`` / ``call_sync`` accept READ tools only, without any switch to lift that; ``call_action`` accepts exactly the ACTIONs of
+``tool_policy.GUI_ACTIONS`` (see ``tool_policy``).  The server is started with the tool profile ``gui``, so it does not even offer ``sql_execute``, ``approve_swing_promotion`` or an
+unclassified tool to this process.
 """
 
 from __future__ import annotations
@@ -197,7 +199,8 @@ class McpClientCore:
         try:
             self._set(CONNECTING, "")
             errlog = self._open_stderr()
-            env = {**os.environ, "TRADING_DB_PATH": self.db_path, "TRADING_USER_ID": self.user_id, "PYTHONDONTWRITEBYTECODE": "1", **self.extra_env}
+            env = {**os.environ, "TRADING_DB_PATH": self.db_path, "TRADING_USER_ID": self.user_id, "PYTHONDONTWRITEBYTECODE": "1", **self.extra_env,
+                   tool_policy.PROFILE_ENV: tool_policy.PROFILE_GUI}  # last: neither the inherited environment nor a caller can widen the server's profile
             params = StdioServerParameters(command=self.python_path, args=[self.server_path], env=env)
             async with stdio_client(params, errlog=errlog) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -326,10 +329,9 @@ class McpService(QObject):
     _deliver = Signal(object, object)
 
     def __init__(self, settings: Settings, stderr_path: Path, parent: Optional[QObject] = None, *, connect_timeout: float = 30.0, ping_interval: float = 5.0,
-                 extra_env: Optional[dict[str, str]] = None, allow_actions: bool = False):
+                 extra_env: Optional[dict[str, str]] = None):
         super().__init__(parent)
         self.stderr_path = Path(stderr_path)
-        self.allow_actions = allow_actions  # Phase 1 never sets this
         self._thread: Optional[_LoopThread] = None
         self._core = McpClientCore(
             settings.mcp_python_path, settings.mcp_server_path, settings.trading_db_path, self.stderr_path,
@@ -398,7 +400,7 @@ class McpService(QObject):
     def call(self, name: str, arguments: Optional[dict[str, Any]] = None, timeout: float = 60.0, on_done: Optional[Callable[[McpResult], None]] = None) -> int:
         self._next_id += 1
         request_id = self._next_id
-        if not self.allow_actions and not tool_policy.is_read(name):
+        if not tool_policy.is_read(name):  # READ only; writes go through call_action
             self.log.warning("Tool %s abgelehnt (%s)", name, tool_policy.classify(name))
             denied = McpResult(name, False, error=f"{name} ist in dieser GUI-Version nicht erlaubt", kind="DENIED")
             self._deliver.emit(on_done, denied)
@@ -451,7 +453,7 @@ class McpService(QObject):
         The ``ClientSession`` is still used only inside the asyncio thread: the call is submitted there and this thread waits for the result.
         ``cancelled`` is polled; when it turns true the pending call is cancelled and a ``CANCELLED`` result is returned.
         """
-        if not self.allow_actions and not tool_policy.is_read(name):
+        if not tool_policy.is_read(name):  # READ only; writes go through call_action
             self.log.warning("Tool %s abgelehnt (%s)", name, tool_policy.classify(name))
             return McpResult(name, False, error=f"{name} ist in dieser GUI-Version nicht erlaubt", kind="DENIED")
         if self._thread is None:

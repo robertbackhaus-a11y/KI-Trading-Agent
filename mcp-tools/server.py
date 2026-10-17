@@ -4,13 +4,17 @@
 """MCP-Adapter fuer die Tools-Klasse in trading_sqlite.py.
 
 Die Tool-Quelltexte liegen unveraendert neben diesem Skript. Jede oeffentliche Methode der
-Klasse `Tools` wird 1:1 als MCP-Tool bereitgestellt. Sonderargumente mit doppeltem
-Unterstrich (`__user__`, ...) werden aus der Tool-Signatur entfernt; `__user__` wird intern
-mit einer festen Kennung gefuellt.
+Klasse `Tools`, die `tool_policy.py` fuer das Profil des Prozesses zulaesst, wird 1:1 als
+MCP-Tool bereitgestellt; ein nicht klassifizierter Name wird nie bereitgestellt. Sonderargumente
+mit doppeltem Unterstrich (`__user__`, ...) werden aus der Tool-Signatur entfernt; `__user__`
+wird intern mit einer festen Kennung gefuellt.
 
 Konfiguration ueber Umgebungsvariablen:
   TRADING_DB_PATH       Pfad zur SQLite-Datenbank (Pflicht)
-  TRADING_EXCLUDE       Komma-getrennte Tool-Namen, die nicht bereitgestellt werden
+  TRADING_TOOL_PROFILE  read (Standard: nur READ-Tools), gui (READ + die GUI-Aktionen) oder
+                        admin (alle klassifizierten Tools inkl. sql_execute); ein anderer Wert
+                        bricht den Start ab
+  TRADING_EXCLUDE       Komma-getrennte Tool-Namen, die zusaetzlich nicht bereitgestellt werden
   TRADING_USER_ID       Kennung fuer `__user__` (Standard: goose)
 
 Transport: stdio. Der Server laeuft nur, solange der Client ihn gestartet hat.
@@ -159,15 +163,32 @@ def _make_wrapper(instance, name: str, method, user_id: str):
     return wrapper
 
 
+def _load_policy():
+    spec = importlib.util.spec_from_file_location("trading_tool_policy", HERE / "tool_policy.py")
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {HERE / 'tool_policy.py'}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+POLICY = _load_policy()
+
+
 def build_server() -> MCPServer:
     db_path = os.environ.get("TRADING_DB_PATH")
     if not db_path:
         raise SystemExit("TRADING_DB_PATH ist nicht gesetzt")
+    try:
+        profile = POLICY.profile_from_env(os.environ)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     user_id = os.environ.get("TRADING_USER_ID", "goose")
     excluded = {x.strip() for x in os.environ.get("TRADING_EXCLUDE", "").split(",") if x.strip()}
 
     server = MCPServer("trading")
     registered: list[str] = []
+    withheld: list[str] = []
 
     sources = [("trading_sqlite.py", "trading_sqlite_tool")]
 
@@ -181,11 +202,16 @@ def build_server() -> MCPServer:
                 continue
             if not (inspect.ismethod(method) or inspect.isfunction(method)):
                 continue
+            if not POLICY.allowed(name, profile):  # deny by default: an ACTION outside the profile and every unclassified name stay out of this process
+                withheld.append(name)
+                continue
             wrapper = _make_wrapper(instance, name, method, user_id)
             server.tool(name=name, description=inspect.getdoc(wrapper) or name, structured_output=False)(wrapper)
             registered.append(name)
 
-    _log(f"trading-mcp: {len(registered)} Tools registriert: {', '.join(sorted(registered))}")
+    _log(f"trading-mcp: Profil {profile}, {len(registered)} Tools registriert: {', '.join(sorted(registered))}")
+    if withheld:
+        _log(f"trading-mcp: nicht im Profil {profile}: {', '.join(sorted(withheld))}")
     return server
 
 

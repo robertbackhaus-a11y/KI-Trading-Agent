@@ -380,7 +380,7 @@ Kurze Formulierungen, die zuverlässig auf das passende Tool führen.
 
 ## A. Technische Zuordnung
 
-Alle 27 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code.
+Alle 27 MCP-Tools mit Zugriffsart. Namen und Parameter stammen aus dem aktuellen Code. Welche davon ein Client sieht, hängt vom Tool-Profil des Servers ab (`TRADING_TOOL_PROFILE`): standardmäßig (`read`) nur die 17 lesenden Tools; die Desktop-GUI nutzt `gui` (zusätzlich ihre acht Aktionen); `sql_execute` und `approve_swing_promotion` gibt es nur im Profil `admin`. Die Fragen, die `sql_execute` nennen, brauchen daher einen mit `admin` gestarteten Client.
 
 | Tool | Zugriff | Zweck | Wichtige Parameter | Kapitel |
 |---|---|---|---|---|

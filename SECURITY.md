@@ -44,6 +44,18 @@ request:
 - External data-source / API integrations.
 - Local deployment scripts.
 
+## MCP Tool Profiles
+
+The MCP server enforces which tools a client process can reach (`mcp-tools/tool_policy.py`, since v0.6.0); a client-side filter is
+not relied on. `TRADING_TOOL_PROFILE` selects the profile:
+
+- `read` (default, also when unset): the 17 READ tools only; nothing can write. Use it for every analysis or chat client.
+- `gui`: READ plus the eight narrow GUI actions; the desktop GUI starts its own server with it and never offers the actions to its chat.
+- `admin`: every classified tool, including `sql_execute` (arbitrary SQL) and `approve_swing_promotion`; only for a deliberate manual session.
+
+Any other value stops the server. A tool that is not classified is never registered. `TRADING_EXCLUDE` can only remove further tools.
+The import plan token binds a write to the database rows the check saw (see the import documentation).
+
 ## Automated Security Checks
 
 The repository runs CodeQL code scanning (`.github/workflows/codeql.yml`), Dependency Review

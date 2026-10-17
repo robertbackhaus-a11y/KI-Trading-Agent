@@ -87,6 +87,27 @@ class Tools:
 
         return conn
 
+    def _connect_readonly(self) -> sqlite3.Connection:
+        """Same settings as :meth:`_connect`, but the connection cannot write (``mode=ro`` and ``query_only``): for the READ tools."""
+        db_path = Path(self.valves.database_path)
+
+        if not db_path.exists():
+            raise FileNotFoundError(f"Trading database not found: {db_path}")
+
+        conn = sqlite3.connect(
+            f"file:///{db_path.resolve().as_posix()}?mode=ro",
+            uri=True,
+            timeout=float(self.valves.timeout_seconds),
+        )
+
+        conn.row_factory = sqlite3.Row
+
+        conn.execute("PRAGMA foreign_keys=ON;")
+        conn.execute(f"PRAGMA busy_timeout={int(self.valves.busy_timeout_ms)};")
+        conn.execute("PRAGMA query_only=ON;")
+
+        return conn
+
     # ============================================================
     # SQL statement splitting
     # ============================================================
@@ -407,7 +428,7 @@ class Tools:
     def _database_tables_sync(self) -> dict:
         started = time.perf_counter()
 
-        conn = self._connect()
+        conn = self._connect_readonly()
 
         try:
             tables = conn.execute("""
@@ -476,7 +497,7 @@ class Tools:
     def _database_schema_sync(self) -> dict:
         started = time.perf_counter()
 
-        conn = self._connect()
+        conn = self._connect_readonly()
 
         try:
             rows = conn.execute("""
@@ -546,7 +567,7 @@ class Tools:
     ) -> dict:
         started = time.perf_counter()
 
-        conn = self._connect()
+        conn = self._connect_readonly()
 
         try:
             safe_table = table_name.replace(
@@ -614,7 +635,7 @@ class Tools:
 
         db_path = Path(self.valves.database_path)
 
-        conn = self._connect()
+        conn = self._connect_readonly()
 
         try:
             sqlite_version = conn.execute(
