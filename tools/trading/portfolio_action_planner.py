@@ -490,6 +490,35 @@ def _rank_key(candidate: Mapping[str, Any]):
     return (-float(candidate["entry_score"]), -(float(priority) if priority is not None else -1e18), int(candidate["security_id"]))
 
 
+PURCHASE_KINDS = ("ADD", "BUY")
+
+
+def entries_overview(actions: Sequence[Mapping[str, Any]], planned: Sequence[Mapping[str, Any]], deferred: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """One view of everything the plan buys or holds back: the ranked entries of the PROMOTE evaluation (``planned_entries`` / ``deferred_entries``, unchanged) and the BUY / ADD purchases of
+    ``existing_position_actions``.  Every item says its ``kind`` (``PROMOTE`` / ``BUY`` / ``ADD``); a deferred item says why (``reason``).  A purchase is *planned* when the plan folded it into the
+    capital state, *deferred* when a guard blocked it (``plan_block_reason``) or it has no purchase value.  Pure re-sorting of values the planner already holds: no sizing, guard or funding rule."""
+    all_planned = [{"kind": "PROMOTE", **entry} for entry in planned]
+    all_deferred = [{"kind": "PROMOTE", **entry} for entry in deferred]
+    for action in actions:
+        kind = action.get("action")
+        if kind not in PURCHASE_KINDS:
+            continue
+        item = {"kind": kind, "rank": None, "security_id": action.get("security_id"), "symbol": action.get("symbol"), "quantity": action.get("quantity"), "price_eur": action.get("price_eur")}
+        if action.get("plan_block_reason"):
+            all_deferred.append({**item, "reason": action["plan_block_reason"]})
+        elif action.get("estimated_purchase_eur") is None:
+            all_deferred.append({**item, "reason": "PURCHASE_VALUE_UNAVAILABLE"})
+        else:
+            all_planned.append({**item, "capital_eur": action["estimated_purchase_eur"]})
+    count = lambda items, kind: sum(1 for item in items if item["kind"] == kind)  # noqa: E731 - local helper
+    counts = {"planned_total": len(all_planned), "deferred_total": len(all_deferred)}
+    for kind in ("PROMOTE", "BUY", "ADD"):
+        counts[f"planned_{kind.lower()}"] = count(all_planned, kind)
+        counts[f"deferred_{kind.lower()}"] = count(all_deferred, kind)
+    return {"planned": all_planned, "deferred": all_deferred, "counts": counts,
+            "note": "planned_entries / deferred_entries of the plan are the ranked PROMOTE entries only; this view adds the BUY / ADD purchases of existing_position_actions."}
+
+
 def unavailable_plan(reason: str, *, evaluation_as_of: Optional[str] = None) -> dict[str, Any]:
     """Well-typed empty plan for a run in which the capital state cannot be established."""
     return {
@@ -503,6 +532,7 @@ def unavailable_plan(reason: str, *, evaluation_as_of: Optional[str] = None) -> 
         "entry_candidates": [],
         "planned_entries": [],
         "deferred_entries": [],
+        "entries_overview": entries_overview([], [], []),
         "final_simulated_state": {},
         "capital": {},
         "tax_estimate": {},
@@ -585,7 +615,7 @@ def _capital_view(
         "internal_capital_used_eur": planned_total - required,
         "external_funding_required_eur": required,
         "remaining_buying_capacity_eur": final_view["remaining_swing_capacity_eur"] if external else final_view["deployable_cash_eur"],
-        "limiting_guard": stop_reason or ("ALL_READY_CANDIDATES_PLANNED" if planned_total > 0 else "NO_ENTRY_PLANNED"),
+        "limiting_guard": stop_reason or ("ALL_READY_CANDIDATES_PLANNED" if entries_total > 0 else "NO_RANKED_ENTRY_PLANNED" if purchases_total > 0 else "NO_ENTRY_PLANNED"),  # ranked entries only: the purchases of the actions are no ready candidates
     }
 
 
@@ -797,6 +827,7 @@ def build_portfolio_action_plan(
         "entry_candidates": candidates,
         "planned_entries": planned,
         "deferred_entries": deferred,
+        "entries_overview": entries_overview(actions, planned, deferred),
         "final_simulated_state": final_state or {},
         "capital": capital,
         "tax_estimate": tax_estimate,
@@ -881,7 +912,8 @@ def render_plan_de(plan: Mapping[str, Any]) -> str:
     for entry in plan["planned_entries"]:
         lines.append(f"   {entry['rank']}. {entry['symbol']}:{_fmt_quantity(entry['quantity'])} Stk. (ca. {_fmt_eur(entry['capital_eur'])}, Gewicht {_fmt_pct(entry['expected_weight_pct'])}, Swing danach {_fmt_pct(entry['resulting_swing_allocation_pct'])})")
     if not plan["planned_entries"]:
-        lines.append("   keine")
+        bought = (plan.get("entries_overview") or {}).get("counts", {})
+        lines.append("   keine rangierten Entries (PROMOTE)" + (f"; {bought.get('planned_buy', 0)} BUY und {bought.get('planned_add', 0)} ADD siehe oben" if bought.get("planned_buy") or bought.get("planned_add") else ""))
     funding = plan.get("capital") or {}
     if funding.get("external_funding_available"):
         lines.append(f"   Externes Kapital (Annahme: verfügbar): für den Plan nötig {_fmt_eur(funding.get('external_funding_required_eur'))}, intern finanziert {_fmt_eur(funding.get('internal_capital_used_eur'))}")

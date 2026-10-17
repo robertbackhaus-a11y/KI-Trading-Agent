@@ -119,6 +119,22 @@ def unwrap(envelope: Any) -> tuple[Optional[dict], str]:
     return result, ""
 
 
+# -- planned / deferred entries ------------------------------------------------------------------------------
+PURCHASE_ACTIONS = ("ADD", "BUY")
+
+
+def entries_of(plan: dict) -> tuple[list[dict], list[dict]]:
+    """``(planned, deferred)`` entries of the plan as the pages list them: the ranked entries of the entry evaluation (``planned_entries`` / ``deferred_entries``) followed by the BUY / ADD
+    purchases of the plan's own ``entries_overview`` (the planner decides which purchase is planned and which is deferred; nothing is decided here), shown as ``SYMBOL (BUY)``."""
+    planned = [e for e in _l(plan.get("planned_entries")) if isinstance(e, dict)]
+    deferred = [e for e in _l(plan.get("deferred_entries")) if isinstance(e, dict)]
+    overview = _d(plan.get("entries_overview"))
+    for target, key in ((planned, "planned"), (deferred, "deferred")):
+        for item in (x for x in _l(overview.get(key)) if isinstance(x, dict) and x.get("kind") in PURCHASE_ACTIONS):
+            target.append({**item, "symbol": f"{_text(item.get('symbol'))} ({item['kind']})"})
+    return planned, deferred
+
+
 # -- dashboard ---------------------------------------------------------------------------------------------
 def _issue_level(severity: Any) -> str:
     return "blocker" if "BLOCKING" in str(severity) and not str(severity).startswith("NON_") else "warning"
@@ -151,7 +167,7 @@ def build_dashboard(envelope: Any, db_status: Any = None, refreshed: Optional[da
         ("Allokations-Hinweise", format_reason_codes(_l(ctx.get("allocation_guardrails")))),
         ("Datenbank", DASH if not db else ("OK" if db.get("ok") else "Fehler")),
     ]
-    planned, deferred = _l(plan.get("planned_entries")), _l(plan.get("deferred_entries"))
+    planned, deferred = entries_of(plan)
     summary = _d(result.get("action_summary"))
     vm.simulation_only, vm.orders_created = plan.get("simulation_only"), plan.get("orders_created")
     vm.planner = [
@@ -230,13 +246,12 @@ def build_planner(envelope: Any, refreshed: Optional[datetime] = None) -> Planne
         ])
         levels.append("blocker" if block else ("warning" if action in ("SELL", "TRIM") else ""))
     vm.positions = Table(["Symbol", "Strategie", "Aktion", "Bestand", "Aktionsmenge", "Prio", "Gründe", "Plan-Block", "Sektor", "Korrelation"], rows, levels)
-    planned = [e for e in _l(plan.get("planned_entries")) if isinstance(e, dict)]
+    planned, deferred = entries_of(plan)
     vm.planned = Table(["Rang", "Symbol", "Stück", "Preis", "Kapital", "Gewicht", "Swing danach", "Intern", "Extern", "Score"], [
         [_text(e.get("rank")), _text(e.get("symbol")), fmt_qty(e.get("quantity")), fmt_eur(e.get("price_eur"), 2), fmt_eur(e.get("capital_eur")), fmt_pct(e.get("expected_weight_pct")),
          fmt_pct(e.get("resulting_swing_allocation_pct")), fmt_eur(e.get("internal_capital_eur")), fmt_eur(e.get("external_funding_eur")), fmt_score(e.get("entry_score"))]
         for e in planned
     ])
-    deferred = [e for e in _l(plan.get("deferred_entries")) if isinstance(e, dict)]
     vm.deferred = Table(["Rang", "Symbol", "Score", "Grund"], [[_text(e.get("rank")), _text(e.get("symbol")), fmt_score(e.get("entry_score")), format_reason_code(e.get("reason"))] for e in deferred],
                         ["blocker" if str(e.get("reason", "")).startswith("BLOCKED_BY_") else "" for e in deferred])
     cand_rows, cand_levels = [], []

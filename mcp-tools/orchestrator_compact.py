@@ -40,6 +40,8 @@ FUNDING_FIELDS = (
 PLANNED_ENTRY_FIELDS = (
     "rank", "symbol", "quantity", "price_eur", "capital_eur", "expected_weight_pct", "resulting_swing_allocation_pct", "cash_after_eur", "entry_score",
 )
+OVERVIEW_PLANNED_FIELDS = ("kind", "rank", "symbol", "quantity", "price_eur", "capital_eur")
+OVERVIEW_DEFERRED_FIELDS = ("kind", "rank", "symbol", "reason")
 AFTER_ACTIONS_FIELDS = (
     "planned_purchases_from_actions_eur", "cash_after_actions_eur", "deployable_cash_eur", "swing_pct", "long_term_pct",
     "remaining_swing_capacity_eur", "allocation_guardrails",
@@ -109,7 +111,7 @@ def _entry_plan(inner: Mapping[str, Any]) -> dict:
     funding = _d(plan.get("capital"))
     split = ("internal_capital_eur", "external_funding_eur") if funding.get("external_funding_available") else ()  # the split only matters (and only costs tokens) with external funding
     planned = [_pick(item, PLANNED_ENTRY_FIELDS + split) for item in _l(plan.get("planned_entries")) if isinstance(item, Mapping)]
-    out["planned_count"] = len(planned)
+    out["planned_count"] = len(planned)  # ranked PROMOTE entries only (see ``overview`` for BUY / ADD purchases too)
     out["planned_total_eur"] = final.get("planned_entries_total_eur")
     out["planned_entries"] = planned
     groups: dict[Any, dict] = {}
@@ -127,6 +129,14 @@ def _entry_plan(inner: Mapping[str, Any]) -> dict:
         if isinstance(item, Mapping) and item.get("entry_status") not in (None, "ENTRY_READY"):
             not_ready.setdefault(item["entry_status"], []).append(item.get("symbol"))
     out["not_ready_candidates"] = not_ready
+    overview = _d(plan.get("entries_overview"))
+    if overview:
+        out["overview"] = {
+            "counts": dict(_d(overview.get("counts"))),
+            "planned": [_pick(item, OVERVIEW_PLANNED_FIELDS) for item in _l(overview.get("planned")) if isinstance(item, Mapping)],
+            "deferred": [_pick(item, OVERVIEW_DEFERRED_FIELDS) for item in _l(overview.get("deferred")) if isinstance(item, Mapping)],
+            "note": overview.get("note"),
+        }
     out["funding"] = _pick(funding, FUNDING_FIELDS) if funding.get("external_funding_available") else {"external_funding_available": False}
     out["remaining_buying_capacity_eur"] = funding["remaining_buying_capacity_eur"] if funding.get("external_funding_available") else final.get("deployable_cash_eur")
     return out

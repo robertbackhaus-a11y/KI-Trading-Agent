@@ -52,7 +52,8 @@ _TEXTS: dict[str, tuple[str, str]] = {
     "CONCENTRATION_LIMIT": ("Positionslimit erreicht", "Der Einstieg würde die zulässige Gewichtung dieser Position überschreiten; der Kandidat wird zurückgestellt."),
     "PORTFOLIO_STATE_UNAVAILABLE": ("Portfoliostand fehlt", "Der Kapital- und Portfoliostand ist nicht verfügbar, daher kann nicht geplant werden."),
     "ALL_READY_CANDIDATES_PLANNED": ("Alle Kandidaten eingeplant", "Alle einstiegsbereiten Kandidaten sind im Plan enthalten."),
-    "NO_ENTRY_PLANNED": ("Kein Einstieg geplant", "Es wurde kein Einstieg in den Plan aufgenommen."),
+    "NO_ENTRY_PLANNED": ("Kein Einstieg geplant", "Es wurde weder ein rangierter Entry noch ein BUY/ADD-Kauf in den Plan aufgenommen."),
+    "NO_RANKED_ENTRY_PLANNED": ("Kein rangierter Entry (PROMOTE)", "Aus der Entry-Bewertung (PROMOTE) wurde kein Entry eingeplant. Die BUY/ADD-Käufe der Engine sind davon unabhängig und stehen in den geplanten Entries."),
     # -- entry sizing (block reasons of a candidate) ------------------------------------------------------------------
     "ENTRY_BLOCKED": ("Einstieg blockiert", "Der Einstieg ist blockiert, ohne dass ein genauerer Grund gemeldet wurde."),
     "ENTRY_EXISTING_POSITION": ("Position bereits vorhanden", "Ein neuer Einstieg wird nicht geplant, weil bereits eine Position in diesem Wertpapier besteht."),
